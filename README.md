@@ -50,7 +50,8 @@ To run the Dockhand development stack, provide `HA_URL` and `HA_TOKEN` in its st
 environment and use `compose.yml`. The committed image tag `job1-placeholder` is deliberately
 literal so CI can replace it with an immutable registry tag after publishing.
 
-The CI deploy section is intentionally a stub for job 1. Completing it requires Forgejo
-secrets named `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`, `DOCKHAND_URL`, and `DOCKHAND_TOKEN`.
-No secret values belong in this repository. `compose.main.yml` is intentionally deferred until
-the first promotion to `main`, per the repository deployment conventions.
+On pushes to `dev`, CI publishes a `dev-<short-sha>` image to the trusted local Zot registry
+and commits that immutable tag back to `compose.yml`; no CI secrets are required. Pull request
+runs build the image without publishing or changing the branch. `compose.main.yml` is
+intentionally deferred until the first promotion to `main`, per the repository deployment
+conventions.

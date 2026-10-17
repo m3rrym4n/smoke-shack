@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Publish dev images to Zot and write the immutable tag back to `compose.yml`.
 - Use the real gmg-ha entities and states for cook phases, warnings, and probe targets.
 - Install the Docker CLI in image-build jobs and keep pull request runs build-only.
 - Run CI quality checks with uv-managed Python 3.12 on Forgejo runners.
