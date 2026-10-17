@@ -9,6 +9,7 @@ import { mountPitmasterView } from "./views/pitmaster.js";
 const routes = new Set(["live", "cooks", "profiles", "pellets", "meat", "notes", "pitmaster"]);
 const view = document.querySelector("#view");
 const neon = document.querySelector("#now-smoking");
+const buildVersion = document.querySelector("#build-version");
 let disposeView = () => {};
 
 function currentRoute() {
@@ -75,8 +76,18 @@ async function updateCookSign() {
   }
 }
 
+async function updateBuildVersion() {
+  try {
+    const status = await getStatus();
+    buildVersion.textContent = status.version;
+  } catch (error) {
+    console.error("Could not load build version", error);
+  }
+}
+
 window.addEventListener("hashchange", renderRoute);
 document.addEventListener("visibilitychange", updateCookSign);
 renderRoute();
 updateCookSign();
+updateBuildVersion();
 window.setInterval(updateCookSign, 5000);
