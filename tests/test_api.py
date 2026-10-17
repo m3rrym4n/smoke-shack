@@ -39,7 +39,9 @@ def test_live_view_static_assets_exist(sessions: sessionmaker[Session]) -> None:
             "/js/views/live.js",
             "/js/components/gauge.js",
             "/js/components/showcase.js",
+            "/js/components/smoke.js",
             "/js/live-logic.js",
+            "/js/smoke-logic.js",
         ):
             response = client.get(path)
             assert response.status_code == 200

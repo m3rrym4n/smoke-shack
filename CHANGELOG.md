@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add live-cook smokestack wisps with grill-state intensity and a remembered motion toggle.
 - Add a responsive Pit showcase with grill branding, editable pictures, and a smoke anchor.
 - Add the grill name and uploadable showcase logo and photo APIs.
 - Show planned, live, and incomplete cooks in the Cook Log with automatic refreshes.

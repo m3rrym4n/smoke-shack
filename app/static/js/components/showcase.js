@@ -32,7 +32,7 @@ function photoMarkup(url, position) {
   return `<div class="showcase-photo"><span class="photo-tape" aria-hidden="true"></span><img src="${escapeHtml(url)}" alt="Grill"><span class="photo-stack-anchor" data-smokestack style="left:${position.x}%;top:${position.y}%" aria-hidden="true"></span></div>`;
 }
 
-export function showcaseMarkup(showcase, grillName, width = window.innerWidth) {
+export function showcaseMarkup(showcase, grillName, width = window.innerWidth, smokeControl = true) {
   const position = readStackPosition();
   const logo = showcasePlaceholder(showcase?.logo_url) === "image"
     ? `<img src="${escapeHtml(showcase.logo_url)}" alt="Grill logo">`
@@ -41,7 +41,7 @@ export function showcaseMarkup(showcase, grillName, width = window.innerWidth) {
     <div class="showcase-logo">${logo}</div>
     <div class="showcase-name" title="${escapeHtml(grillName)}">${escapeHtml(grillName || "My grill")}</div>
     ${photoMarkup(showcase?.photo_url, position)}
-    <button class="change-pictures" type="button" aria-expanded="false">Change pictures</button>
+    <div class="showcase-controls">${smokeControl ? '<button class="smoke-toggle cc" type="button" aria-pressed="true">Smoke</button>' : ""}<button class="change-pictures" type="button" aria-expanded="false">Change pictures</button></div>
     <div class="showcase-editor" hidden>
       ${editorRow("logo", "Logo", showcase?.logo_url)}
       ${editorRow("photo", "Grill photo", showcase?.photo_url)}
