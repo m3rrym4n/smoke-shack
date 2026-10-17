@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -8,6 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import Cook, Event, Sample
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def as_utc(value: datetime) -> datetime:
@@ -67,6 +71,7 @@ class CookService:
                 cook = Cook(started_at=now, status="startup")
                 session.add(cook)
                 session.flush()
+                logger.info("cook %s started", cook.id)
                 self._event(session, cook, now, "fire_lit", "Fire lit")
                 self._event(
                     session,
@@ -120,10 +125,12 @@ class CookService:
         if cook.status == "startup" and snapshot.setpoint is not None and snapshot.setpoint != 150:
             self._start_cook_phase(session, cook, now)
         if cook.status in {"startup", "cook"} and (mode == "off" or fire == "cool down"):
+            old_status = cook.status
             if cook.startup_ended_at is None:
                 cook.startup_ended_at = now
             cook.cook_ended_at = now
             cook.status = "cooldown"
+            logger.info("cook %s phase %s -> cooldown", cook.id, old_status)
             self._event(
                 session, cook, now, "phase_changed", "Cool down started", {"to": "cooldown"}
             )
@@ -138,6 +145,7 @@ class CookService:
             return
         cook.startup_ended_at = now
         cook.status = "cook"
+        logger.info("cook %s phase startup -> cook", cook.id)
         self._event(session, cook, now, "phase_changed", "Cook started", {"to": "cook"})
 
     def _close(self, session: Session, cook: Cook, now: datetime, incomplete: bool) -> None:
@@ -146,6 +154,8 @@ class CookService:
         cook.status = "closed"
         cook.incomplete = incomplete
         cook.aggregate_setpoint = self._aggregate_setpoint(session, cook, now)
+        logger.info("cook %s phase cooldown -> closed", cook.id)
+        logger.info("cook %s closed: %s", cook.id, "incomplete" if incomplete else "complete")
         self._event(
             session,
             cook,

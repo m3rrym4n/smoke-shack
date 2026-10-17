@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +15,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings
 from app.database import make_engine, make_session_factory
-from app.ha import HAClient, HomeAssistantClient
+from app.ha import HAClient, HAStatus, HomeAssistantClient
 from app.models import Cook, Event, Sample
 from app.service import CookService, as_utc
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 async def consume(client: HAClient, service: CookService) -> None:
@@ -36,6 +41,7 @@ def create_app(
         incomplete_timeout_minutes=config.incomplete_timeout_minutes,
     )
     client = ha_client
+    ha_status = HAStatus(configured=bool(config.ha_url and config.ha_token))
     if client is None and config.ha_url and config.ha_token:
         client = HomeAssistantClient(
             config.ha_url,
@@ -43,10 +49,14 @@ def create_app(
             config.load_entities(),
             config.sample_interval_seconds,
         )
+    if client is not None:
+        ha_status = client.status
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         Path(config.photo_dir).mkdir(parents=True, exist_ok=True)
+        if not config.ha_url or not config.ha_token:
+            logger.warning("HA_URL/HA_TOKEN not set; Home Assistant ingest disabled")
         task = asyncio.create_task(consume(client, service)) if client else None
         try:
             yield
@@ -64,6 +74,35 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/status")
+    def status(session: Session = Depends(get_session)) -> dict[str, Any]:
+        active = session.scalar(
+            select(Cook).where(Cook.ended_at.is_(None)).order_by(Cook.started_at.desc())
+        )
+        last_sample = session.scalar(select(Sample.ts).order_by(Sample.ts.desc()).limit(1))
+        return {
+            "ha": {
+                "configured": ha_status.configured,
+                "connected": ha_status.connected,
+                "last_error": ha_status.last_error,
+                "last_event_at": _iso(ha_status.last_event_at),
+            },
+            "ingest": {
+                "last_sample_at": _iso(last_sample),
+                "sample_interval_seconds": config.sample_interval_seconds,
+            },
+            "active_cook": (
+                {
+                    "id": active.id,
+                    "phase": active.status,
+                    "started_at": _iso(active.started_at),
+                }
+                if active is not None
+                else None
+            ),
+            "version": _version(),
+        }
 
     @app.get("/api/cooks")
     def cooks(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
@@ -100,6 +139,13 @@ def create_app(
 
 def _iso(value: datetime | None) -> str | None:
     return as_utc(value).isoformat().replace("+00:00", "Z") if value else None
+
+
+def _version() -> str:
+    try:
+        return version("smoke-stack")
+    except PackageNotFoundError:
+        return "0.1.0"
 
 
 def _cook(cook: Cook) -> dict[str, Any]:
