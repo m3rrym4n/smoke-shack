@@ -250,3 +250,77 @@ def test_warning_sensor_change_records_warning(
     clock.advance(seconds=10)
     service.process(snap(warning="Low pellets"))
     assert kinds(sessions, cook.id).count("warning") == 1
+
+
+def test_garbage_snapshot_does_not_end_startup(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(snap())
+    assert cook is not None
+    clock.advance(seconds=10)
+
+    cook = service.process(snap(setpoint=65535, mode="off", warning="Unknown"))
+
+    assert cook is not None and cook.status == "startup"
+    with sessions() as session:
+        samples = list(session.scalars(select(Sample).where(Sample.cook_id == cook.id)))
+    assert len(samples) == 1
+
+
+def test_garbage_snapshot_does_not_start_cooldown(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(snap(setpoint=275, fire="Running"))
+    assert cook is not None
+    clock.advance(seconds=10)
+
+    cook = service.process(snap(setpoint=65535, mode="off", warning="Unknown"))
+
+    assert cook is not None and cook.status == "cook"
+
+
+def test_repeated_valid_snapshot_records_each_change_once(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(snap(setpoint=275, fire="Running"))
+    assert cook is not None
+
+    changed = snap(
+        setpoint=350,
+        mode="fan_only",
+        fire="Running",
+        probe2=165,
+        probe2_connected=True,
+        warning="Low pellets",
+    )
+    for _ in range(6):
+        service.process(changed)
+
+    assert kinds(sessions, cook.id).count("probe_connected") == 1
+    assert kinds(sessions, cook.id).count("setpoint_changed") == 1
+    assert kinds(sessions, cook.id).count("mode_changed") == 1
+    assert kinds(sessions, cook.id).count("warning") == 1
+
+
+def test_valid_snapshot_after_invalid_streak_records_one_gap(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(snap(setpoint=275, fire="Running"))
+    assert cook is not None
+    clock.advance(seconds=2)
+    service.process(snap(setpoint=65535, mode="off", warning="Unknown"))
+    clock.advance(seconds=2)
+    service.process(snap(setpoint=0, mode="off", warning="Unknown"))
+    clock.advance(seconds=2)
+
+    resumed = service.process(snap(setpoint=275, fire="Running"))
+
+    assert resumed is not None and resumed.has_gap
+    assert kinds(sessions, cook.id).count("data_gap") == 1
+    with sessions() as session:
+        samples = list(session.scalars(select(Sample).where(Sample.cook_id == cook.id)))
+    assert len(samples) == 2
