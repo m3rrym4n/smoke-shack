@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Sample the latest Home Assistant grill state on a timer while connected.
 - Add filtered cook CSV, raw sample CSV, and full journal JSON export APIs.
 - Add filtered cook duration statistics and meat-type count APIs.
 - Add cook and event photo upload, serving, editing, listing, and deletion APIs.
