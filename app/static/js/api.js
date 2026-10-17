@@ -34,6 +34,20 @@ export function getStatus() {
   return getJson("/status");
 }
 
+export function getShowcase() {
+  return getJson("/api/showcase");
+}
+
+export function uploadShowcaseImage(kind, file) {
+  const body = new FormData();
+  body.append("file", file);
+  return requestJson(`/api/showcase/${kind}`, { method: "PUT", body });
+}
+
+export function deleteShowcaseImage(kind) {
+  return requestJson(`/api/showcase/${kind}`, { method: "DELETE" });
+}
+
 export function getCook(cookId) {
   return getJson(`/api/cooks/${cookId}`);
 }

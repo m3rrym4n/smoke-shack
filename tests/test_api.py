@@ -38,6 +38,7 @@ def test_live_view_static_assets_exist(sessions: sessionmaker[Session]) -> None:
         for path in (
             "/js/views/live.js",
             "/js/components/gauge.js",
+            "/js/components/showcase.js",
             "/js/live-logic.js",
         ):
             response = client.get(path)

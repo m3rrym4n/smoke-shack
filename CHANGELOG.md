@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add a responsive Pit showcase with grill branding, editable pictures, and a smoke anchor.
 - Add the grill name and uploadable showcase logo and photo APIs.
 - Show planned, live, and incomplete cooks in the Cook Log with automatic refreshes.
 - Add immediate photo uploads and galleries to the Order Pad and cook details.
