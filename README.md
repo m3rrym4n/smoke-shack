@@ -27,6 +27,7 @@ authenticates to `/api/websocket`, loads an initial state snapshot, subscribes t
 | --- | --- | --- |
 | `HA_URL` | Home Assistant base URL, such as `http://homeassistant.local:8123` | empty (ingest disabled) |
 | `HA_TOKEN` | Home Assistant long-lived access token | empty |
+| `HA_WS_MAX_SIZE_BYTES` | Maximum Home Assistant websocket message size in bytes | `67108864` (64 MiB) |
 | `DATABASE_PATH` | SQLite database path | `smoke-stack.db` |
 | `PHOTO_DIR` | Photo storage directory | `photos` |
 | `SAMPLE_INTERVAL_SECONDS` | Active-cook sampling interval | `10` |
