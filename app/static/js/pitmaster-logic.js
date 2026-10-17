@@ -1,5 +1,48 @@
 const present = (value) => value !== undefined && value !== null && String(value).trim() !== "";
 
+export function mergeMeatTypeOptions(stats = [], meat = [], selected = "") {
+  const byName = new Map();
+
+  stats.forEach((item) => {
+    const name = String(item.meat_type ?? "").trim();
+    if (!name) return;
+    const key = name.toLocaleLowerCase();
+    const existing = byName.get(key);
+    const count = Number(item.count) || 0;
+    if (existing) {
+      existing.count += count;
+    } else {
+      byName.set(key, { value: name, count });
+    }
+  });
+
+  meat.forEach((item) => {
+    const name = String(item.type ?? "").trim();
+    if (name && !byName.has(name.toLocaleLowerCase())) {
+      byName.set(name.toLocaleLowerCase(), { value: name, count: 0 });
+    }
+  });
+
+  const selectedName = String(selected ?? "").trim();
+  if (selectedName) {
+    const key = selectedName.toLocaleLowerCase();
+    const existing = byName.get(key);
+    if (existing) {
+      existing.value = selectedName;
+    } else {
+      byName.set(key, { value: selectedName, count: 0 });
+    }
+  }
+
+  return [...byName.values()]
+    .sort((left, right) => left.value.localeCompare(right.value, undefined, { sensitivity: "base" }))
+    .map((item) => ({
+      value: item.value,
+      label: `${item.value} (${item.count ? item.count : "no cooks yet"})`,
+      count: item.count,
+    }));
+}
+
 export function formatDuration(seconds) {
   if (seconds === null || seconds === undefined || seconds === "") return "—";
   const value = Number(seconds);
@@ -72,6 +115,7 @@ function weightPhrase(filters) {
 
 export function buildAnswerSentence(filters, stats) {
   const count = Number(stats?.count) || 0;
+  if (!count && present(filters.meat)) return `No cooks logged yet for ${filters.meat}.`;
   if (!count) return "No cooks match that order yet. Give the pitmaster something to work with.";
   const subject = [weightPhrase(filters), filters.meat].filter(Boolean).join(" ") || "matching cook";
   const details = [];

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Include uncooked Butcher Case meat types in the Ask the Pitmaster filter.
 - Complete the Order Pad with available-purchase selectors, pellet usage, and cook costs.
 - Add the Ask the Pitmaster cook-time statistics board with bookmarkable filters.
 - Add the Pit Notes board with cook-aware create, filtering, inline edit, and delete controls.
