@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Complete the Order Pad with available-purchase selectors, pellet usage, and cook costs.
 - Add the Ask the Pitmaster cook-time statistics board with bookmarkable filters.
 - Add the Pit Notes board with cook-aware create, filtering, inline edit, and delete controls.
 - Add the Pellet Pantry purchase board with create, edit, linked-cook, and delete controls.
