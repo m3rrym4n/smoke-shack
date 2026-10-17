@@ -3,7 +3,14 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -135,3 +142,92 @@ class EventResponse(BaseModel):
     description: str | None
     data: dict[str, object]
     photo_path: str | None
+
+
+StopMode = Literal["time", "internal_temp"]
+
+
+class ProfileStepInput(BaseModel):
+    grill_temp: float = Field(ge=150, le=500)
+    stop_mode: StopMode
+    duration_minutes: int | None = Field(default=None, gt=0)
+    probe: Literal[1, 2] | None = None
+    target_temp: float | None = None
+    instructions: str = ""
+
+    @model_validator(mode="after")
+    def validate_stop_condition(self) -> ProfileStepInput:
+        if self.stop_mode == "time":
+            if self.duration_minutes is None:
+                raise ValueError("duration_minutes is required for time stop")
+            if self.probe is not None or self.target_temp is not None:
+                raise ValueError("probe and target_temp must be null for time stop")
+        else:
+            if self.probe is None or self.target_temp is None:
+                raise ValueError("probe and target_temp are required for internal_temp stop")
+            if self.duration_minutes is not None:
+                raise ValueError("duration_minutes must be null for internal_temp stop")
+        return self
+
+
+class ProfileCreate(BaseModel):
+    name: NonEmptyStr
+    keep_warm: bool = False
+    keep_warm_temp: float | None = None
+    steps: list[ProfileStepInput] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_keep_warm(self) -> ProfileCreate:
+        if self.keep_warm and self.keep_warm_temp is None:
+            raise ValueError("keep_warm_temp is required when keep_warm is true")
+        if not self.keep_warm and self.keep_warm_temp is not None:
+            raise ValueError("keep_warm_temp must be null when keep_warm is false")
+        return self
+
+
+class ProfileUpdate(BaseModel):
+    name: NonEmptyStr | None = None
+    keep_warm: bool | None = None
+    keep_warm_temp: float | None = None
+
+    @field_validator("name", "keep_warm", mode="before")
+    @classmethod
+    def required_fields_cannot_be_null(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("field cannot be null")
+        return value
+
+
+class ProfileStepResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    position: int
+    grill_temp: float
+    stop_mode: StopMode
+    duration_minutes: int | None
+    probe: int | None
+    target_temp: float | None
+    instructions: str
+
+
+class ProfileListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    keep_warm: bool
+    keep_warm_temp: float | None
+    step_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProfileResponse(BaseModel):
+    id: int
+    name: str
+    keep_warm: bool
+    keep_warm_temp: float | None
+    steps: list[ProfileStepResponse]
+    created_at: datetime
+    updated_at: datetime
