@@ -11,6 +11,7 @@ services:
       HA_WS_MAX_SIZE_BYTES: ${HA_WS_MAX_SIZE_BYTES:-67108864}
       DATABASE_PATH: /data/smoke-stack.db
       PHOTO_DIR: /data/photos
+      SMOKE_STACK_GRILL_NAME: ${SMOKE_STACK_GRILL_NAME:-}
       SAMPLE_INTERVAL_SECONDS: ${SAMPLE_INTERVAL_SECONDS:-10}
       TZ: America/Los_Angeles
     volumes:

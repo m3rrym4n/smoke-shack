@@ -1,10 +1,12 @@
-import { deleteCook, getCook, getCookEvents, getCookPhotos, getCookSamples, getMeat, getPellets, getPlannedCooks, getRecentCooks, getStatus } from "../api.js";
+import { deleteCook, getCook, getCookEvents, getCookPhotos, getCookSamples, getMeat, getPellets, getPlannedCooks, getRecentCooks, getShowcase, getStatus } from "../api.js";
 import { chartMarkup } from "../components/chart.js";
 import { cookLogMarkup } from "../components/cook-log.js";
 import { gaugeSvg } from "../components/gauge.js";
 import { bindLiveForms, bindPhotoGallery, orderPadMarkup, photoGalleryMarkup, pinBoardMarkup } from "../components/live-forms.js";
 import { clampPercent, orderPlannedCooks, phaseDurations, phasePercentages, selectOrderPadMode } from "../live-logic.js";
 import { confirmDelete } from "../components/ui.js";
+import { bindShowcase, showcaseMarkup } from "../components/showcase.js";
+import { mountSmoke } from "../components/smoke.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -38,7 +40,7 @@ function probeBoard(name, reading, target) {
   </section>`;
 }
 
-function heroMarkup(cook, sample, active, historical) {
+function heroMarkup(cook, sample, active, historical, showcase, grillName) {
   const times = phaseDurations(cook);
   const widths = phasePercentages(times);
   const setpoint = sample?.setpoint ?? cook.effective_setpoint ?? 0;
@@ -46,7 +48,7 @@ function heroMarkup(cook, sample, active, historical) {
   const weight = cook.meat?.pounds ? `<span>${escapeHtml(cook.meat.pounds)} lb</span>` : "";
   const details = [setpoint ? `${temp(setpoint)} setpoint` : null, cook.pellet ? `${cook.pellet.vendor} ${cook.pellet.product_name}` : null, cook.profile_name].filter(Boolean).map(escapeHtml).join(" · ");
   return `<div class="live-hero">
-    <section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">${active ? escapeHtml(cook.status) : "fire's out"}</span></div>${gaugeSvg(sample?.pit_temp, setpoint)}</section>
+    <section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">${active ? escapeHtml(cook.status) : "fire's out"}</span></div>${gaugeSvg(sample?.pit_temp, setpoint)}${showcaseMarkup(showcase, grillName, window.innerWidth, !historical)}</section>
     <div class="live-details">
       <section class="board special-board"><div class="board-title"><h2 class="hd">${historical ? "Cook Special" : "Today's Special"}</h2>${active ? "" : `<span class="cook-label">${historical ? "cook #" + cook.id : "last cook"}</span>`}</div>
         <div class="meat-name">${escapeHtml(meat)} ${weight}</div><p class="mut special-meta">${details || "Cook details not set"}</p>
@@ -58,12 +60,12 @@ function heroMarkup(cook, sample, active, historical) {
   </div>`;
 }
 
-async function load(container, onStatus, isCurrent, requestedCookId, refresh, setBusy) {
+async function load(container, onStatus, isCurrent, requestedCookId, refresh, setBusy, setShowcaseCleanup, updateSmoke) {
   let cookId = requestedCookId;
   let active = false;
+  const status = await getStatus();
+  if (!isCurrent()) return;
   if (cookId == null) {
-    const status = await getStatus();
-    if (!isCurrent()) return;
     active = status.active_cook !== null;
     onStatus(active);
     cookId = status.active_cook?.id;
@@ -74,6 +76,7 @@ async function load(container, onStatus, isCurrent, requestedCookId, refresh, se
     cookId = recent[0]?.id;
   }
   if (!cookId && requestedCookId != null) {
+    updateSmoke(null, null);
     container.innerHTML = `<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire's out. No cooks on the board yet.</p></section>`;
     return;
   }
@@ -81,14 +84,16 @@ async function load(container, onStatus, isCurrent, requestedCookId, refresh, se
   const requestedCook = requestedCookId == null ? null : await getCook(requestedCookId);
   if (requestedCook?.state === "planned") {
     const cook = requestedCook;
+    updateSmoke(null, null);
     container.innerHTML = `<div class="cook-detail"><a class="back-link cc" href="#cooks">← All cooks</a><section class="order-pad planned-summary"><span class="tape" aria-hidden="true"></span><div class="order-heading"><h2>PLANNED ORDER</h2><span>No. ${String(cook.id).padStart(4, "0")}</span></div><p><b>Meat:</b> ${escapeHtml(cook.meat?.type || "Not selected")}</p><p><b>Pellets:</b> ${escapeHtml(cook.pellet ? `${cook.pellet.vendor} ${cook.pellet.product_name}` : "Not selected")}</p><p><b>Seasonings:</b> ${escapeHtml(cook.seasonings || "—")}</p><p><b>Sauces:</b> ${escapeHtml(cook.sauces || "—")}</p><p><b>Prep time:</b> ${cook.prep_time_minutes ?? "—"}${cook.prep_time_minutes != null ? " minutes" : ""}</p><p><b>Rotisserie:</b> ${cook.rotisserie ? "Yes" : "No"}</p><p><b>How it turned out:</b> ${escapeHtml(cook.results_text || "—")}</p><div class="planned-detail-actions"><a class="paper-button" href="#live?order=${cook.id}">Edit in Order Pad</a><button class="paper-button planned-cancel" type="button">Cancel order</button><span class="plan-confirm" hidden></span></div></section></div>`;
     container.querySelector(".planned-cancel").addEventListener("click", () => confirmDelete(container.querySelector(".plan-confirm"), async () => { await deleteCook(cook.id); window.location.hash = "cooks"; }));
     return;
   }
-  const [cook, samples, events, meat, pellets, closedCooks, planned, detailPhotos] = await Promise.all([
+  const [cook, samples, events, meat, pellets, closedCooks, planned, detailPhotos, showcase] = await Promise.all([
     requestedCook || (cookId ? getCook(cookId) : null), cookId ? getCookSamples(cookId) : [], cookId ? getCookEvents(cookId) : [],
     liveForms ? getMeat() : [], liveForms ? getPellets() : [], liveForms ? getRecentCooks(10000) : [], liveForms ? getPlannedCooks() : [],
     !liveForms && cookId ? getCookPhotos(cookId) : [],
+    getShowcase(),
   ]);
   if (!isCurrent()) return;
   const log = liveForms ? `<div class="log-pin-grid">${cookLogMarkup(events, true)}${pinBoardMarkup()}</div>` : cookLogMarkup(events);
@@ -112,12 +117,14 @@ async function load(container, onStatus, isCurrent, requestedCookId, refresh, se
     order = orderPadMarkup(orderCook, meat, pellets, [...closedCooks, ...planned, ...(active && cook ? [cook] : [])], { ...selection, planned: sortedPlans, photos });
   }
   const resultPhotos = !liveForms && cook ? `<section class="order-pad cook-results"><span class="tape" aria-hidden="true"></span><h2>How it turned out</h2><p>${escapeHtml(cook.results_text || "No write-up yet.")}</p>${photoGalleryMarkup(detailPhotos)}</section>` : "";
-  const cookContent = cook ? `${heroMarkup(cook, samples.at(-1), active, requestedCookId != null)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
+  const cookContent = cook ? `${heroMarkup(cook, samples.at(-1), active, requestedCookId != null, showcase, status.grill_name)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
   const liveDetail = requestedCookId != null && cook && cook.ended_at == null;
   const backLink = liveDetail
     ? '<a class="back-link cc" href="#live">← Back to live cook</a>'
     : '<a class="back-link cc" href="#cooks">← All cooks</a>';
   container.innerHTML = `<div class="cook-detail">${requestedCookId == null ? "" : backLink}${cookContent}${order}</div>`;
+  setShowcaseCleanup(bindShowcase(container, { refresh, setBusy }));
+  updateSmoke(active ? cook : null, samples.at(-1));
   if (liveForms) bindLiveForms(container, { cook, orderCook, events, meat, pellets, refresh, setBusy, mode });
   else if (cook) bindPhotoGallery(container.querySelector(".cook-results"), { cookId: cook.id });
 }
@@ -126,10 +133,14 @@ export function mountCookView(container, { cookId = null, onStatus = () => {} } 
   let timer;
   let disposed = false;
   let formBusy = false;
+  let showcaseCleanup = () => {};
+  const smoke = cookId == null ? mountSmoke(container) : { update() {}, cleanup() {} };
   const refresh = async () => {
     if (disposed || document.hidden || formBusy) return;
     try {
-      await load(container, onStatus, () => !disposed, cookId, refresh, (busy) => { formBusy = busy; });
+      showcaseCleanup();
+      showcaseCleanup = () => {};
+      await load(container, onStatus, () => !disposed, cookId, refresh, (busy) => { formBusy = busy; }, (cleanup) => { showcaseCleanup = cleanup; }, smoke.update);
     } catch (error) {
       console.error("Could not load live cook", error);
       if (!container.querySelector(".live-hero")) container.innerHTML = `<section class="board live-empty"><h1 class="hd">The Pit</h1><p>Could not load the cook board.</p></section>`;
@@ -142,6 +153,8 @@ export function mountCookView(container, { cookId = null, onStatus = () => {} } 
   document.addEventListener("visibilitychange", visibilityChanged);
   return () => {
     disposed = true;
+    showcaseCleanup();
+    smoke.cleanup();
     window.clearInterval(timer);
     document.removeEventListener("visibilitychange", visibilityChanged);
   };

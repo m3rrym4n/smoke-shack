@@ -341,7 +341,10 @@ def test_snapshot_reads_climate_attributes_and_real_probe_connections() -> None:
         warning="sensor.green_mountain_grill_warning",
     )
     states: dict[str, dict[str, Any]] = {
-        entities.pit_climate: {"state": "heat", "attributes": {"temperature": 275}},
+        entities.pit_climate: {
+            "state": "heat",
+            "attributes": {"temperature": 275, "friendly_name": "Daniel Boone Prime"},
+        },
         entities.pit_temp: {"state": "250"},
         entities.probe1_temp: {"state": "160"},
         entities.probe2_temp: {"state": "unknown"},
@@ -357,8 +360,45 @@ def test_snapshot_reads_climate_attributes_and_real_probe_connections() -> None:
     snapshot = HomeAssistantClient("http://ha", "token", entities)._snapshot(states)
 
     assert snapshot.setpoint == 275
+    assert snapshot.grill_name == "Daniel Boone Prime"
     assert snapshot.probe1_target == 203
     assert snapshot.probe2_target == 165
     assert snapshot.probe1_connected
     assert not snapshot.probe2_connected
     assert snapshot.probe2 is None
+
+
+@pytest.mark.asyncio
+async def test_ingest_caches_last_grill_name_when_ha_state_loses_it(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    source = SnapshotSource(
+        GrillSnapshot(
+            grill_name="Daniel Boone",
+            setpoint=275,
+            fire_state="Running",
+            power_state="On",
+            hvac_mode="heat",
+        )
+    )
+    sleeper = ControlledSleep()
+    task = asyncio.create_task(ingest(source, CookService(sessions, clock), 10, sleeper))
+    await wait_for_samples(sessions, 1)
+    assert source.status.grill_name == "Daniel Boone"
+
+    source.updates.put_nowait(
+        GrillSnapshot(
+            setpoint=275,
+            fire_state="Running",
+            power_state="On",
+            hvac_mode="heat",
+        )
+    )
+    for _ in range(100):
+        await asyncio.sleep(0)
+        if source.updates.empty():
+            break
+    assert source.status.grill_name == "Daniel Boone"
+
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)

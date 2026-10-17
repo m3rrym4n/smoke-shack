@@ -125,3 +125,36 @@ def test_photos_are_ordered_oldest_first_without_mutating_input() -> None:
                                   original: photos.map(item => item.id)}));
     """
     assert run_logic(expression) == {"ordered": [2, 5, 9], "original": [9, 2, 5]}
+
+
+def test_showcase_file_validation() -> None:
+    expression = """
+      console.log(JSON.stringify([
+        logic.validateShowcaseFile({type:"image/png",size:123}),
+        logic.validateShowcaseFile({type:"image/gif",size:123}),
+        logic.validateShowcaseFile({type:"image/jpeg",size:0}),
+        logic.validateShowcaseFile({type:"image/webp",size:5*1024*1024+1}),
+      ]));
+    """
+    assert run_logic(expression) == [
+        "",
+        "Choose a PNG, JPEG, or WebP image.",
+        "This image is empty.",
+        "Image must be 5 MB or smaller.",
+    ]
+
+
+def test_showcase_placeholders_layout_and_stack_clamping() -> None:
+    expression = """
+      console.log(JSON.stringify({
+        placeholders: [logic.showcasePlaceholder(null), logic.showcasePlaceholder("/logo")],
+        layouts: [logic.showcaseLayoutClass(320), logic.showcaseLayoutClass(601)],
+        positions: [logic.clampStackPosition(-8, 50), logic.clampStackPosition(38, 50),
+                    logic.clampStackPosition(108, 5), logic.clampStackPosition("bad", 5)],
+      }));
+    """
+    assert run_logic(expression) == {
+        "placeholders": ["placeholder", "image"],
+        "layouts": ["showcase-mobile", "showcase-wide"],
+        "positions": [0, 38, 100, 5],
+    }
