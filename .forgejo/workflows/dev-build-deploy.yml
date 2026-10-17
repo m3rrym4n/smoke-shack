@@ -48,9 +48,62 @@ jobs:
       - name: Update deployed image tag
         if: github.event_name == 'push'
         run: |
+          BUILT_COMMIT="$(git rev-parse HEAD)"
+
+          newer_dev_commit_exists() {
+            git fetch origin dev
+            newer_commits="$(
+              git log --format='%s' "${BUILT_COMMIT}..origin/dev" |
+                grep -v '^chore: update smoke-stack-dev deployed image to ' || true
+            )"
+            [ -n "${newer_commits}" ]
+          }
+
+          if newer_dev_commit_exists; then
+            echo "newer commit on dev, its run will write the tag"
+            exit 0
+          fi
+
           sed -i "s|image: 192.168.1.73:5050/smoke-stack/smoke-stack:.*|image: 192.168.1.73:5050/smoke-stack/smoke-stack:${{ env.IMAGE_TAG }}|" compose.yml
           git config user.email "ci@smoke-stack.local"
           git config user.name "smoke-stack-ci"
           git add compose.yml
           git commit -m "chore: update smoke-stack-dev deployed image to ${{ env.IMAGE_TAG }}"
-          git push origin HEAD:dev
+
+          if newer_dev_commit_exists; then
+            echo "newer commit on dev, its run will write the tag"
+            exit 0
+          fi
+          git pull --rebase origin dev
+          if newer_dev_commit_exists; then
+            echo "newer commit on dev, its run will write the tag"
+            exit 0
+          fi
+
+          if git push origin HEAD:dev; then
+            exit 0
+          fi
+
+          retries=0
+          while [ "${retries}" -lt 5 ]; do
+            retries=$((retries + 1))
+            echo "push rejected; retry ${retries} of 5 in 3 seconds"
+            sleep 3
+
+            if newer_dev_commit_exists; then
+              echo "newer commit on dev, its run will write the tag"
+              exit 0
+            fi
+
+            git pull --rebase origin dev
+            if newer_dev_commit_exists; then
+              echo "newer commit on dev, its run will write the tag"
+              exit 0
+            fi
+            if git push origin HEAD:dev; then
+              exit 0
+            fi
+          done
+
+          echo "failed to push deployed image tag after 5 retries"
+          exit 1
