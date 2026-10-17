@@ -1,0 +1,39 @@
+name: Main Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-stack-main-release
+  cancel-in-progress: false
+
+jobs:
+  release-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse release from non-main branch
+        run: |
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "Refusing release from ${{ github.ref_name }}"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - name: Install quality tooling (uv-managed Python 3.12)
+        run: |
+          curl -LsSf https://astral.sh/uv/0.8.15/install.sh | sh
+          "$HOME/.local/bin/uv" venv --python 3.12 .quality-venv
+          "$HOME/.local/bin/uv" pip install --python .quality-venv/bin/python -e '.[dev]'
+      - name: Verify
+        run: |
+          .quality-venv/bin/ruff check .
+          .quality-venv/bin/mypy app
+          .quality-venv/bin/pytest
+      - name: Install Docker CLI
+        run: apt-get update && apt-get install -y docker.io
+      - name: Build image
+        run: docker build -t 192.168.1.73:5050/smoke-stack/smoke-stack:main-${{ github.sha }} .
+      - name: Release and deployment placeholder
+        if: github.event_name == 'push'
+        run: echo "TODO job after first main promotion; compose.main.yml does not exist yet."
