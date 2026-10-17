@@ -87,11 +87,13 @@ class CookService:
         clock: Clock | None = None,
         sample_interval_seconds: int = 10,
         incomplete_timeout_minutes: int = 90,
+        data_gap_event_min_seconds: int = 120,
     ) -> None:
         self.sessions = sessions
         self.clock = clock or SystemClock()
         self.sample_interval = timedelta(seconds=sample_interval_seconds)
         self.incomplete_timeout = timedelta(minutes=incomplete_timeout_minutes)
+        self.data_gap_event_min_seconds = data_gap_event_min_seconds
         self._invalid_since: datetime | None = None
         self._previous_snapshots: dict[int, GrillSnapshot] = {}
 
@@ -146,14 +148,18 @@ class CookService:
             )
             if gap_detected and previous is not None:
                 cook.has_gap = True
-                self._event(
-                    session,
-                    cook,
-                    now,
-                    "data_gap",
-                    "Home Assistant data gap",
-                    {"start": _iso(as_utc(previous.ts)), "end": _iso(now)},
-                )
+                gap_seconds = int((now - as_utc(previous.ts)).total_seconds())
+                if gap_seconds >= self.data_gap_event_min_seconds:
+                    self._event(
+                        session,
+                        cook,
+                        now,
+                        "data_gap",
+                        "Home Assistant data gap",
+                        {"start": _iso(as_utc(previous.ts)), "end": _iso(now)},
+                    )
+                else:
+                    self._record_brief_gap_summary(session, cook, now, gap_seconds)
             if (
                 previous is None
                 or resumed_after_invalid
@@ -378,6 +384,33 @@ class CookService:
                     {"probe": probe, "target": target},
                 )
 
+    def _record_brief_gap_summary(
+        self, session: Session, cook: Cook, started_at: datetime, gap_seconds: int
+    ) -> None:
+        summary = session.scalar(
+            select(Event).where(
+                Event.cook_id == cook.id, Event.kind == "data_gap_summary"
+            )
+        )
+        if summary is None:
+            summary = Event(
+                cook_id=cook.id,
+                ts=started_at,
+                kind="data_gap_summary",
+                source="auto",
+                title="Brief Home Assistant data gaps",
+                data={"count": 0, "total_seconds": 0, "longest_seconds": 0},
+            )
+            session.add(summary)
+        count = int(summary.data.get("count", 0)) + 1
+        total = int(summary.data.get("total_seconds", 0)) + gap_seconds
+        longest = max(int(summary.data.get("longest_seconds", 0)), gap_seconds)
+        summary.data = {"count": count, "total_seconds": total, "longest_seconds": longest}
+        summary.description = (
+            f"{count} brief {'gap' if count == 1 else 'gaps'}, "
+            f"{_duration_text(total)} total, longest {longest}s"
+        )
+
     @staticmethod
     def _sample(cook_id: int, snapshot: GrillSnapshot, now: datetime) -> Sample:
         return Sample(
@@ -432,3 +465,12 @@ def _iso(value: datetime) -> str:
 
 def _normalized(value: str | None) -> str:
     return (value or "").casefold().replace("_", " ")
+
+
+def _duration_text(seconds: int) -> str:
+    minutes, remaining = divmod(seconds, 60)
+    if minutes and remaining:
+        return f"{minutes}m {remaining}s"
+    if minutes:
+        return f"{minutes}m"
+    return f"{remaining}s"

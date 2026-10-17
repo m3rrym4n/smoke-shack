@@ -154,11 +154,64 @@ def test_ha_outage_creates_gap_without_interpolation(
     with sessions() as session:
         samples = list(session.scalars(select(Sample).where(Sample.cook_id == cook.id)))
         gap = session.scalar(
-            select(Event).where(Event.cook_id == cook.id, Event.kind == "data_gap")
+            select(Event).where(Event.cook_id == cook.id, Event.kind == "data_gap_summary")
         )
     assert len(samples) == 2
     assert gap is not None
-    assert gap.data["end"] == "2026-10-16T16:57:34Z"
+    assert gap.data == {"count": 1, "total_seconds": 31, "longest_seconds": 31}
+
+
+def test_brief_gaps_update_one_summary_and_long_gap_stays_individual(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock, sample_interval_seconds=10)
+    cook = service.process(snap(setpoint=275))
+    assert cook is not None
+
+    clock.advance(seconds=40)
+    service.process(snap(setpoint=275))
+    first_gap_ended_at = clock.now()
+    clock.advance(seconds=70)
+    service.process(snap(setpoint=275))
+    clock.advance(seconds=120)
+    service.process(snap(setpoint=275))
+
+    with sessions() as session:
+        summaries = list(
+            session.scalars(
+                select(Event).where(
+                    Event.cook_id == cook.id, Event.kind == "data_gap_summary"
+                )
+            )
+        )
+        gaps = list(
+            session.scalars(
+                select(Event).where(Event.cook_id == cook.id, Event.kind == "data_gap")
+            )
+        )
+    assert len(summaries) == 1
+    assert summaries[0].ts == first_gap_ended_at
+    assert summaries[0].title == "Brief Home Assistant data gaps"
+    assert summaries[0].description == "2 brief gaps, 1m 50s total, longest 70s"
+    assert summaries[0].data == {"count": 2, "total_seconds": 110, "longest_seconds": 70}
+    assert len(gaps) == 1
+    assert gaps[0].data["start"] == "2026-10-16T16:58:53Z"
+    assert gaps[0].data["end"] == "2026-10-16T17:00:53Z"
+
+
+def test_data_gap_event_threshold_is_configurable(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(
+        sessions, clock, sample_interval_seconds=10, data_gap_event_min_seconds=45
+    )
+    cook = service.process(snap(setpoint=275))
+    assert cook is not None
+    clock.advance(seconds=45)
+    service.process(snap(setpoint=275))
+
+    assert kinds(sessions, cook.id).count("data_gap") == 1
+    assert "data_gap_summary" not in kinds(sessions, cook.id)
 
 
 def test_restart_resumes_active_phase(sessions: sessionmaker[Session], clock: FakeClock) -> None:
@@ -439,7 +492,7 @@ def test_valid_snapshot_after_invalid_streak_records_one_gap(
     resumed = service.process(snap(setpoint=275, fire="Running"))
 
     assert resumed is not None and resumed.has_gap
-    assert kinds(sessions, cook.id).count("data_gap") == 1
+    assert kinds(sessions, cook.id).count("data_gap_summary") == 1
     with sessions() as session:
         samples = list(session.scalars(select(Sample).where(Sample.cook_id == cook.id)))
     assert len(samples) == 2
