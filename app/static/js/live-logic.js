@@ -70,3 +70,30 @@ export function orderPadSavedMessage(mode) {
     ? "Saved. It will be picked up automatically when the grill starts."
     : "Order saved.";
 }
+
+export const PHOTO_MAX_BYTES = 15 * 1024 * 1024;
+export const PHOTO_MAX_EDGE = 2000;
+const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+export function validatePhotoFile(file) {
+  if (!PHOTO_TYPES.has(file?.type)) return "Choose a JPEG, PNG, or WebP photo.";
+  if (!Number.isFinite(file.size) || file.size <= 0) return "This photo is empty.";
+  return "";
+}
+
+export function downscaleSize(width, height, maxEdge = PHOTO_MAX_EDGE) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return { width: 0, height: 0 };
+  }
+  const scale = Math.min(1, maxEdge / Math.max(width, height));
+  return { width: Math.round(width * scale), height: Math.round(height * scale) };
+}
+
+export function orderPhotos(photos) {
+  return [...photos].sort((left, right) => Number(left.id) - Number(right.id));
+}
+
+export function photoErrorMessage(error) {
+  const message = typeof error?.message === "string" ? error.message.trim() : "";
+  return message || "Could not send this photo. Please try again.";
+}
