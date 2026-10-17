@@ -46,6 +46,7 @@ def create_app(
         factory,
         sample_interval_seconds=config.sample_interval_seconds,
         incomplete_timeout_minutes=config.incomplete_timeout_minutes,
+        data_gap_event_min_seconds=config.data_gap_event_min_seconds,
     )
     client = ha_client
     ha_status = HAStatus(configured=bool(config.ha_url and config.ha_token))
@@ -105,6 +106,7 @@ def create_app(
             "ingest": {
                 "last_sample_at": _iso(last_sample),
                 "sample_interval_seconds": config.sample_interval_seconds,
+                "data_gap_event_min_seconds": config.data_gap_event_min_seconds,
             },
             "active_cook": (
                 {

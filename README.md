@@ -32,6 +32,7 @@ authenticates to `/api/websocket`, loads an initial state snapshot, subscribes t
 | `PHOTO_DIR` | Photo storage directory | `photos` |
 | `SMOKE_STACK_GRILL_NAME` | Grill name fallback when Home Assistant has none | `My grill` |
 | `SAMPLE_INTERVAL_SECONDS` | Active-cook sampling interval | `10` |
+| `DATA_GAP_EVENT_MIN_SECONDS` | Minimum gap length that gets its own Cook Log event | `120` |
 | `INCOMPLETE_TIMEOUT_MINUTES` | Cool-down timeout before marking incomplete | `90` |
 | `TZ` | Display timezone reserved for the UI | `America/Los_Angeles` |
 | `ENTITIES_CONFIG` | Entity mapping YAML path | `config/entities.yaml` |

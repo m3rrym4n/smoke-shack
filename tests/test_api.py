@@ -75,6 +75,7 @@ def test_status_with_ha_unconfigured(sessions: sessionmaker[Session]) -> None:
     assert status["ha"]["connected"] is False
     assert status["active_cook"] is None
     assert status["ingest"]["sample_interval_seconds"] == 10
+    assert status["ingest"]["data_gap_event_min_seconds"] == 120
     assert status["version"] == "0.1.0"
     assert status["grill_name"] == "My grill"
     assert status["grill_title"] == "My grill"

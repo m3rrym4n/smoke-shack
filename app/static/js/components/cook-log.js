@@ -18,11 +18,53 @@ function timestamp(value) {
   };
 }
 
-const autoIcons = { fire_lit: "♨", setpoint_changed: "↗", phase_changed: "→", data_gap: "!", probe_connected: "+", probe_disconnected: "−", warning: "!" };
+const autoIcons = { fire_lit: "♨", setpoint_changed: "↗", phase_changed: "→", data_gap: "!", data_gap_summary: "!", probe_connected: "+", probe_disconnected: "−", warning: "!" };
 
-export function cookLogMarkup(events, editable = false) {
+function gapSeconds(event) {
+  const start = Date.parse(event.data?.start || "");
+  const end = Date.parse(event.data?.end || "");
+  return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, Math.round((end - start) / 1000)) : null;
+}
+
+function shortDuration(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  if (minutes && remaining) return `${minutes}m ${remaining}s`;
+  return minutes ? `${minutes}m` : `${remaining}s`;
+}
+
+export function collapseBriefDataGaps(events, thresholdSeconds = 120) {
+  const collapsed = [];
+  let group = [];
+  const flush = () => {
+    if (!group.length) return;
+    const durations = group.map(gapSeconds);
+    const total = durations.reduce((sum, value) => sum + value, 0);
+    const first = group[0];
+    collapsed.push({
+      ...first,
+      id: `brief-data-gaps-${first.id}`,
+      ts: first.ts,
+      elapsed_seconds: first.elapsed_seconds,
+      kind: "data_gap_summary",
+      title: `${group.length} brief data ${group.length === 1 ? "gap" : "gaps"} (${shortDuration(total)} total, longest ${Math.max(...durations)}s)`,
+      description: null,
+      data: { count: group.length, total_seconds: total, longest_seconds: Math.max(...durations) },
+    });
+    group = [];
+  };
+  events.forEach((event) => {
+    const duration = event.kind === "data_gap" ? gapSeconds(event) : null;
+    if (duration !== null && duration < thresholdSeconds) group.push(event);
+    else { flush(); collapsed.push(event); }
+  });
+  flush();
+  return collapsed;
+}
+
+export function cookLogMarkup(events, editable = false, dataGapEventMinSeconds = 120) {
   let userNumber = 0;
-  const rows = events.map((event) => {
+  const rows = collapseBriefDataGaps(events, dataGapEventMinSeconds).map((event) => {
     const user = event.source === "user";
     if (user) userNumber += 1;
     const when = timestamp(event.ts);
