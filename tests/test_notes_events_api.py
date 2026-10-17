@@ -70,11 +70,13 @@ def test_user_events_create_patch_delete_and_exact_timestamp(
         assert defaulted.status_code == 201
         assert defaulted.json()["ts"] == "2026-10-16T16:58:18Z"
         assert defaulted.json()["elapsed_seconds"] == 75
-        assert defaulted.json()["kind"] == defaulted.json()["source"] == "user"
+        assert defaulted.json()["kind"] == "custom"
+        assert defaulted.json()["source"] == "user"
 
         explicit = client.post(
             f"/api/cooks/{cook.id}/events",
             json={
+                "kind": "wrapped",
                 "title": "Wrapped",
                 "description": "Foil",
                 "ts": "2026-10-16T17:00:03Z",
@@ -83,13 +85,15 @@ def test_user_events_create_patch_delete_and_exact_timestamp(
         assert explicit.status_code == 201
         assert explicit.json()["elapsed_seconds"] == 180
         assert explicit.json()["description"] == "Foil"
+        assert explicit.json()["kind"] == "wrapped"
 
         patched = client.patch(
             f"/api/events/{explicit.json()['id']}",
-            json={"title": "Wrapped tight", "ts": "2026-10-16T17:01:03Z"},
+            json={"kind": "rested", "title": "Wrapped tight", "ts": "2026-10-16T17:01:03Z"},
         )
         assert patched.status_code == 200
         assert patched.json()["title"] == "Wrapped tight"
+        assert patched.json()["kind"] == "rested"
         assert patched.json()["elapsed_seconds"] == 240
         listed = client.get(f"/api/cooks/{cook.id}/events").json()
         assert [row["id"] for row in listed] == [defaulted.json()["id"], explicit.json()["id"]]

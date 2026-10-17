@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add live event pinning and editing plus the cook Order Pad form.
 - Add cook temperature charts, event logs, paginated cook history, and read-only cook details.
 - Add the read-only live cook boards with pit gauge, phase progress, probes, and paused background polling.
 - Add the BBQ signage UI shell, hash navigation, and active-cook neon indicator.

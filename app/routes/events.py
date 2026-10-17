@@ -65,7 +65,7 @@ def create_event(cook_id: int, payload: UserEventCreate, session: SessionDep) ->
     event = Event(
         cook_id=cook.id,
         ts=event_ts,
-        kind="user",
+        kind=payload.kind,
         source="user",
         title=payload.title,
         description=payload.description,

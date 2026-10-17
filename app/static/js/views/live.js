@@ -1,7 +1,8 @@
-import { getCook, getCookEvents, getCookSamples, getRecentCooks, getStatus } from "../api.js";
+import { getCook, getCookEvents, getCookSamples, getMeat, getPellets, getRecentCooks, getStatus } from "../api.js";
 import { chartMarkup } from "../components/chart.js";
 import { cookLogMarkup } from "../components/cook-log.js";
 import { gaugeSvg } from "../components/gauge.js";
+import { bindLiveForms, orderPadMarkup, pinBoardMarkup } from "../components/live-forms.js";
 import { clampPercent, phaseDurations, phasePercentages } from "../live-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -56,7 +57,7 @@ function heroMarkup(cook, sample, active, historical) {
   </div>`;
 }
 
-async function load(container, onStatus, isCurrent, requestedCookId) {
+async function load(container, onStatus, isCurrent, requestedCookId, refresh, setBusy) {
   let cookId = requestedCookId;
   let active = false;
   if (cookId == null) {
@@ -75,18 +76,26 @@ async function load(container, onStatus, isCurrent, requestedCookId) {
     container.innerHTML = `<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire's out. No cooks on the board yet.</p></section>`;
     return;
   }
-  const [cook, samples, events] = await Promise.all([getCook(cookId), getCookSamples(cookId), getCookEvents(cookId)]);
+  const liveForms = requestedCookId == null;
+  const [cook, samples, events, meat, pellets] = await Promise.all([
+    getCook(cookId), getCookSamples(cookId), getCookEvents(cookId),
+    liveForms ? getMeat() : [], liveForms ? getPellets() : [],
+  ]);
   if (!isCurrent()) return;
-  container.innerHTML = `<div class="cook-detail">${requestedCookId == null ? "" : '<a class="back-link cc" href="#cooks">← All cooks</a>'}${heroMarkup(cook, samples.at(-1), active, requestedCookId != null)}${chartMarkup(samples, events, cook)}${cookLogMarkup(events)}</div>`;
+  const log = liveForms ? `<div class="log-pin-grid">${cookLogMarkup(events, true)}${pinBoardMarkup()}</div>` : cookLogMarkup(events);
+  const order = liveForms ? orderPadMarkup(cook, meat, pellets) : "";
+  container.innerHTML = `<div class="cook-detail">${requestedCookId == null ? "" : '<a class="back-link cc" href="#cooks">← All cooks</a>'}${heroMarkup(cook, samples.at(-1), active, requestedCookId != null)}${chartMarkup(samples, events, cook)}${log}${order}</div>`;
+  if (liveForms) bindLiveForms(container, { cook, events, meat, pellets, refresh, setBusy });
 }
 
 export function mountCookView(container, { cookId = null, onStatus = () => {} } = {}) {
   let timer;
   let disposed = false;
+  let formBusy = false;
   const refresh = async () => {
-    if (disposed || document.hidden) return;
+    if (disposed || document.hidden || formBusy) return;
     try {
-      await load(container, onStatus, () => !disposed, cookId);
+      await load(container, onStatus, () => !disposed, cookId, refresh, (busy) => { formBusy = busy; });
     } catch (error) {
       console.error("Could not load live cook", error);
       if (!container.querySelector(".live-hero")) container.innerHTML = `<section class="board live-empty"><h1 class="hd">The Pit</h1><p>Could not load the cook board.</p></section>`;

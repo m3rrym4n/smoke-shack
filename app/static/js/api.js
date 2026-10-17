@@ -46,3 +46,27 @@ export function getRecentCooks(limit = 1, offset = 0) {
   const params = new URLSearchParams({ limit, offset });
   return getJson(`/api/cooks?${params}`);
 }
+
+export function getMeat() {
+  return getJson("/api/meat");
+}
+
+export function getPellets() {
+  return getJson("/api/pellets");
+}
+
+export function createCookEvent(cookId, body) {
+  return sendJson("POST", `/api/cooks/${cookId}/events`, body);
+}
+
+export function updateCookEvent(eventId, body) {
+  return sendJson("PATCH", `/api/events/${eventId}`, body);
+}
+
+export function deleteCookEvent(eventId) {
+  return sendJson("DELETE", `/api/events/${eventId}`);
+}
+
+export function updateCook(cookId, body) {
+  return sendJson("PATCH", `/api/cooks/${cookId}`, body);
+}
