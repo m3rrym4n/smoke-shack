@@ -4,7 +4,11 @@ async function requestJson(path, options = {}) {
     let detail = `${response.status} ${response.statusText}`;
     try {
       const payload = await response.json();
-      detail = payload.detail ?? detail;
+      if (Array.isArray(payload.detail)) {
+        detail = payload.detail.map((item) => item.msg?.replace(/^Value error, /, "") || "Check this field.").join(" ");
+      } else {
+        detail = payload.detail ?? detail;
+      }
     } catch {
       // The response was not JSON; retain the HTTP status description.
     }
@@ -49,6 +53,23 @@ export function getRecentCooks(limit = 1, offset = 0) {
 
 export function getMeat() {
   return getJson("/api/meat");
+}
+
+export function getCooksForMeat(meatId) {
+  const params = new URLSearchParams({ meat_id: meatId, limit: 1 });
+  return getJson(`/api/cooks?${params}`);
+}
+
+export function createMeat(body) {
+  return sendJson("POST", "/api/meat", body);
+}
+
+export function updateMeat(meatId, body) {
+  return sendJson("PATCH", `/api/meat/${meatId}`, body);
+}
+
+export function deleteMeat(meatId) {
+  return sendJson("DELETE", `/api/meat/${meatId}`);
 }
 
 export function getPellets() {

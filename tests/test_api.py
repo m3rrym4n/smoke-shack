@@ -44,6 +44,15 @@ def test_live_view_static_assets_exist(sessions: sessionmaker[Session]) -> None:
             assert "javascript" in response.headers["content-type"]
 
 
+def test_meat_view_static_assets_exist(sessions: sessionmaker[Session]) -> None:
+    app = create_app(Settings(), sessions, FakeHAClient())
+    with TestClient(app) as client:
+        for path in ("/js/views/meat.js", "/js/meat-logic.js", "/js/components/ui.js"):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert "javascript" in response.headers["content-type"]
+
+
 def test_status_with_ha_unconfigured(sessions: sessionmaker[Session]) -> None:
     app = create_app(Settings(), sessions)
     with TestClient(app) as client:
