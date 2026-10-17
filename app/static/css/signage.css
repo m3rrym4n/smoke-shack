@@ -78,4 +78,5 @@ body{min-width:0;background-color:#4a2d19;background-image:linear-gradient(rgba(
 .progress-tag{padding:2px 8px;border:2px solid #9fd3e6;border-radius:14px;color:#9fd3e6;font-size:14px;text-transform:uppercase}
 .gauge-logo-placeholder{font-family:'Patrick Hand',cursive;font-size:12px;letter-spacing:.06em;fill:#2a1b10;text-anchor:middle;dominant-baseline:middle}
 .showcase-controls{grid-column:1/-1;display:flex;align-items:center;gap:14px;flex-wrap:wrap}.showcase-controls .smoke-toggle{padding:4px 14px}.showcase-controls .change-pictures{grid-column:auto}
+.showcase-name{display:grid;min-width:0}.showcase-title{color:#f7d65a;font:inherit;overflow-wrap:anywhere}.showcase-maker{color:#b9a56a;font-size:45%;font-weight:400;line-height:1.25;overflow-wrap:anywhere}
 .editor-open .photo-stack-anchor::after{content:"";position:absolute;left:-6px;top:-6px;width:12px;height:12px;border-radius:50%;background:#f7d65a;border:2px solid #1f2b25;box-shadow:0 0 0 2px #f1efe4}.showcase-preview{padding:0;background:transparent;font:inherit;cursor:pointer}.showcase-image-actions{align-items:center}.showcase-message{display:inline-flex;align-items:center}

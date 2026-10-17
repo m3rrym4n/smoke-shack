@@ -30,6 +30,13 @@ export function showcaseLayoutClass(width) {
   return Number(width) <= 600 ? "showcase-mobile" : "showcase-wide";
 }
 
+export function showcaseNameLines(status = {}) {
+  return {
+    title: status.grill_title || status.grill_name || "My grill",
+    maker: status.grill_maker || "",
+  };
+}
+
 export function clampStackPosition(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : fallback;

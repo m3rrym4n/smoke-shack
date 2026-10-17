@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import urllib.request
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -25,6 +26,8 @@ class HAStatus:
     last_error: str | None = None
     last_event_at: datetime | None = None
     grill_name: str | None = None
+    grill_title: str | None = None
+    grill_maker: str | None = None
 
 
 class HAClient(Protocol):
@@ -78,6 +81,7 @@ class HomeAssistantClient:
         parsed = urlsplit(url)
         scheme = {"http": "ws", "https": "wss"}.get(parsed.scheme, parsed.scheme)
         self.websocket_url = urlunsplit((scheme, parsed.netloc, "/api/websocket", "", ""))
+        self.template_url = urlunsplit((parsed.scheme, parsed.netloc, "/api/template", "", ""))
         self.host = parsed.hostname or parsed.netloc
         self.token = token
         self.entities = entities
@@ -112,6 +116,7 @@ class HomeAssistantClient:
             self.status.connected = True
             self.status.last_error = None
             logger.info("HA websocket connected to %s", self.host)
+            await self._refresh_device_info()
             await socket.send(json.dumps({"id": 1, "type": "get_states"}))
             initial = json.loads(await socket.recv())
             self.status.last_event_at = datetime.now(UTC).replace(microsecond=0)
@@ -162,6 +167,40 @@ class HomeAssistantClient:
             entity_id = event.get("entity_id")
             if entity_id in self.entity_ids and event.get("new_state") is not None:
                 states[entity_id] = event["new_state"]
+
+    async def _refresh_device_info(self) -> None:
+        entity_id = self.entities.pit_climate
+        template = (
+            "{{ device_attr(device_id('"
+            + entity_id
+            + "'), 'model') }}|{{ device_attr(device_id('"
+            + entity_id
+            + "'), 'manufacturer') }}|{{ device_attr(device_id('"
+            + entity_id
+            + "'), 'name_by_user') }}"
+        )
+        request = urllib.request.Request(
+            self.template_url,
+            data=json.dumps({"template": template}).encode(),
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            output = await asyncio.to_thread(self._read_template, request)
+            model, manufacturer, name_by_user = parse_device_template(output)
+        except (OSError, RuntimeError, ValueError):
+            logger.warning("HA device information lookup failed for %s", self.host)
+            return
+        self.status.grill_title = name_by_user or model
+        self.status.grill_maker = manufacturer
+
+    @staticmethod
+    def _read_template(request: urllib.request.Request) -> str:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return cast(bytes, response.read()).decode("utf-8")
 
     def _configured_states(self, result: object) -> dict[str, dict[str, Any]]:
         if not isinstance(result, list):
@@ -222,3 +261,15 @@ class HomeAssistantClient:
             hvac_mode=cast(str | None, mode),
             extra_probes={entity: number(entity) for entity in self.entities.extra_probes},
         )
+
+
+def parse_device_template(output: str) -> tuple[str | None, str | None, str | None]:
+    parts = output.strip().split("|")
+    if len(parts) != 3:
+        raise ValueError("Unexpected Home Assistant device template output")
+
+    def value(part: str) -> str | None:
+        cleaned = part.strip()
+        return cleaned if cleaned and cleaned != "None" else None
+
+    return value(parts[0]), value(parts[1]), value(parts[2])

@@ -78,6 +78,8 @@ def test_status_with_ha_unconfigured(sessions: sessionmaker[Session]) -> None:
     assert status["ingest"]["data_gap_event_min_seconds"] == 120
     assert status["version"] == "0.1.0"
     assert status["grill_name"] == "My grill"
+    assert status["grill_title"] == "My grill"
+    assert status["grill_maker"] is None
 
 
 def test_status_grill_name_fallback_and_cached_ha_name(
@@ -89,7 +91,15 @@ def test_status_grill_name_fallback_and_cached_ha_name(
         assert client.get("/status").json()["grill_name"] == "Backyard grill"
         fake.status.grill_name = "Daniel Boone"
         fake.status.connected = False
-        assert client.get("/status").json()["grill_name"] == "Daniel Boone"
+        status = client.get("/status").json()
+        assert status["grill_name"] == "Daniel Boone"
+        assert status["grill_title"] == "Daniel Boone"
+        fake.status.grill_title = "Backyard Beast"
+        fake.status.grill_maker = "Green Mountain Grills"
+        status = client.get("/status").json()
+        assert status["grill_name"] == "Daniel Boone"
+        assert status["grill_title"] == "Backyard Beast"
+        assert status["grill_maker"] == "Green Mountain Grills"
 
 
 def test_status_does_not_report_planned_cook(sessions: sessionmaker[Session]) -> None:

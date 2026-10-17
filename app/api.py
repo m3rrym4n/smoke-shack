@@ -92,8 +92,11 @@ def create_app(
             .order_by(Cook.started_at.desc())
         )
         last_sample = session.scalar(select(Sample.ts).order_by(Sample.ts.desc()).limit(1))
+        fallback_name = ha_status.grill_name or config.grill_name.strip() or "My grill"
         return {
-            "grill_name": ha_status.grill_name or config.grill_name.strip() or "My grill",
+            "grill_name": fallback_name,
+            "grill_title": ha_status.grill_title or fallback_name,
+            "grill_maker": ha_status.grill_maker,
             "ha": {
                 "configured": ha_status.configured,
                 "connected": ha_status.connected,

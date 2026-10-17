@@ -1,7 +1,7 @@
 import { deleteShowcaseImage, uploadShowcaseImage } from "../api.js";
 import {
   readStackPosition as readStackPositionValue, showcaseLayoutClass, showcasePlaceholder, showcaseSaveEnabled,
-  validateShowcaseFile, writeStackPosition,
+  showcaseNameLines, validateShowcaseFile, writeStackPosition,
 } from "../live-logic.js";
 
 const STACK_POSITION_KEY = "smoke-stack.showcase.stack-position";
@@ -30,10 +30,10 @@ function photoMarkup(url, position) {
   return `<div class="showcase-photo"><img src="${escapeHtml(url)}" alt="Grill"><span class="photo-stack-anchor" data-smokestack style="left:${position.x}%;top:${position.y}%" aria-hidden="true"></span></div>`;
 }
 
-export function showcaseMarkup(showcase, grillName, width = window.innerWidth, smokeControl = true) {
+export function showcaseMarkup(showcase, grillIdentity, width = window.innerWidth, smokeControl = true) {
   const position = readStackPosition();
   return `<div class="pit-showcase ${showcaseLayoutClass(width)}">
-    <div class="showcase-name" title="${escapeHtml(grillName)}">${escapeHtml(grillName || "My grill")}</div>
+    <div class="showcase-name"><span class="showcase-title"></span><span class="showcase-maker" hidden></span></div>
     ${photoMarkup(showcase?.photo_url, position)}
     <div class="showcase-controls">${smokeControl ? '<button class="smoke-toggle cc" type="button" aria-pressed="true">Smoke</button>' : ""}<button class="change-pictures" type="button" aria-expanded="false">Change pictures</button></div>
     <div class="showcase-editor" hidden>
@@ -57,9 +57,16 @@ function editorRow(kind, label, imageUrl) {
   return `<div class="showcase-image-field" data-image-kind="${kind}"><label><span>${label}</span><input type="file" accept="${accept}"></label><button class="showcase-preview" type="button" aria-label="Choose ${label.toLowerCase()}">${preview}</button><div class="showcase-image-actions"><button class="cc save-showcase" type="button" disabled>Save</button><span class="showcase-message" role="status"></span><button class="cc remove-showcase" type="button" ${imageUrl ? "" : "disabled"}>Remove</button></div></div>`;
 }
 
-export function bindShowcase(container, { onLogoChange = () => {}, setBusy }) {
+export function bindShowcase(container, { grillIdentity = {}, onLogoChange = () => {}, setBusy }) {
   const strip = container.querySelector(".pit-showcase");
   if (!strip) return () => {};
+  const name = showcaseNameLines(grillIdentity);
+  const title = strip.querySelector(".showcase-title");
+  const maker = strip.querySelector(".showcase-maker");
+  title.textContent = name.title;
+  title.title = name.title;
+  maker.textContent = name.maker ? `by ${name.maker}` : "";
+  maker.hidden = !name.maker;
   const editor = strip.querySelector(".showcase-editor");
   const toggle = strip.querySelector(".change-pictures");
   const objectUrls = new Set();
