@@ -30,6 +30,7 @@ authenticates to `/api/websocket`, loads an initial state snapshot, subscribes t
 | `HA_WS_MAX_SIZE_BYTES` | Maximum Home Assistant websocket message size in bytes | `67108864` (64 MiB) |
 | `DATABASE_PATH` | SQLite database path | `smoke-stack.db` |
 | `PHOTO_DIR` | Photo storage directory | `photos` |
+| `SMOKE_STACK_GRILL_NAME` | Grill name fallback when Home Assistant has none | `My grill` |
 | `SAMPLE_INTERVAL_SECONDS` | Active-cook sampling interval | `10` |
 | `INCOMPLETE_TIMEOUT_MINUTES` | Cool-down timeout before marking incomplete | `90` |
 | `TZ` | Display timezone reserved for the UI | `America/Los_Angeles` |

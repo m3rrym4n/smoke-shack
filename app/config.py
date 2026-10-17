@@ -46,6 +46,7 @@ class Settings:
     ha_token: str = ""
     database_path: str = "smoke-stack.db"
     photo_dir: str = "photos"
+    grill_name: str = ""
     sample_interval_seconds: int = 10
     ha_ws_max_size_bytes: int = 67_108_864
     incomplete_timeout_minutes: int = 90
@@ -59,6 +60,7 @@ class Settings:
             ha_token=os.getenv("HA_TOKEN", ""),
             database_path=os.getenv("DATABASE_PATH", "smoke-stack.db"),
             photo_dir=os.getenv("PHOTO_DIR", "photos"),
+            grill_name=os.getenv("SMOKE_STACK_GRILL_NAME", ""),
             sample_interval_seconds=int(os.getenv("SAMPLE_INTERVAL_SECONDS", "10")),
             ha_ws_max_size_bytes=int(os.getenv("HA_WS_MAX_SIZE_BYTES", "67108864")),
             incomplete_timeout_minutes=int(os.getenv("INCOMPLETE_TIMEOUT_MINUTES", "90")),

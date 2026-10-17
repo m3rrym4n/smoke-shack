@@ -22,6 +22,7 @@ def as_utc(value: datetime) -> datetime:
 
 @dataclass(frozen=True)
 class GrillSnapshot:
+    grill_name: str | None = None
     pit_temp: float | None = None
     setpoint: float | None = None
     probe1: float | None = None

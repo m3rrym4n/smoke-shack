@@ -24,6 +24,7 @@ class HAStatus:
     connected: bool = False
     last_error: str | None = None
     last_event_at: datetime | None = None
+    grill_name: str | None = None
 
 
 class HAClient(Protocol):
@@ -56,6 +57,8 @@ async def ingest(
     try:
         async for snapshot in client.snapshots():
             latest_snapshot = snapshot
+            if snapshot.grill_name:
+                client.status.grill_name = snapshot.grill_name
             service.process(snapshot)
     finally:
         tick_task.cancel()
@@ -202,7 +205,9 @@ class HomeAssistantClient:
 
         climate = states.get(self.entities.pit_climate, {})
         mode = climate.get("state")
+        friendly_name = climate.get("attributes", {}).get("friendly_name")
         return GrillSnapshot(
+            grill_name=(friendly_name.strip() if isinstance(friendly_name, str) else None) or None,
             pit_temp=number(self.entities.pit_temp),
             setpoint=attribute_number(self.entities.pit_climate, "temperature"),
             probe1=number(self.entities.probe1_temp),

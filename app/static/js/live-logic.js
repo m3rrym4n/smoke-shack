@@ -5,6 +5,29 @@ export function clampPercent(value, target) {
   return Math.max(0, Math.min(100, (reading / goal) * 100));
 }
 
+export const SHOWCASE_MAX_BYTES = 5 * 1024 * 1024;
+const SHOWCASE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+export function validateShowcaseFile(file) {
+  if (!SHOWCASE_IMAGE_TYPES.has(file?.type)) return "Choose a PNG, JPEG, or WebP image.";
+  if (!Number.isFinite(file.size) || file.size <= 0) return "This image is empty.";
+  if (file.size > SHOWCASE_MAX_BYTES) return "Image must be 5 MB or smaller.";
+  return "";
+}
+
+export function showcasePlaceholder(imageUrl) {
+  return imageUrl ? "image" : "placeholder";
+}
+
+export function showcaseLayoutClass(width) {
+  return Number(width) <= 600 ? "showcase-mobile" : "showcase-wide";
+}
+
+export function clampStackPosition(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : fallback;
+}
+
 function secondsBetween(start, end) {
   if (!start || !end) return 0;
   return Math.max(0, Math.round((new Date(end) - new Date(start)) / 1000));
