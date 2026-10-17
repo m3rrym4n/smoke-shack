@@ -1,6 +1,6 @@
 services:
   smoke-stack:
-    image: 192.168.1.73:5050/smoke-stack/smoke-stack:dev-1e9a59a
+    image: 192.168.1.73:5050/smoke-stack/smoke-stack:dev-013c254
     container_name: smoke-stack-dev
     restart: unless-stopped
     ports:
