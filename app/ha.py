@@ -40,6 +40,7 @@ class HomeAssistantClient:
         entities: EntityConfig,
         poll_interval_seconds: int = 10,
         max_size_bytes: int = 67_108_864,
+        coalesce_window_seconds: float = 1.0,
     ) -> None:
         parsed = urlsplit(url)
         scheme = {"http": "ws", "https": "wss"}.get(parsed.scheme, parsed.scheme)
@@ -50,6 +51,7 @@ class HomeAssistantClient:
         self.entity_ids = entities.all
         self.poll_interval_seconds = poll_interval_seconds
         self.max_size_bytes = max_size_bytes
+        self.coalesce_window_seconds = coalesce_window_seconds
         self.status = HAStatus(configured=bool(url and token))
 
     async def snapshots(self) -> AsyncIterator[GrillSnapshot]:
@@ -108,7 +110,25 @@ class HomeAssistantClient:
                     continue
                 if event.get("new_state") is not None:
                     states[entity_id] = event["new_state"]
+                    await self._coalesce_events(socket, states)
                     yield self._snapshot(states)
+
+    async def _coalesce_events(self, socket: Any, states: dict[str, dict[str, Any]]) -> None:
+        deadline = asyncio.get_running_loop().time() + self.coalesce_window_seconds
+        while (remaining := deadline - asyncio.get_running_loop().time()) > 0:
+            try:
+                raw = await asyncio.wait_for(socket.recv(), remaining)
+            except TimeoutError:
+                return
+            message = json.loads(raw)
+            if message.get("type") == "result" and isinstance(message.get("result"), list):
+                states.clear()
+                states.update(self._configured_states(message["result"]))
+                continue
+            event = message.get("event", {}).get("data", {})
+            entity_id = event.get("entity_id")
+            if entity_id in self.entity_ids and event.get("new_state") is not None:
+                states[entity_id] = event["new_state"]
 
     def _configured_states(self, result: object) -> dict[str, dict[str, Any]]:
         if not isinstance(result, list):

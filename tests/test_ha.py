@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -15,6 +16,8 @@ class FakeSocket:
         self.sent: list[str] = []
 
     async def recv(self) -> str:
+        if not self.messages:
+            await asyncio.Future()
         return self.messages.pop(0)
 
     async def send(self, message: str) -> None:
@@ -54,10 +57,7 @@ async def test_large_get_states_payload_connects_and_keeps_configured_entities(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     entities = entity_config()
-    result = [
-        {"entity_id": f"sensor.dummy_{index}", "state": "x" * 300}
-        for index in range(4_000)
-    ]
+    result = [{"entity_id": f"sensor.dummy_{index}", "state": "x" * 300} for index in range(4_000)]
     result.extend(
         [
             {
@@ -127,13 +127,72 @@ async def test_unconfigured_state_changed_entity_is_dropped(
     ]
     socket = FakeSocket(messages)
     monkeypatch.setattr("app.ha.websockets.connect", lambda *args, **kwargs: FakeConnection(socket))
-    snapshots = HomeAssistantClient("http://ha", "token", entities)._connected()
+    snapshots = HomeAssistantClient(
+        "http://ha", "token", entities, coalesce_window_seconds=0.01
+    )._connected()
 
     initial = await anext(snapshots)
     updated = await anext(snapshots)
 
     assert initial.pit_temp == 250
     assert updated.pit_temp == 251
+
+
+@pytest.mark.asyncio
+async def test_entity_update_burst_is_coalesced(monkeypatch: pytest.MonkeyPatch) -> None:
+    entities = entity_config()
+    initial_states = [
+        {"entity_id": entities.pit_climate, "state": "heat", "attributes": {"temperature": 150}},
+        {"entity_id": entities.pit_temp, "state": "100"},
+        {"entity_id": entities.fire_state, "state": "Startup"},
+        {"entity_id": entities.power_state, "state": "On"},
+        {"entity_id": entities.warning, "state": "None"},
+        {"entity_id": entities.probe2_connection, "state": "off"},
+    ]
+    updates = [
+        (entities.pit_climate, "off", {"temperature": 65535}),
+        (entities.pit_temp, "65535", {}),
+        (entities.fire_state, "Off", {}),
+        (entities.power_state, "Off", {}),
+        (entities.warning, "Unknown", {}),
+        (entities.probe2_connection, "on", {}),
+    ]
+    messages: list[dict[str, Any]] = [
+        {"type": "auth_required"},
+        {"type": "auth_ok"},
+        {"id": 1, "type": "result", "success": True, "result": initial_states},
+    ]
+    messages.extend(
+        {
+            "id": 2,
+            "type": "event",
+            "event": {
+                "data": {
+                    "entity_id": entity_id,
+                    "new_state": {
+                        "entity_id": entity_id,
+                        "state": state,
+                        "attributes": attributes,
+                    },
+                }
+            },
+        }
+        for entity_id, state, attributes in updates
+    )
+    socket = FakeSocket(messages)
+    monkeypatch.setattr("app.ha.websockets.connect", lambda *args, **kwargs: FakeConnection(socket))
+    snapshots = HomeAssistantClient(
+        "http://ha", "token", entities, coalesce_window_seconds=0.01
+    )._connected()
+
+    await anext(snapshots)
+    coalesced = await anext(snapshots)
+
+    assert coalesced.setpoint == 65535
+    assert coalesced.pit_temp == 65535
+    assert coalesced.hvac_mode == "off"
+    assert coalesced.warning == "Unknown"
+    assert coalesced.probe2_connected
 
 
 def test_unconfigured_entities_are_dropped_from_full_state_results() -> None:
