@@ -14,7 +14,32 @@ function point(degrees, distance) {
   return [center + Math.sin(radians) * distance, center - Math.cos(radians) * distance];
 }
 
-export function gaugeSvg(temperature, setpoint) {
+const escapeAttribute = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
+})[character]);
+
+export function gaugeLogoGeometry(width, height) {
+  const gaugeWidth = Math.max(0, number(width));
+  const gaugeHeight = Math.max(0, number(height));
+  const logoWidth = (gaugeWidth * 30) / 100;
+  const logoHeight = Math.min((gaugeHeight * 14) / 100, logoWidth);
+  return {
+    x: (gaugeWidth - logoWidth) / 2,
+    y: (gaugeHeight * 68) / 100,
+    width: logoWidth,
+    height: logoHeight,
+  };
+}
+
+export function gaugeLogoMarkup(logoUrl, width = 400, height = 400) {
+  const box = gaugeLogoGeometry(width, height);
+  if (!logoUrl) {
+    return `<text class="gauge-logo-slot gauge-logo-placeholder" x="${width / 2}" y="${box.y + box.height / 2}">GREEN MOUNTAIN GRILLS</text>`;
+  }
+  return `<image class="gauge-logo-slot" href="${escapeAttribute(logoUrl)}" x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" preserveAspectRatio="xMidYMid meet"/>`;
+}
+
+export function gaugeSvg(temperature, setpoint, logoUrl = null) {
   const temp = number(temperature);
   const target = number(setpoint);
   const ticks = Array.from({ length: 51 }, (_, index) => {
@@ -40,6 +65,7 @@ export function gaugeSvg(temperature, setpoint) {
     <text class="gauge-brand" x="200" y="145">SMOKE-STACK</text>
     <text class="gauge-temp" x="200" y="205">${Math.round(temp)}°</text>
     <text class="gauge-unit" x="200" y="232">DEGREES F</text>
+    ${gaugeLogoMarkup(logoUrl)}
     <polygon class="gauge-marker" points="${markerX},${markerY} ${leftX},${leftY} ${rightX},${rightY}"/>
     <line class="gauge-needle" x1="200" y1="200" x2="${needleX}" y2="${needleY}"/><circle class="gauge-hub" cx="200" cy="200" r="13"/>
     <text class="gauge-setpoint" x="200" y="375">SETPOINT ${Math.round(target)}</text>

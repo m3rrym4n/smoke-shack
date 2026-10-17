@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import uuid4
@@ -16,6 +17,7 @@ IMAGE_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".webp": "image/webp",
+    ".svg": "image/svg+xml",
 }
 ShowcaseKind = Literal["logo", "photo"]
 SHOWCASE_KINDS: tuple[ShowcaseKind, ...] = ("logo", "photo")
@@ -29,6 +31,42 @@ def _image_extension(header: bytes) -> str | None:
     if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP":
         return ".webp"
     return None
+
+
+def _validate_svg(content: bytes) -> None:
+    try:
+        svg = content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "SVG must be valid UTF-8 text",
+        ) from error
+
+    if not re.search(r"<svg\b", svg, re.IGNORECASE):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "File is not a valid SVG image")
+    checks = (
+        (r"<!DOCTYPE\b", "SVG must not contain a DOCTYPE declaration"),
+        (r"<!ENTITY\b", "SVG must not contain an ENTITY declaration"),
+        (r"<script\b", "SVG must not contain script elements"),
+        (r"<foreignObject\b", "SVG must not contain foreignObject elements"),
+        (r"javascript\s*:", "SVG must not contain javascript: URLs"),
+        (r"\son[a-z0-9_:.-]*\s*=", "SVG must not contain event handler attributes"),
+    )
+    for pattern, detail in checks:
+        if re.search(pattern, svg, re.IGNORECASE):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail)
+
+    href_pattern = re.compile(
+        r"(?:^|\s)(?:xlink:)?href\s*=\s*(?:([\"'])(.*?)\1|([^\s>]+))",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in href_pattern.finditer(svg):
+        reference = (match.group(2) if match.group(1) else match.group(3)).strip()
+        if not reference.lower().startswith(("#", "data:image/")):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "SVG href references must start with # or data:image/",
+            )
 
 
 def _find_image(directory: Path, kind: ShowcaseKind) -> Path | None:
@@ -82,12 +120,20 @@ async def put_showcase_image(
                 if len(header) < 16:
                     header += chunk[: 16 - len(header)]
                 output.write(chunk)
-        extension = _image_extension(header)
+        content = temporary.read_bytes()
+        extension = (
+            ".svg"
+            if kind == "logo" and re.search(rb"<svg\b", content, re.IGNORECASE)
+            else _image_extension(header)
+        )
         if extension is None:
+            allowed = "PNG, JPEG, WebP, or SVG" if kind == "logo" else "PNG, JPEG, or WebP"
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
-                "Image must be a PNG, JPEG, or WebP file",
+                f"Image must be a {allowed} file",
             )
+        if extension == ".svg":
+            _validate_svg(content)
         final_path = directory / f"{kind}{extension}"
         os.replace(temporary, final_path)
         for other_extension in IMAGE_TYPES:
@@ -107,7 +153,15 @@ def get_showcase_image(kind: ShowcaseKind, request: Request) -> Response:
     if path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Showcase image not found")
     etag = _etag(path)
-    headers = {"ETag": etag, "Cache-Control": "no-cache"}
+    headers = {
+        "ETag": etag,
+        "Cache-Control": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+    }
+    if path.suffix == ".svg":
+        headers["Content-Security-Policy"] = (
+            "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+        )
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
     return FileResponse(path, media_type=IMAGE_TYPES[path.suffix], headers=headers)

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Anchor the smoke source and plume to the grill photo while the page scrolls.
+- Move the showcase logo into the bottom of the temperature gauge.
+- Render a realistic, state-aware smoke plume above the full live page with a demo mode.
+- Make Pit showcase image selection row-specific and save smoke positions immediately.
+- Stack the Pit showcase vertically with full-width, frameless grill photos and wrapping names.
+- Accept safely validated SVG files for Pit showcase logos.
 - List and default live and planned cooks correctly in Pit Notes.
 - Add live-cook smokestack wisps with grill-state intensity and a remembered motion toggle.
 - Add a responsive Pit showcase with grill branding, editable pictures, and a smoke anchor.

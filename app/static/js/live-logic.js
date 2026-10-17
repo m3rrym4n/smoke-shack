@@ -8,8 +8,15 @@ export function clampPercent(value, target) {
 export const SHOWCASE_MAX_BYTES = 5 * 1024 * 1024;
 const SHOWCASE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-export function validateShowcaseFile(file) {
-  if (!SHOWCASE_IMAGE_TYPES.has(file?.type)) return "Choose a PNG, JPEG, or WebP image.";
+export function validateShowcaseFile(file, kind = "photo") {
+  const allowedTypes = kind === "logo"
+    ? new Set([...SHOWCASE_IMAGE_TYPES, "image/svg+xml"])
+    : SHOWCASE_IMAGE_TYPES;
+  if (!allowedTypes.has(file?.type)) {
+    return kind === "logo"
+      ? "Choose a PNG, JPEG, WebP, or SVG image."
+      : "Choose a PNG, JPEG, or WebP image.";
+  }
   if (!Number.isFinite(file.size) || file.size <= 0) return "This image is empty.";
   if (file.size > SHOWCASE_MAX_BYTES) return "Image must be 5 MB or smaller.";
   return "";
@@ -26,6 +33,28 @@ export function showcaseLayoutClass(width) {
 export function clampStackPosition(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : fallback;
+}
+
+export function readStackPosition(storage, key) {
+  try {
+    const saved = JSON.parse(storage.getItem(key));
+    return { x: clampStackPosition(saved?.x, 50), y: clampStackPosition(saved?.y, 5) };
+  } catch {
+    return { x: 50, y: 5 };
+  }
+}
+
+export function writeStackPosition(storage, key, position) {
+  const saved = {
+    x: clampStackPosition(position?.x, 50),
+    y: clampStackPosition(position?.y, 5),
+  };
+  storage.setItem(key, JSON.stringify(saved));
+  return saved;
+}
+
+export function showcaseSaveEnabled(file) {
+  return Boolean(file);
 }
 
 function secondsBetween(start, end) {

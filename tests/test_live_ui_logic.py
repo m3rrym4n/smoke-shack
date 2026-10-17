@@ -130,18 +130,54 @@ def test_photos_are_ordered_oldest_first_without_mutating_input() -> None:
 def test_showcase_file_validation() -> None:
     expression = """
       console.log(JSON.stringify([
-        logic.validateShowcaseFile({type:"image/png",size:123}),
-        logic.validateShowcaseFile({type:"image/gif",size:123}),
+        logic.validateShowcaseFile({type:"image/png",size:123}, "photo"),
+        logic.validateShowcaseFile({type:"image/svg+xml",size:123}, "logo"),
+        logic.validateShowcaseFile({type:"image/svg+xml",size:123}, "photo"),
+        logic.validateShowcaseFile({type:"image/gif",size:123}, "logo"),
         logic.validateShowcaseFile({type:"image/jpeg",size:0}),
         logic.validateShowcaseFile({type:"image/webp",size:5*1024*1024+1}),
       ]));
     """
     assert run_logic(expression) == [
         "",
+        "",
         "Choose a PNG, JPEG, or WebP image.",
+        "Choose a PNG, JPEG, WebP, or SVG image.",
         "This image is empty.",
         "Image must be 5 MB or smaller.",
     ]
+
+
+def test_logo_picker_accepts_svg_but_photo_picker_does_not() -> None:
+    component = Path("app/static/js/components/showcase.js").read_text()
+    assert '"image/png,image/jpeg,image/webp,.svg,image/svg+xml"' in component
+    assert '"image/png,image/jpeg,image/webp"' in component
+
+
+def test_gauge_logo_geometry_and_placeholder() -> None:
+    module = Path("app/static/js/components/gauge.js").resolve().as_uri()
+    script = f"""
+      const gauge = await import({json.dumps(module)});
+      console.log(JSON.stringify({{
+        standard: gauge.gaugeLogoGeometry(400, 400),
+        wide: gauge.gaugeLogoGeometry(1000, 400),
+        placeholder: gauge.gaugeLogoMarkup(null),
+        image: gauge.gaugeLogoMarkup("/api/showcase/logo"),
+      }}));
+    """
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    rendered = json.loads(result.stdout)
+    assert rendered["standard"] == {"x": 140, "y": 272, "width": 120, "height": 56}
+    assert rendered["wide"] == {"x": 350, "y": 272, "width": 300, "height": 56}
+    assert "GREEN MOUNTAIN GRILLS" in rendered["placeholder"]
+    assert "<image" not in rendered["placeholder"]
+    assert "GREEN MOUNTAIN GRILLS" not in rendered["image"]
+    assert 'preserveAspectRatio="xMidYMid meet"' in rendered["image"]
 
 
 def test_showcase_placeholders_layout_and_stack_clamping() -> None:
@@ -158,3 +194,36 @@ def test_showcase_placeholders_layout_and_stack_clamping() -> None:
         "layouts": ["showcase-mobile", "showcase-wide"],
         "positions": [0, 38, 100, 5],
     }
+
+
+def test_showcase_anchor_persistence_clamps_and_defaults() -> None:
+    expression = """
+      const values = new Map();
+      const storage = {
+        getItem: key => values.get(key) ?? null,
+        setItem: (key, value) => values.set(key, value),
+      };
+      const defaults = logic.readStackPosition(storage, "anchor");
+      const saved = logic.writeStackPosition(storage, "anchor", {x: -12, y: 140});
+      const restored = logic.readStackPosition(storage, "anchor");
+      values.set("anchor", "not json");
+      const malformed = logic.readStackPosition(storage, "anchor");
+      console.log(JSON.stringify({defaults, saved, restored, malformed}));
+    """
+    assert run_logic(expression) == {
+        "defaults": {"x": 50, "y": 5},
+        "saved": {"x": 0, "y": 100},
+        "restored": {"x": 0, "y": 100},
+        "malformed": {"x": 50, "y": 5},
+    }
+
+
+def test_showcase_save_is_enabled_only_when_a_file_is_chosen() -> None:
+    expression = """
+      console.log(JSON.stringify([
+        logic.showcaseSaveEnabled(null),
+        logic.showcaseSaveEnabled(undefined),
+        logic.showcaseSaveEnabled({name: "grill.jpg"}),
+      ]));
+    """
+    assert run_logic(expression) == [False, False, True]

@@ -1,5 +1,8 @@
 import { deleteShowcaseImage, uploadShowcaseImage } from "../api.js";
-import { clampStackPosition, showcaseLayoutClass, showcasePlaceholder, validateShowcaseFile } from "../live-logic.js";
+import {
+  readStackPosition as readStackPositionValue, showcaseLayoutClass, showcasePlaceholder, showcaseSaveEnabled,
+  validateShowcaseFile, writeStackPosition,
+} from "../live-logic.js";
 
 const STACK_POSITION_KEY = "smoke-stack.showcase.stack-position";
 
@@ -8,12 +11,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 })[character]);
 
 export function readStackPosition(storage = window.localStorage) {
-  try {
-    const saved = JSON.parse(storage.getItem(STACK_POSITION_KEY));
-    return { x: clampStackPosition(saved?.x, 50), y: clampStackPosition(saved?.y, 5) };
-  } catch {
-    return { x: 50, y: 5 };
-  }
+  return readStackPositionValue(storage, STACK_POSITION_KEY);
 }
 
 function grillIllustration() {
@@ -29,16 +27,12 @@ function grillIllustration() {
 
 function photoMarkup(url, position) {
   if (showcasePlaceholder(url) === "placeholder") return `<div class="showcase-photo placeholder">${grillIllustration()}</div>`;
-  return `<div class="showcase-photo"><span class="photo-tape" aria-hidden="true"></span><img src="${escapeHtml(url)}" alt="Grill"><span class="photo-stack-anchor" data-smokestack style="left:${position.x}%;top:${position.y}%" aria-hidden="true"></span></div>`;
+  return `<div class="showcase-photo"><img src="${escapeHtml(url)}" alt="Grill"><span class="photo-stack-anchor" data-smokestack style="left:${position.x}%;top:${position.y}%" aria-hidden="true"></span></div>`;
 }
 
 export function showcaseMarkup(showcase, grillName, width = window.innerWidth, smokeControl = true) {
   const position = readStackPosition();
-  const logo = showcasePlaceholder(showcase?.logo_url) === "image"
-    ? `<img src="${escapeHtml(showcase.logo_url)}" alt="Grill logo">`
-    : `<span>GREEN MOUNTAIN GRILLS</span>`;
   return `<div class="pit-showcase ${showcaseLayoutClass(width)}">
-    <div class="showcase-logo">${logo}</div>
     <div class="showcase-name" title="${escapeHtml(grillName)}">${escapeHtml(grillName || "My grill")}</div>
     ${photoMarkup(showcase?.photo_url, position)}
     <div class="showcase-controls">${smokeControl ? '<button class="smoke-toggle cc" type="button" aria-pressed="true">Smoke</button>' : ""}<button class="change-pictures" type="button" aria-expanded="false">Change pictures</button></div>
@@ -49,7 +43,6 @@ export function showcaseMarkup(showcase, grillName, width = window.innerWidth, s
         <label>Horizontal <input name="stack-x" type="range" min="0" max="100" value="${position.x}"><output>${position.x}%</output></label>
         <label>Vertical <input name="stack-y" type="range" min="0" max="100" value="${position.y}"><output>${position.y}%</output></label>
       </fieldset>
-      <p class="showcase-message" role="status"></p>
     </div>
   </div>`;
 }
@@ -58,17 +51,18 @@ function editorRow(kind, label, imageUrl) {
   const preview = imageUrl
     ? `<img src="${escapeHtml(imageUrl)}" alt="Current ${label.toLowerCase()}">`
     : `<span>No ${label.toLowerCase()} uploaded</span>`;
-  return `<div class="showcase-image-field" data-image-kind="${kind}"><label><span>${label}</span><input type="file" accept="image/png,image/jpeg,image/webp"></label><div class="showcase-preview">${preview}</div><div class="showcase-image-actions"><button class="cc save-showcase" type="button">Save</button><button class="cc remove-showcase" type="button" ${imageUrl ? "" : "disabled"}>Remove</button></div></div>`;
+  const accept = kind === "logo"
+    ? "image/png,image/jpeg,image/webp,.svg,image/svg+xml"
+    : "image/png,image/jpeg,image/webp";
+  return `<div class="showcase-image-field" data-image-kind="${kind}"><label><span>${label}</span><input type="file" accept="${accept}"></label><button class="showcase-preview" type="button" aria-label="Choose ${label.toLowerCase()}">${preview}</button><div class="showcase-image-actions"><button class="cc save-showcase" type="button" disabled>Save</button><span class="showcase-message" role="status"></span><button class="cc remove-showcase" type="button" ${imageUrl ? "" : "disabled"}>Remove</button></div></div>`;
 }
 
-export function bindShowcase(container, { refresh, setBusy }) {
+export function bindShowcase(container, { onLogoChange = () => {}, setBusy }) {
   const strip = container.querySelector(".pit-showcase");
   if (!strip) return () => {};
   const editor = strip.querySelector(".showcase-editor");
   const toggle = strip.querySelector(".change-pictures");
-  const message = strip.querySelector(".showcase-message");
   const objectUrls = new Set();
-  const showMessage = (text, error = false) => { message.textContent = text; message.classList.toggle("error", error); };
   const close = () => objectUrls.forEach((url) => URL.revokeObjectURL(url));
 
   toggle.addEventListener("click", () => {
@@ -76,46 +70,76 @@ export function bindShowcase(container, { refresh, setBusy }) {
     editor.hidden = !opening;
     toggle.setAttribute("aria-expanded", String(opening));
     toggle.textContent = opening ? "Close picture editor" : "Change pictures";
+    strip.classList.toggle("editor-open", opening);
     setBusy(opening);
   });
   strip.querySelectorAll(".showcase-image-field").forEach((field) => {
     const input = field.querySelector("input");
     const preview = field.querySelector(".showcase-preview");
+    const save = field.querySelector(".save-showcase");
+    const remove = field.querySelector(".remove-showcase");
+    const message = field.querySelector(".showcase-message");
     const kind = field.dataset.imageKind;
+    let messageTimer;
+    const showMessage = (text, error = false, temporary = false) => {
+      window.clearTimeout(messageTimer);
+      message.textContent = text;
+      message.classList.toggle("error", error);
+      if (temporary) messageTimer = window.setTimeout(() => showMessage(""), 4000);
+    };
+    const updateImages = (url) => {
+      const currentUrl = url ? `${url}?v=${Date.now()}` : null;
+      preview.innerHTML = currentUrl
+        ? `<img src="${escapeHtml(currentUrl)}" alt="Current ${kind} preview">`
+        : `<span>No ${kind === "logo" ? "logo" : "grill photo"} uploaded</span>`;
+      if (kind === "logo") {
+        onLogoChange(currentUrl);
+      } else {
+        const position = readStackPosition();
+        strip.querySelector(".showcase-photo").outerHTML = photoMarkup(currentUrl, position);
+        strip.querySelector(".stack-position").hidden = !currentUrl;
+      }
+      remove.disabled = !currentUrl;
+    };
+    preview.addEventListener("click", () => input.click());
     input.addEventListener("change", () => {
       const file = input.files[0];
+      save.disabled = !showcaseSaveEnabled(file);
+      showMessage("");
       if (!file) return;
-      const validation = validateShowcaseFile(file);
-      if (validation) { input.value = ""; showMessage(validation, true); return; }
+      const validation = validateShowcaseFile(file, kind);
+      if (validation) { input.value = ""; save.disabled = true; showMessage(validation, true); return; }
       const url = URL.createObjectURL(file);
       objectUrls.add(url);
       preview.innerHTML = `<img src="${url}" alt="Selected ${kind} preview">`;
-      showMessage("");
     });
-    field.querySelector(".save-showcase").addEventListener("click", async () => {
+    save.addEventListener("click", async () => {
       const file = input.files[0];
-      const validation = file ? validateShowcaseFile(file) : "Choose an image first.";
-      if (validation) { showMessage(validation, true); return; }
+      const validation = file ? validateShowcaseFile(file, kind) : "Choose an image first.";
+      if (validation) { showMessage(validation, true, !file); return; }
       try {
-        await uploadShowcaseImage(kind, file);
-        showMessage(`${kind === "logo" ? "Logo" : "Grill photo"} saved.`);
-        setBusy(false);
-        await refresh();
+        const result = await uploadShowcaseImage(kind, file);
+        updateImages(result[`${kind}_url`]);
+        input.value = "";
+        save.disabled = true;
+        showMessage("Saved");
       } catch (error) { showMessage(error.message || "Could not save image.", true); }
     });
-    field.querySelector(".remove-showcase").addEventListener("click", async () => {
+    remove.addEventListener("click", async () => {
       try {
         await deleteShowcaseImage(kind);
-        showMessage(`${kind === "logo" ? "Logo" : "Grill photo"} removed.`);
-        setBusy(false);
-        await refresh();
+        updateImages(null);
+        input.value = "";
+        save.disabled = true;
+        showMessage("");
       } catch (error) { showMessage(error.message || "Could not remove image.", true); }
     });
   });
   strip.querySelectorAll(".stack-position input").forEach((slider) => slider.addEventListener("input", () => {
-    const x = clampStackPosition(strip.querySelector('[name="stack-x"]').value, 50);
-    const y = clampStackPosition(strip.querySelector('[name="stack-y"]').value, 5);
-    window.localStorage.setItem(STACK_POSITION_KEY, JSON.stringify({ x, y }));
+    const { x, y } = writeStackPosition(window.localStorage, STACK_POSITION_KEY, {
+      x: strip.querySelector('[name="stack-x"]').value,
+      y: strip.querySelector('[name="stack-y"]').value,
+    });
     strip.querySelector('[name="stack-x"] + output').textContent = `${x}%`;
     strip.querySelector('[name="stack-y"] + output').textContent = `${y}%`;
     const anchor = strip.querySelector(".photo-stack-anchor");
