@@ -40,6 +40,19 @@ Home Assistant. `GET /status` reports HA connection state, the latest event and 
 the active cook, the sampling interval, and the application version. Cook data is available at
 `/api/cooks` and the per-cook detail, `samples`, and `events` routes.
 
+## Data export
+
+- `GET /api/export/cooks.csv` exports one row per cook. It accepts the same `meat_id`,
+  `pellet_id`, and `status` filters as `GET /api/cooks`.
+- `GET /api/export/cooks/{cook_id}/samples.csv` exports every raw sample for one cook,
+  including a column for each extra probe found in that cook.
+- `GET /api/export/all.json` exports cooks with nested event and photo metadata, meat,
+  pellets, profiles with steps, and notes. Raw samples and photo binaries are intentionally
+  excluded; use the per-cook samples CSV and photo URLs for those.
+
+All exports download as date-stamped attachments. CSV free-text values that could be treated
+as spreadsheet formulas are escaped with a leading apostrophe.
+
 ## Test and build
 
 ```sh

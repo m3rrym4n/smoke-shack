@@ -20,6 +20,7 @@ from app.ha import HAClient, HAStatus, HomeAssistantClient
 from app.models import Cook, Sample
 from app.routes.cooks import router as cooks_router
 from app.routes.events import router as events_router
+from app.routes.export import router as export_router
 from app.routes.meat import router as meat_router
 from app.routes.notes import router as notes_router
 from app.routes.pellets import router as pellets_router
@@ -121,6 +122,7 @@ def create_app(
     app.include_router(cooks_router)
     app.include_router(photos_router)
     app.include_router(stats_router)
+    app.include_router(export_router)
     return app
 
 
