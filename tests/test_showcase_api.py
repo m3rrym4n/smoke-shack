@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -9,6 +10,7 @@ from app.config import Settings
 PNG = b"\x89PNG\r\n\x1a\n" + b"png data"
 JPEG = b"\xff\xd8\xff\xe0" + b"jpeg data"
 WEBP = b"RIFF\x0c\x00\x00\x00WEBP" + b"webp data"
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><path fill="#fff" d="M0 0h10v10z"/></svg>'
 
 
 def test_showcase_upload_replace_serve_delete_and_persist(
@@ -29,6 +31,7 @@ def test_showcase_upload_replace_serve_delete_and_persist(
         first = client.get("/api/showcase/logo")
         assert first.content == PNG
         assert first.headers["content-type"] == "image/png"
+        assert first.headers["x-content-type-options"] == "nosniff"
         assert first.headers["cache-control"] == "no-cache"
         assert first.headers["etag"]
         revalidated = client.get(
@@ -45,10 +48,13 @@ def test_showcase_upload_replace_serve_delete_and_persist(
         assert served.content == JPEG
         assert served.headers["content-type"] == "image/jpeg"
 
-        assert client.put(
-            "/api/showcase/photo",
-            files={"file": ("grill.webp", WEBP, "image/webp")},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/showcase/photo",
+                files={"file": ("grill.webp", WEBP, "image/webp")},
+            ).status_code
+            == 200
+        )
         assert client.get("/api/showcase").json() == {
             "logo_url": "/api/showcase/logo",
             "photo_url": "/api/showcase/photo",
@@ -71,9 +77,9 @@ def test_showcase_rejects_bad_types_and_oversized_files(
 ) -> None:
     settings = Settings(photo_dir=str(tmp_path / "photos"))
     with TestClient(create_app(settings, sessions)) as client:
-        svg = client.put(
-            "/api/showcase/logo",
-            files={"file": ("logo.svg", b"<svg></svg>", "image/svg+xml")},
+        svg_photo = client.put(
+            "/api/showcase/photo",
+            files={"file": ("photo.svg", SVG, "image/svg+xml")},
         )
         renamed_text = client.put(
             "/api/showcase/photo",
@@ -84,10 +90,62 @@ def test_showcase_rejects_bad_types_and_oversized_files(
             files={"file": ("huge.png", PNG + b"x" * (5 * 1024 * 1024), "image/png")},
         )
 
-    assert svg.status_code == 422
-    assert "PNG, JPEG, or WebP" in svg.json()["detail"]
+    assert svg_photo.status_code == 422
+    assert "PNG, JPEG, or WebP" in svg_photo.json()["detail"]
     assert renamed_text.status_code == 422
     assert "PNG, JPEG, or WebP" in renamed_text.json()["detail"]
     assert too_large.status_code == 422
     assert "5 MB" in too_large.json()["detail"]
     assert not (tmp_path / "showcase" / "logo.png").exists()
+
+
+def test_showcase_accepts_and_serves_safe_svg_logo(
+    tmp_path: Path, sessions: sessionmaker[Session]
+) -> None:
+    settings = Settings(photo_dir=str(tmp_path / "photos"))
+    with TestClient(create_app(settings, sessions)) as client:
+        uploaded = client.put(
+            "/api/showcase/logo",
+            files={"file": ("logo.svg", SVG, "image/svg+xml")},
+        )
+        served = client.get("/api/showcase/logo")
+
+    assert uploaded.status_code == 200
+    assert served.content == SVG
+    assert served.headers["content-type"] == "image/svg+xml"
+    assert served.headers["x-content-type-options"] == "nosniff"
+    assert served.headers["content-security-policy"] == (
+        "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    )
+    assert (tmp_path / "showcase" / "logo.svg").read_bytes() == SVG
+
+
+@pytest.mark.parametrize(
+    ("svg", "message"),
+    [
+        (b"<svg><script>alert(1)</script></svg>", "script elements"),
+        (b"<svg><foreignObject /></svg>", "foreignObject elements"),
+        (b'<svg><a href="javascript:alert(1)" /></svg>', "javascript: URLs"),
+        (b'<svg onload="alert(1)" />', "event handler attributes"),
+        (b'<svg><image href="https://example.com/logo.png" /></svg>', "href references"),
+        (b'<svg><use xlink:href="logo.svg#mark" /></svg>', "href references"),
+        (b'<!DOCTYPE svg SYSTEM "logo.dtd"><svg />', "DOCTYPE declaration"),
+        (b'<!ENTITY logo "unsafe"><svg />', "ENTITY declaration"),
+    ],
+)
+def test_showcase_rejects_unsafe_svg_logo(
+    tmp_path: Path,
+    sessions: sessionmaker[Session],
+    svg: bytes,
+    message: str,
+) -> None:
+    settings = Settings(photo_dir=str(tmp_path / "photos"))
+    with TestClient(create_app(settings, sessions)) as client:
+        response = client.put(
+            "/api/showcase/logo",
+            files={"file": ("logo.svg", svg, "image/svg+xml")},
+        )
+
+    assert response.status_code == 422
+    assert message in response.json()["detail"]
+    assert not (tmp_path / "showcase" / "logo.svg").exists()

@@ -8,8 +8,15 @@ export function clampPercent(value, target) {
 export const SHOWCASE_MAX_BYTES = 5 * 1024 * 1024;
 const SHOWCASE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-export function validateShowcaseFile(file) {
-  if (!SHOWCASE_IMAGE_TYPES.has(file?.type)) return "Choose a PNG, JPEG, or WebP image.";
+export function validateShowcaseFile(file, kind = "photo") {
+  const allowedTypes = kind === "logo"
+    ? new Set([...SHOWCASE_IMAGE_TYPES, "image/svg+xml"])
+    : SHOWCASE_IMAGE_TYPES;
+  if (!allowedTypes.has(file?.type)) {
+    return kind === "logo"
+      ? "Choose a PNG, JPEG, WebP, or SVG image."
+      : "Choose a PNG, JPEG, or WebP image.";
+  }
   if (!Number.isFinite(file.size) || file.size <= 0) return "This image is empty.";
   if (file.size > SHOWCASE_MAX_BYTES) return "Image must be 5 MB or smaller.";
   return "";

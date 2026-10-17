@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Accept safely validated SVG files for Pit showcase logos.
 - List and default live and planned cooks correctly in Pit Notes.
 - Add live-cook smokestack wisps with grill-state intensity and a remembered motion toggle.
 - Add a responsive Pit showcase with grill branding, editable pictures, and a smoke anchor.

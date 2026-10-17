@@ -58,7 +58,10 @@ function editorRow(kind, label, imageUrl) {
   const preview = imageUrl
     ? `<img src="${escapeHtml(imageUrl)}" alt="Current ${label.toLowerCase()}">`
     : `<span>No ${label.toLowerCase()} uploaded</span>`;
-  return `<div class="showcase-image-field" data-image-kind="${kind}"><label><span>${label}</span><input type="file" accept="image/png,image/jpeg,image/webp"></label><div class="showcase-preview">${preview}</div><div class="showcase-image-actions"><button class="cc save-showcase" type="button">Save</button><button class="cc remove-showcase" type="button" ${imageUrl ? "" : "disabled"}>Remove</button></div></div>`;
+  const accept = kind === "logo"
+    ? "image/png,image/jpeg,image/webp,.svg,image/svg+xml"
+    : "image/png,image/jpeg,image/webp";
+  return `<div class="showcase-image-field" data-image-kind="${kind}"><label><span>${label}</span><input type="file" accept="${accept}"></label><div class="showcase-preview">${preview}</div><div class="showcase-image-actions"><button class="cc save-showcase" type="button">Save</button><button class="cc remove-showcase" type="button" ${imageUrl ? "" : "disabled"}>Remove</button></div></div>`;
 }
 
 export function bindShowcase(container, { refresh, setBusy }) {
@@ -85,7 +88,7 @@ export function bindShowcase(container, { refresh, setBusy }) {
     input.addEventListener("change", () => {
       const file = input.files[0];
       if (!file) return;
-      const validation = validateShowcaseFile(file);
+      const validation = validateShowcaseFile(file, kind);
       if (validation) { input.value = ""; showMessage(validation, true); return; }
       const url = URL.createObjectURL(file);
       objectUrls.add(url);
@@ -94,7 +97,7 @@ export function bindShowcase(container, { refresh, setBusy }) {
     });
     field.querySelector(".save-showcase").addEventListener("click", async () => {
       const file = input.files[0];
-      const validation = file ? validateShowcaseFile(file) : "Choose an image first.";
+      const validation = file ? validateShowcaseFile(file, kind) : "Choose an image first.";
       if (validation) { showMessage(validation, true); return; }
       try {
         await uploadShowcaseImage(kind, file);

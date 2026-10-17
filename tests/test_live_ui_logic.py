@@ -130,18 +130,28 @@ def test_photos_are_ordered_oldest_first_without_mutating_input() -> None:
 def test_showcase_file_validation() -> None:
     expression = """
       console.log(JSON.stringify([
-        logic.validateShowcaseFile({type:"image/png",size:123}),
-        logic.validateShowcaseFile({type:"image/gif",size:123}),
+        logic.validateShowcaseFile({type:"image/png",size:123}, "photo"),
+        logic.validateShowcaseFile({type:"image/svg+xml",size:123}, "logo"),
+        logic.validateShowcaseFile({type:"image/svg+xml",size:123}, "photo"),
+        logic.validateShowcaseFile({type:"image/gif",size:123}, "logo"),
         logic.validateShowcaseFile({type:"image/jpeg",size:0}),
         logic.validateShowcaseFile({type:"image/webp",size:5*1024*1024+1}),
       ]));
     """
     assert run_logic(expression) == [
         "",
+        "",
         "Choose a PNG, JPEG, or WebP image.",
+        "Choose a PNG, JPEG, WebP, or SVG image.",
         "This image is empty.",
         "Image must be 5 MB or smaller.",
     ]
+
+
+def test_logo_picker_accepts_svg_but_photo_picker_does_not() -> None:
+    component = Path("app/static/js/components/showcase.js").read_text()
+    assert '"image/png,image/jpeg,image/webp,.svg,image/svg+xml"' in component
+    assert '"image/png,image/jpeg,image/webp"' in component
 
 
 def test_showcase_placeholders_layout_and_stack_clamping() -> None:
