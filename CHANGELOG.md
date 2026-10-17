@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add immediate photo uploads and galleries to the Order Pad and cook details.
 - Add explicit live, planned, new-order, and closed-cook modes to the Order Pad UI.
 - Add planned cooks that are atomically adopted when the next live cook starts.
 - Include uncooked Butcher Case meat types in the Ask the Pitmaster filter.
