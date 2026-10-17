@@ -93,6 +93,23 @@ export function deletePellet(pelletId) {
   return sendJson("DELETE", `/api/pellets/${pelletId}`);
 }
 
+export function getNotes(scope = "all") {
+  const query = scope === "all" ? "" : `?${new URLSearchParams({ scope })}`;
+  return getJson(`/api/notes${query}`);
+}
+
+export function createNote(body) {
+  return sendJson("POST", "/api/notes", body);
+}
+
+export function updateNote(noteId, body) {
+  return sendJson("PATCH", `/api/notes/${noteId}`, body);
+}
+
+export function deleteNote(noteId) {
+  return sendJson("DELETE", `/api/notes/${noteId}`);
+}
+
 export function createCookEvent(cookId, body) {
   return sendJson("POST", `/api/cooks/${cookId}/events`, body);
 }

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add the Pit Notes board with cook-aware create, filtering, inline edit, and delete controls.
 - Add the Pellet Pantry purchase board with create, edit, linked-cook, and delete controls.
 - Add the Butcher Case purchase board with create, edit, linked-cook, and delete controls.
 - Preserve otherwise valid samples when only one core grill entity is unavailable.
