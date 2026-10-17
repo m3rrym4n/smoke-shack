@@ -61,8 +61,8 @@ def create_app(
         with factory() as session:
             yield session
 
-    @app.get("/healthz")
-    def healthz() -> dict[str, str]:
+    @app.get("/health")
+    def health() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.get("/api/cooks")

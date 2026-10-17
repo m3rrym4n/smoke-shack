@@ -14,7 +14,7 @@ from app.service import CookService, GrillSnapshot
 def test_health(sessions: sessionmaker[Session]) -> None:
     app = create_app(Settings(), sessions, FakeHAClient())
     with TestClient(app) as client:
-        assert client.get("/healthz").json() == {"status": "ok"}
+        assert client.get("/health").json() == {"status": "ok"}
 
 
 def test_exact_timestamp_and_elapsed_seconds(
