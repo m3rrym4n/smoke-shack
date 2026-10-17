@@ -4,6 +4,7 @@ import { mountCookView, mountLiveView } from "./views/live.js";
 import { mountMeatView } from "./views/meat.js";
 import { mountNotesView } from "./views/notes.js";
 import { mountPelletsView } from "./views/pellets.js";
+import { mountPitmasterView } from "./views/pitmaster.js";
 
 const routes = new Set(["live", "cooks", "profiles", "pellets", "meat", "notes", "pitmaster"]);
 const view = document.querySelector("#view");
@@ -14,7 +15,8 @@ function currentRoute() {
   const value = window.location.hash.slice(1);
   const cookMatch = value.match(/^cooks\/(\d+)$/);
   if (cookMatch) return { name: "cook-detail", cookId: Number(cookMatch[1]), nav: "cooks" };
-  const name = routes.has(value) ? value : "live";
+  const name = value.split("?", 1)[0];
+  if (!routes.has(name)) return { name: "live", nav: "live" };
   return { name, nav: name };
 }
 
@@ -49,6 +51,10 @@ function renderRoute() {
   }
   if (route.name === "notes") {
     disposeView = mountNotesView(view);
+    return;
+  }
+  if (route.name === "pitmaster") {
+    disposeView = mountPitmasterView(view);
     return;
   }
   view.innerHTML = `

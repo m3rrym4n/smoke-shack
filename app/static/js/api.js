@@ -76,6 +76,15 @@ export function getPellets() {
   return getJson("/api/pellets");
 }
 
+export function getCookStats(params = new URLSearchParams()) {
+  const query = params.toString();
+  return getJson(`/api/stats/cooks${query ? `?${query}` : ""}`);
+}
+
+export function getCookStatsMeatTypes() {
+  return getJson("/api/stats/meat-types");
+}
+
 export function getCooksForPellet(pelletId) {
   const params = new URLSearchParams({ pellet_id: pelletId, limit: 1 });
   return getJson(`/api/cooks?${params}`);
