@@ -114,6 +114,8 @@ def cooks_csv(
         query = query.where(Cook.pellet_id == pellet_id)
     if status_filter is not None:
         query = query.where(Cook.status == status_filter)
+    else:
+        query = query.where(Cook.status != "planned")
     factory: sessionmaker[Session] = request.app.state.sessions
     query = query.order_by(Cook.started_at.desc()).execution_options(yield_per=100)
 
@@ -178,6 +180,8 @@ def samples_csv(cook_id: int, request: Request, session: SessionDep) -> Streamin
     )
     factory: sessionmaker[Session] = request.app.state.sessions
     started_at = cook.started_at
+    if started_at is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Planned cooks cannot have samples")
 
     def values() -> Iterator[list[object]]:
         with factory() as stream_session:
@@ -214,7 +218,7 @@ def _all_json(session: Session) -> dict[str, Any]:
             for event in session.scalars(
                 select(Event).where(Event.cook_id == cook.id).order_by(Event.ts, Event.id)
             )
-        ]
+        ] if cook.started_at is not None else []
         item["photos"] = [
             {
                 "id": photo.id,

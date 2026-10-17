@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add explicit live, planned, new-order, and closed-cook modes to the Order Pad UI.
+- Add planned cooks that are atomically adopted when the next live cook starts.
 - Include uncooked Butcher Case meat types in the Ask the Pitmaster filter.
 - Complete the Order Pad with available-purchase selectors, pellet usage, and cook costs.
 - Add the Ask the Pitmaster cook-time statistics board with bookmarkable filters.

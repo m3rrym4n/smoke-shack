@@ -1,9 +1,10 @@
-import { getCook, getCookEvents, getCookSamples, getMeat, getPellets, getRecentCooks, getStatus } from "../api.js";
+import { deleteCook, getCook, getCookEvents, getCookPhotos, getCookSamples, getMeat, getPellets, getPlannedCooks, getRecentCooks, getStatus } from "../api.js";
 import { chartMarkup } from "../components/chart.js";
 import { cookLogMarkup } from "../components/cook-log.js";
 import { gaugeSvg } from "../components/gauge.js";
 import { bindLiveForms, orderPadMarkup, pinBoardMarkup } from "../components/live-forms.js";
-import { clampPercent, phaseDurations, phasePercentages } from "../live-logic.js";
+import { clampPercent, orderPlannedCooks, phaseDurations, phasePercentages, selectOrderPadMode } from "../live-logic.js";
+import { confirmDelete } from "../components/ui.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -72,20 +73,46 @@ async function load(container, onStatus, isCurrent, requestedCookId, refresh, se
     if (!isCurrent()) return;
     cookId = recent[0]?.id;
   }
-  if (!cookId) {
+  if (!cookId && requestedCookId != null) {
     container.innerHTML = `<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire's out. No cooks on the board yet.</p></section>`;
     return;
   }
   const liveForms = requestedCookId == null;
-  const [cook, samples, events, meat, pellets, cooks] = await Promise.all([
-    getCook(cookId), getCookSamples(cookId), getCookEvents(cookId),
-    liveForms ? getMeat() : [], liveForms ? getPellets() : [], liveForms ? getRecentCooks(10000) : [],
+  const requestedCook = requestedCookId == null ? null : await getCook(requestedCookId);
+  if (requestedCook?.state === "planned") {
+    const cook = requestedCook;
+    container.innerHTML = `<div class="cook-detail"><a class="back-link cc" href="#cooks">← All cooks</a><section class="order-pad planned-summary"><span class="tape" aria-hidden="true"></span><div class="order-heading"><h2>PLANNED ORDER</h2><span>No. ${String(cook.id).padStart(4, "0")}</span></div><p><b>Meat:</b> ${escapeHtml(cook.meat?.type || "Not selected")}</p><p><b>Pellets:</b> ${escapeHtml(cook.pellet ? `${cook.pellet.vendor} ${cook.pellet.product_name}` : "Not selected")}</p><p><b>Seasonings:</b> ${escapeHtml(cook.seasonings || "—")}</p><p><b>Sauces:</b> ${escapeHtml(cook.sauces || "—")}</p><p><b>Prep time:</b> ${cook.prep_time_minutes ?? "—"}${cook.prep_time_minutes != null ? " minutes" : ""}</p><p><b>Rotisserie:</b> ${cook.rotisserie ? "Yes" : "No"}</p><p><b>How it turned out:</b> ${escapeHtml(cook.results_text || "—")}</p><div class="planned-detail-actions"><a class="paper-button" href="#live?order=${cook.id}">Edit in Order Pad</a><button class="paper-button planned-cancel" type="button">Cancel order</button><span class="plan-confirm" hidden></span></div></section></div>`;
+    container.querySelector(".planned-cancel").addEventListener("click", () => confirmDelete(container.querySelector(".plan-confirm"), async () => { await deleteCook(cook.id); window.location.hash = "cooks"; }));
+    return;
+  }
+  const [cook, samples, events, meat, pellets, closedCooks, planned] = await Promise.all([
+    requestedCook || (cookId ? getCook(cookId) : null), cookId ? getCookSamples(cookId) : [], cookId ? getCookEvents(cookId) : [],
+    liveForms ? getMeat() : [], liveForms ? getPellets() : [], liveForms ? getRecentCooks(10000) : [], liveForms ? getPlannedCooks() : [],
   ]);
   if (!isCurrent()) return;
   const log = liveForms ? `<div class="log-pin-grid">${cookLogMarkup(events, true)}${pinBoardMarkup()}</div>` : cookLogMarkup(events);
-  const order = liveForms ? orderPadMarkup(cook, meat, pellets, cooks) : "";
-  container.innerHTML = `<div class="cook-detail">${requestedCookId == null ? "" : '<a class="back-link cc" href="#cooks">← All cooks</a>'}${heroMarkup(cook, samples.at(-1), active, requestedCookId != null)}${chartMarkup(samples, events, cook)}${log}${order}</div>`;
-  if (liveForms) bindLiveForms(container, { cook, events, meat, pellets, refresh, setBusy });
+  let order = "";
+  let orderCook = cook;
+  let mode;
+  if (liveForms) {
+    const params = new URLSearchParams(window.location.hash.split("?")[1] || "");
+    const sortedPlans = orderPlannedCooks(planned);
+    const selectedPlan = sortedPlans.find((item) => item.id === Number(params.get("order")));
+    const forceNew = params.get("new") === "1";
+    const closed = params.get("closed") === "1" ? closedCooks[0] || null : null;
+    const selection = forceNew
+      ? selectOrderPadMode(null, [])
+      : selectedPlan
+        ? { mode: "planned", cook: selectedPlan, banner: "Next order, will be used when the grill starts" }
+        : selectOrderPadMode(active ? cook : null, sortedPlans, closed);
+    mode = selection.mode;
+    orderCook = selection.cook;
+    const photos = orderCook?.id ? await getCookPhotos(orderCook.id) : [];
+    order = orderPadMarkup(orderCook, meat, pellets, [...closedCooks, ...planned, ...(active && cook ? [cook] : [])], { ...selection, planned: sortedPlans, photos });
+  }
+  const cookContent = cook ? `${heroMarkup(cook, samples.at(-1), active, requestedCookId != null)}${chartMarkup(samples, events, cook)}${log}` : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
+  container.innerHTML = `<div class="cook-detail">${requestedCookId == null ? "" : '<a class="back-link cc" href="#cooks">← All cooks</a>'}${cookContent}${order}</div>`;
+  if (liveForms) bindLiveForms(container, { cook, orderCook, events, meat, pellets, refresh, setBusy, mode });
 }
 
 export function mountCookView(container, { cookId = null, onStatus = () => {} } = {}) {

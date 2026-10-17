@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import Cook, Event, Sample
@@ -98,7 +98,9 @@ class CookService:
         now = as_utc(at or self.clock.now()).replace(microsecond=0)
         with self.sessions() as session:
             cook = session.scalar(
-                select(Cook).where(Cook.ended_at.is_(None)).order_by(Cook.started_at.desc())
+                select(Cook)
+                .where(Cook.ended_at.is_(None), Cook.status != "planned")
+                .order_by(Cook.started_at.desc())
             )
             reason = snapshot.implausible_reason()
             if reason is not None:
@@ -114,9 +116,11 @@ class CookService:
             if cook is None:
                 if not self._is_ignition(snapshot):
                     return None
-                cook = Cook(started_at=now, status="startup")
-                session.add(cook)
-                session.flush()
+                cook = self._adopt_planned(session, now)
+                if cook is None:
+                    cook = Cook(started_at=now, status="startup")
+                    session.add(cook)
+                    session.flush()
                 logger.info("cook %s started", cook.id)
                 self._event(session, cook, now, "fire_lit", "Fire lit")
                 self._event(
@@ -166,7 +170,30 @@ class CookService:
 
     def active_cook(self) -> Cook | None:
         with self.sessions() as session:
-            return session.scalar(select(Cook).where(Cook.ended_at.is_(None)))
+            return session.scalar(
+                select(Cook).where(Cook.ended_at.is_(None), Cook.status != "planned")
+            )
+
+    @staticmethod
+    def _adopt_planned(session: Session, now: datetime) -> Cook | None:
+        """Claim the oldest plan with a conditional update in the startup transaction."""
+        while True:
+            planned_id = session.scalar(
+                select(Cook.id)
+                .where(Cook.status == "planned")
+                .order_by(Cook.created_at, Cook.id)
+                .limit(1)
+            )
+            if planned_id is None:
+                return None
+            claimed = session.execute(
+                update(Cook)
+                .where(Cook.id == planned_id, Cook.status == "planned")
+                .values(status="startup", started_at=now, updated_at=now)
+            )
+            if claimed.rowcount == 1:
+                return session.get(Cook, planned_id)
+            session.expire_all()
 
     @staticmethod
     def _is_ignition(snapshot: GrillSnapshot) -> bool:

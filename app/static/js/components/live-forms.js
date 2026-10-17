@@ -1,5 +1,7 @@
-import { createCookEvent, deleteCookEvent, updateCook, updateCookEvent } from "../api.js";
+import { createCookEvent, createPlannedCook, deleteCook, deleteCookEvent, deletePhoto, updateCook, updateCookEvent, uploadCookPhoto } from "../api.js";
 import { availableMeat, meatOptionLabel, pelletOptionLabel, validatePelletsUsed } from "../order-pad-logic.js";
+import { closedCookReadOnlyFields, orderPadSavedMessage, orderPlannedCooks } from "../live-logic.js";
+import { confirmDelete } from "./ui.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -37,28 +39,40 @@ function money(value) {
   return value == null ? "—" : `$${Number(value).toFixed(2)}`;
 }
 
-export function orderPadMarkup(cook, meat, pellets, cooks = []) {
-  const choices = availableMeat(meat, cooks, cook.id);
+export function orderPadMarkup(cook, meat, pellets, cooks = [], config = {}) {
+  const { mode = "live", banner = "Cook in progress", planned = [], photos = [] } = config;
+  const model = cook || { id: null, meat_id: null, pellet_id: null, rotisserie: false };
+  const choices = availableMeat(meat, cooks, model.id);
   const meatEmpty = choices.length === 0;
   const pelletEmpty = pellets.length === 0;
+  const locked = new Set(mode === "closed" ? closedCookReadOnlyFields() : []);
+  const disabled = (name) => locked.has(name) ? " disabled" : "";
+  const otherPlans = orderPlannedCooks(planned).filter((item) => item.id !== model.id);
+  const actions = mode === "closed"
+    ? '<a class="paper-link" href="#live">Back to the next order</a>'
+    : `${mode === "live" || mode === "planned" ? '<a class="paper-button" href="#live?new=1">New order for the next cook</a>' : ""}<a class="paper-link" href="#live?closed=1">Write up the last cook</a>`;
   return `<section class="order-pad">
-    <span class="tape" aria-hidden="true"></span><div class="order-heading"><h2>ORDER PAD</h2><span>No. ${String(cook.id).padStart(4, "0")}</span></div>
+    <span class="tape" aria-hidden="true"></span><div class="order-heading"><h2>ORDER PAD</h2><span>${model.id ? `No. ${String(model.id).padStart(4, "0")}` : "New ticket"}</span></div>
+    <p class="order-mode">${escapeHtml(banner)}</p><div class="order-actions">${actions}</div>
     <form id="order-form" novalidate>
-      <label class="paper-field"><span>Meat</span><select name="meat_id"><option value="">Not selected</option>${options(choices, cook.meat_id, meatOptionLabel)}<option value="add">${meatEmpty ? "Nothing in the case yet, add some" : "+ Add new..."}</option></select></label>
-      <label class="paper-field"><span>Weight</span><input name="weight" readonly value="${escapeHtml(cook.meat?.pounds ? `${cook.meat.pounds} lb` : "—")}"></label>
-      <div class="paper-field"><span>Meat cost</span><output name="meat_cost">${money(cook.cost?.meat_cost)}</output></div>
-      <label class="paper-field"><span>Seasonings</span><input name="seasonings" value="${escapeHtml(cook.seasonings)}"></label>
-      <label class="paper-field"><span>Sauces</span><input name="sauces" value="${escapeHtml(cook.sauces)}"></label>
-      <label class="paper-field"><span>Prep time</span><span class="input-suffix"><input name="prep_time_minutes" type="number" min="0" step="1" value="${cook.prep_time_minutes ?? ""}"><b>minutes</b></span></label>
-      <label class="paper-field"><span>Pellets</span><select name="pellet_id"><option value="">Not selected</option>${options(pellets, cook.pellet_id, pelletOptionLabel)}<option value="add">${pelletEmpty ? "Nothing in the pantry yet, add some" : "+ Add new..."}</option></select></label>
-      <label class="paper-field"><span>Pellets used</span><span class="input-suffix"><input name="pellets_used_lb" type="number" min="0" step="0.01" value="${cook.pellets_used_lb ?? ""}"><b>lb</b></span></label>
-      <div class="paper-field"><span>Pellet cost</span><output name="pellet_cost">${money(cook.cost?.pellet_cost)}</output></div>
-      <label class="paper-field"><span>Profile used</span><input readonly value="${escapeHtml(cook.profile_name || "None")}"></label>
-      <fieldset class="paper-field rotisserie"><legend>Rotisserie</legend><label><input type="radio" name="rotisserie" value="true"${cook.rotisserie ? " checked" : ""}> Yes</label><label><input type="radio" name="rotisserie" value="false"${cook.rotisserie ? "" : " checked"}> No</label></fieldset>
-      <label class="paper-field paper-area"><span>How it turned out</span><textarea name="results_text" rows="4">${escapeHtml(cook.results_text)}</textarea></label>
+      <label class="paper-field"><span>Meat</span><select name="meat_id"${disabled("meat_id")}><option value="">Not selected</option>${options(choices, model.meat_id, meatOptionLabel)}<option value="add">${meatEmpty ? "Nothing in the case yet, add some" : "+ Add new..."}</option></select></label>
+      <label class="paper-field"><span>Weight</span><input name="weight" readonly value="${escapeHtml(model.meat?.pounds ? `${model.meat.pounds} lb` : "—")}"></label>
+      <div class="paper-field"><span>Meat cost</span><output name="meat_cost">${money(model.cost?.meat_cost)}</output></div>
+      <label class="paper-field"><span>Seasonings</span><input name="seasonings"${disabled("seasonings")} value="${escapeHtml(model.seasonings)}"></label>
+      <label class="paper-field"><span>Sauces</span><input name="sauces"${disabled("sauces")} value="${escapeHtml(model.sauces)}"></label>
+      <label class="paper-field"><span>Prep time</span><span class="input-suffix"><input name="prep_time_minutes" type="number" min="0" step="1"${disabled("prep_time_minutes")} value="${model.prep_time_minutes ?? ""}"><b>minutes</b></span></label>
+      <label class="paper-field"><span>Pellets</span><select name="pellet_id"${disabled("pellet_id")}><option value="">Not selected</option>${options(pellets, model.pellet_id, pelletOptionLabel)}<option value="add">${pelletEmpty ? "Nothing in the pantry yet, add some" : "+ Add new..."}</option></select></label>
+      <label class="paper-field"><span>Pellets used</span><span class="input-suffix"><input name="pellets_used_lb" type="number" min="0" step="0.01" value="${model.pellets_used_lb ?? ""}"><b>lb</b></span></label>
+      <div class="paper-field"><span>Pellet cost</span><output name="pellet_cost">${money(model.cost?.pellet_cost)}</output></div>
+      <label class="paper-field"><span>Profile used</span><input readonly value="${escapeHtml(model.profile_name || "None")}"></label>
+      <fieldset class="paper-field rotisserie"${disabled("rotisserie")}><legend>Rotisserie</legend><label><input type="radio" name="rotisserie" value="true"${model.rotisserie ? " checked" : ""}${disabled("rotisserie")}> Yes</label><label><input type="radio" name="rotisserie" value="false"${model.rotisserie ? "" : " checked"}${disabled("rotisserie")}> No</label></fieldset>
+      <label class="paper-field paper-area"><span>How it turned out</span><textarea name="results_text" rows="4">${escapeHtml(model.results_text)}</textarea></label>
+      <label class="paper-field paper-area"><span>Photos</span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp"></label>
+      <div class="order-photos">${photos.map((photo) => `<span><a href="${photo.url}" target="_blank" rel="noopener">Photo ${photo.id}</a><button class="paper-button delete-photo" type="button" data-photo-id="${photo.id}">Delete</button></span>`).join("")}</div>
       <p class="form-message" role="status" aria-live="polite"></p>
       <button class="pbtn order-save" type="submit">Save order</button>
     </form>
+    ${otherPlans.length ? `<div class="planned-orders"><h3>Other planned orders</h3>${otherPlans.map((item) => `<div><a href="#live?order=${item.id}">Order #${item.id}${item.meat?.type ? ` · ${escapeHtml(item.meat.type)}` : ""}</a><button class="paper-button cancel-plan" data-cook-id="${item.id}" type="button">Cancel</button><span class="plan-confirm" hidden></span></div>`).join("")}</div>` : ""}
   </section>`;
 }
 
@@ -72,9 +86,10 @@ function apiMessage(error) {
   return typeof error.message === "string" ? error.message : "Something went wrong. Please try again.";
 }
 
-export function bindLiveForms(container, { cook, events, meat, pellets, refresh, setBusy }) {
+export function bindLiveForms(container, { cook, orderCook = cook, events, meat, pellets, refresh, setBusy, mode = "live" }) {
   const eventForm = container.querySelector("#event-form");
   const orderForm = container.querySelector("#order-form");
+  if (eventForm) {
   let editingId = null;
   let useNow = true;
 
@@ -152,14 +167,15 @@ export function bindLiveForms(container, { cook, events, meat, pellets, refresh,
     setBusy(true);
     eventForm.scrollIntoView({ behavior: "smooth", block: "center" });
   }));
+  }
 
   orderForm.addEventListener("input", () => setBusy(true));
-  orderForm.elements.meat_id.addEventListener("change", () => {
+  orderForm.elements.meat_id?.addEventListener("change", () => {
     if (orderForm.elements.meat_id.value === "add") { window.location.hash = "meat"; return; }
     const item = meat.find((row) => row.id === Number(orderForm.elements.meat_id.value));
     orderForm.elements.weight.value = item ? `${item.pounds} lb` : "—";
   });
-  orderForm.elements.pellet_id.addEventListener("change", () => {
+  orderForm.elements.pellet_id?.addEventListener("change", () => {
     if (orderForm.elements.pellet_id.value === "add") window.location.hash = "pellets";
   });
   orderForm.addEventListener("submit", async (event) => {
@@ -179,18 +195,36 @@ export function bindLiveForms(container, { cook, events, meat, pellets, refresh,
       rotisserie: orderForm.elements.rotisserie.value === "true",
       results_text: orderForm.elements.results_text.value.trim() || null,
     };
+    if (mode === "closed") closedCookReadOnlyFields().forEach((field) => delete body[field]);
     const submit = orderForm.querySelector(".order-save");
     submit.disabled = true;
     try {
-      const updated = await updateCook(cook.id, body);
+      const updated = mode === "new" ? await createPlannedCook(body) : await updateCook(orderCook.id, body);
+      const photo = orderForm.elements.photo.files[0];
+      if (photo) await uploadCookPhoto(updated.id, photo);
       orderForm.elements.meat_cost.value = money(updated.cost?.meat_cost);
       orderForm.elements.pellet_cost.value = money(updated.cost?.pellet_cost);
       setBusy(false);
-      showMessage(orderForm, "Order saved.");
+      const savedMessage = orderPadSavedMessage(mode);
+      if (mode === "new") {
+        orderCook = updated;
+        mode = "planned";
+      }
+      showMessage(orderForm, savedMessage);
       submit.disabled = false;
+      if (savedMessage !== "Order saved.") window.history.replaceState(null, "", `#live?order=${updated.id}`);
     } catch (error) {
       showMessage(orderForm, apiMessage(error), true);
       submit.disabled = false;
     }
   });
+  container.querySelectorAll(".cancel-plan").forEach((button) => button.addEventListener("click", () => {
+    const prompt = button.parentElement.querySelector(".plan-confirm");
+    confirmDelete(prompt, async () => { await deleteCook(Number(button.dataset.cookId)); await refresh(); });
+  }));
+  container.querySelectorAll(".delete-photo").forEach((button) => button.addEventListener("click", async () => {
+    button.disabled = true;
+    try { await deletePhoto(Number(button.dataset.photoId)); await refresh(); }
+    catch (error) { showMessage(orderForm, apiMessage(error), true); button.disabled = false; }
+  }));
 }

@@ -29,3 +29,44 @@ export function phasePercentages(durations) {
     cooldown: (durations.cooldown / total) * 100,
   };
 }
+
+export const ORDER_PAD_BANNERS = {
+  live: "Cook in progress",
+  planned: "Next order, will be used when the grill starts",
+  new: "New order for the next cook",
+};
+
+export function orderPlannedCooks(cooks) {
+  return [...cooks].sort((left, right) => {
+    const leftTime = Date.parse(left.created_at || "") || 0;
+    const rightTime = Date.parse(right.created_at || "") || 0;
+    return leftTime - rightTime || left.id - right.id;
+  });
+}
+
+export function selectOrderPadMode(activeCook, plannedCooks, closedCook = null) {
+  if (closedCook) {
+    return { mode: "closed", cook: closedCook, banner: `Editing closed cook #${closedCook.id}: how it turned out` };
+  }
+  if (activeCook) return { mode: "live", cook: activeCook, banner: ORDER_PAD_BANNERS.live };
+  const planned = orderPlannedCooks(plannedCooks);
+  if (planned.length) return { mode: "planned", cook: planned[0], banner: ORDER_PAD_BANNERS.planned };
+  return { mode: "new", cook: null, banner: ORDER_PAD_BANNERS.new };
+}
+
+export function closedCookReadOnlyFields() {
+  return ["meat_id", "seasonings", "sauces", "prep_time_minutes", "pellet_id", "rotisserie"];
+}
+
+export function eligibleMeat(meat, cooks, cookId = null) {
+  const usedElsewhere = new Set(cooks
+    .filter((cook) => cook.id !== cookId && cook.meat_id != null)
+    .map((cook) => cook.meat_id));
+  return meat.filter((item) => !usedElsewhere.has(item.id));
+}
+
+export function orderPadSavedMessage(mode) {
+  return mode === "new"
+    ? "Saved. It will be picked up automatically when the grill starts."
+    : "Order saved.";
+}

@@ -47,8 +47,35 @@ export function getCookEvents(cookId) {
 }
 
 export function getRecentCooks(limit = 1, offset = 0) {
-  const params = new URLSearchParams({ limit, offset });
+  const params = new URLSearchParams({ limit, offset, state: "closed" });
   return getJson(`/api/cooks?${params}`);
+}
+
+export function getPlannedCooks(limit = 100, offset = 0) {
+  const params = new URLSearchParams({ limit, offset, state: "planned" });
+  return getJson(`/api/cooks?${params}`);
+}
+
+export function createPlannedCook(body) {
+  return sendJson("POST", "/api/cooks", { ...body, state: "planned" });
+}
+
+export function deleteCook(cookId) {
+  return sendJson("DELETE", `/api/cooks/${cookId}`);
+}
+
+export function getCookPhotos(cookId) {
+  return getJson(`/api/cooks/${cookId}/photos`);
+}
+
+export function uploadCookPhoto(cookId, file) {
+  const body = new FormData();
+  body.append("file", file);
+  return requestJson(`/api/cooks/${cookId}/photos`, { method: "POST", body });
+}
+
+export function deletePhoto(photoId) {
+  return sendJson("DELETE", `/api/photos/${photoId}`);
 }
 
 export function getMeat() {

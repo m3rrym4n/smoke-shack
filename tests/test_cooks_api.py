@@ -199,3 +199,62 @@ def test_delete_cook_rejects_active_and_removes_children(
         note = session.scalar(select(Note))
         assert note is not None
         assert note.cook_id is None
+
+
+def test_planned_cook_create_list_next_unlink_and_delete(
+    sessions: sessionmaker[Session],
+) -> None:
+    with sessions() as session:
+        meat = Meat(
+            type="Brisket",
+            pounds=Decimal("9.50"),
+            price_per_pound=Decimal("4.00"),
+            purchased_on=date(2026, 10, 16),
+        )
+        pellet = Pellet(
+            vendor="CookinPellets",
+            product_name="Perfect Mix",
+            price_per_pound=Decimal("1.10"),
+            purchased_on=date(2026, 10, 16),
+        )
+        session.add_all([meat, pellet])
+        session.commit()
+        meat_id, pellet_id = meat.id, pellet.id
+
+    payload = {
+        "state": "planned",
+        "meat_id": meat_id,
+        "pellet_id": pellet_id,
+        "rotisserie": True,
+        "seasonings": "Salt and pepper",
+        "sauces": "None",
+        "prep_time_minutes": 30,
+        "pellets_used_lb": 3,
+        "results_text": "Prep notes",
+    }
+    with TestClient(create_app(Settings(), sessions)) as client:
+        first = client.post("/api/cooks", json=payload)
+        second = client.post("/api/cooks", json={"state": "planned"})
+        plans = client.get("/api/cooks?state=planned")
+        next_cook = client.get("/api/cooks/next")
+        unlinked = client.patch(f"/api/cooks/{first.json()['id']}", json={"meat_id": None})
+        deleted = client.delete(f"/api/cooks/{first.json()['id']}")
+        new_next = client.get("/api/cooks/next")
+
+    assert first.status_code == 201
+    assert first.json()["started_at"] is None
+    assert first.json()["state"] == first.json()["status"] == "planned"
+    assert first.json()["seasonings"] == "Salt and pepper"
+    assert [item["id"] for item in plans.json()] == [second.json()["id"], first.json()["id"]]
+    assert next_cook.json()["id"] == first.json()["id"]
+    assert unlinked.json()["meat_id"] is None
+    assert deleted.status_code == 204
+    assert new_next.json()["id"] == second.json()["id"]
+
+
+def test_next_planned_cook_returns_404_when_empty(sessions: sessionmaker[Session]) -> None:
+    with TestClient(create_app(Settings(), sessions)) as client:
+        response = client.get("/api/cooks/next")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "No planned cook"}
