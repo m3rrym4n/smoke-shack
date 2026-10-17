@@ -113,7 +113,11 @@ async function load(container, onStatus, isCurrent, requestedCookId, refresh, se
   }
   const resultPhotos = !liveForms && cook ? `<section class="order-pad cook-results"><span class="tape" aria-hidden="true"></span><h2>How it turned out</h2><p>${escapeHtml(cook.results_text || "No write-up yet.")}</p>${photoGalleryMarkup(detailPhotos)}</section>` : "";
   const cookContent = cook ? `${heroMarkup(cook, samples.at(-1), active, requestedCookId != null)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
-  container.innerHTML = `<div class="cook-detail">${requestedCookId == null ? "" : '<a class="back-link cc" href="#cooks">← All cooks</a>'}${cookContent}${order}</div>`;
+  const liveDetail = requestedCookId != null && cook && cook.ended_at == null;
+  const backLink = liveDetail
+    ? '<a class="back-link cc" href="#live">← Back to live cook</a>'
+    : '<a class="back-link cc" href="#cooks">← All cooks</a>';
+  container.innerHTML = `<div class="cook-detail">${requestedCookId == null ? "" : backLink}${cookContent}${order}</div>`;
   if (liveForms) bindLiveForms(container, { cook, orderCook, events, meat, pellets, refresh, setBusy, mode });
   else if (cook) bindPhotoGallery(container.querySelector(".cook-results"), { cookId: cook.id });
 }

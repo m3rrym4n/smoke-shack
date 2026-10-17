@@ -56,6 +56,11 @@ export function getPlannedCooks(limit = 100, offset = 0) {
   return getJson(`/api/cooks?${params}`);
 }
 
+export async function getActiveCook() {
+  const status = await getStatus();
+  return status.active_cook ? getCook(status.active_cook.id) : null;
+}
+
 export function createPlannedCook(body) {
   return sendJson("POST", "/api/cooks", { ...body, state: "planned" });
 }
