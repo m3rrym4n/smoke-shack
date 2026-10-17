@@ -11,15 +11,32 @@ from app.service import CookService, GrillSnapshot
 
 
 def snap(
-    *, setpoint: float = 150, power: str = "on", mode: str = "heat", probe1: float | None = None
+    *,
+    setpoint: float = 150,
+    power: str = "On",
+    mode: str = "heat",
+    fire: str = "Startup",
+    probe1: float | None = None,
+    probe1_connected: bool = False,
+    probe1_target: float | None = None,
+    probe2: float | None = None,
+    probe2_connected: bool = False,
+    probe2_target: float | None = None,
+    warning: str = "None",
 ) -> GrillSnapshot:
     return GrillSnapshot(
         pit_temp=100,
         setpoint=setpoint,
         probe1=probe1,
-        fire_state="on",
+        probe2=probe2,
+        probe1_connected=probe1_connected,
+        probe2_connected=probe2_connected,
+        probe1_target=probe1_target,
+        probe2_target=probe2_target,
+        fire_state=fire,
         power_state=power,
         hvac_mode=mode,
+        warning=warning,
     )
 
 
@@ -37,11 +54,11 @@ def test_normal_cook(sessions: sessionmaker[Session], clock: FakeClock) -> None:
     cook = service.process(snap())
     assert cook is not None and cook.status == "startup"
     clock.advance(minutes=5)
-    service.process(snap(setpoint=275))
+    service.process(snap(setpoint=275, fire="Running"))
     clock.advance(hours=2)
-    service.process(snap(setpoint=275, power="off", mode="fan_only"))
+    service.process(snap(setpoint=275, power="Fan", mode="off", fire="Cool Down"))
     clock.advance(minutes=10)
-    closed = service.process(snap(setpoint=275, power="off", mode="off"))
+    closed = service.process(snap(setpoint=275, power="Off", mode="off", fire="Off"))
     assert closed is not None
     assert closed.startup_duration_seconds == 300
     assert closed.cook_duration_seconds == 7200
@@ -73,7 +90,7 @@ def test_return_to_150_stays_in_cook(sessions: sessionmaker[Session], clock: Fak
 
 def test_fan_only(sessions: sessionmaker[Session], clock: FakeClock) -> None:
     service = CookService(sessions, clock)
-    assert service.process(snap(power="on", mode="fan_only")) is None
+    assert service.process(snap(power="Fan", mode="fan_only", fire="Off")) is None
     cook = service.process(snap(setpoint=275))
     assert cook is not None
     clock.advance(seconds=10)
@@ -120,9 +137,9 @@ def test_aggregate_setpoint_and_override(sessions: sessionmaker[Session], clock:
     clock.advance(hours=4)
     service.process(snap(setpoint=350))
     clock.advance(minutes=30)
-    service.process(snap(setpoint=350, power="off", mode="fan_only"))
+    service.process(snap(setpoint=350, power="Fan", mode="off", fire="Cool Down"))
     clock.advance(minutes=5)
-    closed = service.process(snap(setpoint=350, power="off", mode="off"))
+    closed = service.process(snap(setpoint=350, power="Off", mode="off", fire="Off"))
     assert closed is not None and closed.aggregate_setpoint == 275
     with sessions() as session:
         stored = session.get(Cook, closed.id)
@@ -136,8 +153,57 @@ def test_incomplete_cook_timeout(sessions: sessionmaker[Session], clock: FakeClo
     service = CookService(sessions, clock, incomplete_timeout_minutes=90)
     service.process(snap(setpoint=275))
     clock.advance(hours=1)
-    service.process(snap(setpoint=275, power="off", mode="fan_only"))
+    service.process(snap(setpoint=275, power="Fan", mode="off", fire="Cool Down"))
     clock.advance(minutes=90)
-    closed = service.process(snap(setpoint=275, power="off", mode="fan_only"))
+    closed = service.process(snap(setpoint=275, power="Fan", mode="off", fire="Cool Down"))
     assert closed is not None and closed.status == "closed" and closed.incomplete
     assert closed.cooldown_duration_seconds == int(timedelta(minutes=90).total_seconds())
+
+
+def test_probe_done_uses_connected_probe_target(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(snap(setpoint=275, fire="Running"))
+    assert cook is not None
+    clock.advance(minutes=45)
+    cook = service.process(
+        snap(
+            setpoint=275,
+            fire="Running",
+            probe1=203,
+            probe1_connected=True,
+            probe1_target=203,
+            probe2=None,
+            probe2_connected=False,
+            probe2_target=165,
+        )
+    )
+    assert cook is not None and cook.time_to_done_seconds == 2700
+    clock.advance(seconds=10)
+    service.process(
+        snap(
+            setpoint=275,
+            fire="Running",
+            probe1=205,
+            probe1_connected=True,
+            probe1_target=203,
+            probe2=None,
+            probe2_connected=False,
+            probe2_target=165,
+        )
+    )
+    assert kinds(sessions, cook.id).count("probe_done") == 1
+
+
+def test_warning_sensor_change_records_warning(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(snap())
+    assert cook is not None
+    clock.advance(seconds=10)
+    service.process(snap(warning="Low pellets"))
+    clock.advance(seconds=10)
+    service.process(snap(warning="Low pellets"))
+    assert kinds(sessions, cook.id).count("warning") == 1

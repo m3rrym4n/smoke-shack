@@ -110,6 +110,8 @@ class Sample(Base):
     setpoint: Mapped[float | None]
     probe1: Mapped[float | None]
     probe2: Mapped[float | None]
+    probe1_target: Mapped[float | None]
+    probe2_target: Mapped[float | None]
     extra_probes: Mapped[dict[str, float | None]] = mapped_column(JSON, default=dict)
     fire_state: Mapped[str | None]
     power_state: Mapped[str | None]

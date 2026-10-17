@@ -1,9 +1,12 @@
 pit_climate: climate.green_mountain_grill
 pit_temp: sensor.green_mountain_grill_temperature
-setpoint: sensor.green_mountain_grill_setpoint
-probe1_temp: sensor.green_mountain_grill_probe_1
-probe2_temp: sensor.green_mountain_grill_probe_2
-fire_state: binary_sensor.green_mountain_grill_fire
-power_state: binary_sensor.green_mountain_grill_power
+probe1_temp: sensor.green_mountain_grill_probe_1_temperature
+probe2_temp: sensor.green_mountain_grill_probe_2_temperature
+probe1_connection: binary_sensor.green_mountain_grill_probe_1_connection
+probe2_connection: binary_sensor.green_mountain_grill_probe_2_connection
+probe1_climate: climate.green_mountain_grill_probe_1
+probe2_climate: climate.green_mountain_grill_probe_2
+fire_state: sensor.green_mountain_grill_fire_state
+power_state: sensor.green_mountain_grill_power_state
+warning: sensor.green_mountain_grill_warning
 extra_probes: []
-

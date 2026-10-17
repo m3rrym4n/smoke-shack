@@ -22,13 +22,13 @@ def test_exact_timestamp_and_elapsed_seconds(
 ) -> None:
     service = CookService(sessions, clock)
     cook = service.process(
-        GrillSnapshot(setpoint=150, fire_state="on", power_state="on", hvac_mode="heat")
+        GrillSnapshot(setpoint=150, fire_state="Startup", power_state="On", hvac_mode="heat")
     )
     assert cook is not None
     clock.advance(seconds=75)
     event_time = datetime(2026, 10, 16, 16, 58, 18, tzinfo=UTC)
     service.process(
-        GrillSnapshot(setpoint=275, fire_state="on", power_state="on", hvac_mode="heat"),
+        GrillSnapshot(setpoint=275, fire_state="Running", power_state="On", hvac_mode="heat"),
         event_time,
     )
     app = create_app(Settings(), sessions, FakeHAClient())

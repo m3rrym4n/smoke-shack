@@ -82,15 +82,30 @@ class HomeAssistantClient:
             except ValueError:
                 return None
 
+        def attribute_number(entity_id: str, attribute: str) -> float | None:
+            value = states.get(entity_id, {}).get("attributes", {}).get(attribute)
+            try:
+                return float(value) if value is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        def connected(entity_id: str) -> bool:
+            return (state(entity_id) or "").casefold() == "on"
+
         climate = states.get(self.entities.pit_climate, {})
         mode = climate.get("state")
         return GrillSnapshot(
             pit_temp=number(self.entities.pit_temp),
-            setpoint=number(self.entities.setpoint),
+            setpoint=attribute_number(self.entities.pit_climate, "temperature"),
             probe1=number(self.entities.probe1_temp),
             probe2=number(self.entities.probe2_temp),
+            probe1_connected=connected(self.entities.probe1_connection),
+            probe2_connected=connected(self.entities.probe2_connection),
+            probe1_target=attribute_number(self.entities.probe1_climate, "temperature"),
+            probe2_target=attribute_number(self.entities.probe2_climate, "temperature"),
             fire_state=state(self.entities.fire_state),
             power_state=state(self.entities.power_state),
+            warning=state(self.entities.warning),
             hvac_mode=cast(str | None, mode),
             extra_probes={entity: number(entity) for entity in self.entities.extra_probes},
         )

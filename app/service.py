@@ -7,7 +7,7 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import Cook, Event, ProfileStep, Sample
+from app.models import Cook, Event, Sample
 
 
 def as_utc(value: datetime) -> datetime:
@@ -22,10 +22,15 @@ class GrillSnapshot:
     setpoint: float | None = None
     probe1: float | None = None
     probe2: float | None = None
+    probe1_connected: bool = False
+    probe2_connected: bool = False
+    probe1_target: float | None = None
+    probe2_target: float | None = None
     extra_probes: dict[str, float | None] = field(default_factory=dict)
     fire_state: str | None = None
     power_state: str | None = None
     hvac_mode: str | None = None
+    warning: str | None = None
 
 
 class Clock(Protocol):
@@ -101,19 +106,20 @@ class CookService:
 
     @staticmethod
     def _is_ignition(snapshot: GrillSnapshot) -> bool:
-        mode = (snapshot.hvac_mode or "").lower().replace(" ", "_")
-        fire = (snapshot.fire_state or "").lower()
-        powered = (snapshot.power_state or "").lower() in {"on", "true", "1"}
-        return mode not in {"", "off", "fan_only", "fan"} and (powered or fire in {"on", "lit"})
+        mode = _normalized(snapshot.hvac_mode)
+        fire = _normalized(snapshot.fire_state)
+        power = _normalized(snapshot.power_state)
+        return mode == "heat" and (fire in {"startup", "running"} or power == "on")
 
     def _advance_phase(
         self, session: Session, cook: Cook, snapshot: GrillSnapshot, now: datetime
     ) -> None:
-        mode = (snapshot.hvac_mode or "").lower().replace(" ", "_")
-        power_off = (snapshot.power_state or "").lower() in {"off", "false", "0"}
+        mode = _normalized(snapshot.hvac_mode)
+        fire = _normalized(snapshot.fire_state)
+        power = _normalized(snapshot.power_state)
         if cook.status == "startup" and snapshot.setpoint is not None and snapshot.setpoint != 150:
             self._start_cook_phase(session, cook, now)
-        if cook.status in {"startup", "cook"} and power_off:
+        if cook.status in {"startup", "cook"} and (mode == "off" or fire == "cool down"):
             if cook.startup_ended_at is None:
                 cook.startup_ended_at = now
             cook.cook_ended_at = now
@@ -122,7 +128,7 @@ class CookService:
                 session, cook, now, "phase_changed", "Cool down started", {"to": "cooldown"}
             )
         if cook.status == "cooldown":
-            if mode in {"", "off"}:
+            if fire == "off" and power == "off":
                 self._close(session, cook, now, incomplete=False)
             elif cook.cook_ended_at and now - as_utc(cook.cook_ended_at) >= self.incomplete_timeout:
                 self._close(session, cook, now, incomplete=True)
@@ -180,6 +186,9 @@ class CookService:
         now: datetime,
     ) -> None:
         if previous is None:
+            if _normalized(current.fire_state) == "fail":
+                self._event(session, cook, now, "warning", "Grill fire state failed")
+            self._record_warning_change(session, cook, current.warning, now)
             return
         changes = (
             ("setpoint_changed", previous.setpoint, current.setpoint, "Setpoint changed"),
@@ -202,40 +211,69 @@ class CookService:
                     f"{name} {state}",
                     {"probe": name},
                 )
+        if _normalized(previous.fire_state) != "fail" and _normalized(current.fire_state) == "fail":
+            self._event(session, cook, now, "warning", "Grill fire state failed")
+        self._record_warning_change(session, cook, current.warning, now)
+
+    def _record_warning_change(
+        self, session: Session, cook: Cook, warning: str | None, now: datetime
+    ) -> None:
+        value = None if warning is None or warning.casefold() == "none" else warning
+        warning_events = session.scalars(
+            select(Event)
+            .where(Event.cook_id == cook.id, Event.kind.in_(("warning", "warning_cleared")))
+            .order_by(Event.id.desc())
+        )
+        latest = next((event for event in warning_events if "warning" in event.data), None)
+        previous = latest.data.get("warning") if latest is not None else None
+        if value == previous:
+            return
+        if value is None:
+            if latest is not None and "warning" in latest.data:
+                self._event(
+                    session,
+                    cook,
+                    now,
+                    "warning_cleared",
+                    "Grill warning cleared",
+                    {"warning": None},
+                )
+            return
+        self._event(session, cook, now, "warning", "Grill warning", {"warning": value})
 
     def _record_time_to_done(
         self, session: Session, cook: Cook, snapshot: GrillSnapshot, now: datetime
     ) -> None:
-        if (
-            cook.profile_id is None
-            or cook.startup_ended_at is None
-            or cook.cook_ended_at is not None
-            or cook.time_to_done_seconds is not None
-        ):
+        if cook.startup_ended_at is None or cook.cook_ended_at is not None:
             return
-        steps = session.scalars(
-            select(ProfileStep)
-            .where(
-                ProfileStep.profile_id == cook.profile_id,
-                ProfileStep.stop_mode == "internal_temp",
+        done_probes = list(
+            session.scalars(
+                select(Event.data).where(Event.cook_id == cook.id, Event.kind == "probe_done")
             )
-            .order_by(ProfileStep.position)
         )
-        for step in steps:
-            reading = snapshot.probe1 if step.probe == 1 else snapshot.probe2
-            if reading is not None and step.target_temp is not None and reading >= step.target_temp:
-                cook.time_to_done_seconds = int(
-                    (now - as_utc(cook.startup_ended_at)).total_seconds()
-                )
+        for probe, reading, target, connected in (
+            (1, snapshot.probe1, snapshot.probe1_target, snapshot.probe1_connected),
+            (2, snapshot.probe2, snapshot.probe2_target, snapshot.probe2_connected),
+        ):
+            if (
+                probe not in {data.get("probe") for data in done_probes}
+                and connected
+                and reading is not None
+                and target is not None
+                and reading >= target
+            ):
+                if cook.time_to_done_seconds is None:
+                    cook.time_to_done_seconds = int(
+                        (now - as_utc(cook.startup_ended_at)).total_seconds()
+                    )
                 self._event(
                     session,
                     cook,
                     now,
                     "probe_done",
                     "Probe reached target",
-                    {"probe": step.probe, "target": step.target_temp},
+                    {"probe": probe, "target": target},
                 )
-                return
 
     @staticmethod
     def _sample(cook_id: int, snapshot: GrillSnapshot, now: datetime) -> Sample:
@@ -246,6 +284,8 @@ class CookService:
             setpoint=snapshot.setpoint,
             probe1=snapshot.probe1,
             probe2=snapshot.probe2,
+            probe1_target=snapshot.probe1_target,
+            probe2_target=snapshot.probe2_target,
             extra_probes=snapshot.extra_probes,
             fire_state=snapshot.fire_state,
             power_state=snapshot.power_state,
@@ -268,3 +308,7 @@ class CookService:
 
 def _iso(value: datetime) -> str:
     return as_utc(value).isoformat().replace("+00:00", "Z")
+
+
+def _normalized(value: str | None) -> str:
+    return (value or "").casefold().replace("_", " ")

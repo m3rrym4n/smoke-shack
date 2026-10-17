@@ -133,6 +133,8 @@ def _sample(sample: Sample, started: datetime) -> dict[str, Any]:
         "setpoint": sample.setpoint,
         "probe1": sample.probe1,
         "probe2": sample.probe2,
+        "probe1_target": sample.probe1_target,
+        "probe2_target": sample.probe2_target,
         "extra_probes": sample.extra_probes,
         "fire_state": sample.fire_state,
         "power_state": sample.power_state,
