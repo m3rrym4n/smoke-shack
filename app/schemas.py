@@ -129,7 +129,11 @@ def _utc_datetime(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC).replace(microsecond=0)
 
 
+UserEventKind = Literal["stall", "wrapped", "spritzed", "sauced", "flipped", "rested", "custom"]
+
+
 class UserEventCreate(BaseModel):
+    kind: UserEventKind = "custom"
     title: NonEmptyStr
     description: str | None = None
     ts: datetime | None = None
@@ -138,13 +142,14 @@ class UserEventCreate(BaseModel):
 
 
 class UserEventUpdate(BaseModel):
+    kind: UserEventKind | None = None
     title: NonEmptyStr | None = None
     description: str | None = None
     ts: datetime | None = None
 
     _validate_ts = field_validator("ts")(_utc_datetime)
 
-    @field_validator("title", "ts", mode="before")
+    @field_validator("kind", "title", "ts", mode="before")
     @classmethod
     def required_fields_cannot_be_null(cls, value: object) -> object:
         if value is None:

@@ -3,6 +3,10 @@
 ## Unreleased
 
 - Sample the latest Home Assistant grill state on a timer while connected.
+- Add live event pinning and editing plus the cook Order Pad form.
+- Add cook temperature charts, event logs, paginated cook history, and read-only cook details.
+- Add the read-only live cook boards with pit gauge, phase progress, probes, and paused background polling.
+- Add the BBQ signage UI shell, hash navigation, and active-cook neon indicator.
 - Add filtered cook CSV, raw sample CSV, and full journal JSON export APIs.
 - Add filtered cook duration statistics and meat-type count APIs.
 - Add cook and event photo upload, serving, editing, listing, and deletion APIs.
