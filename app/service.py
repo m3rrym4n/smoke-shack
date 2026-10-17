@@ -62,7 +62,7 @@ class GrillSnapshot:
             for name, value in core.items()
             if value is None or _normalized(value) in {"unknown", "unavailable"}
         ]
-        if missing and len(missing) != len(core):
+        if 2 <= len(missing) < len(core):
             return f"core entity {missing[0]} is unavailable while others are present"
         return None
 

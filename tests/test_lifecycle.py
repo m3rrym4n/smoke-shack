@@ -281,6 +281,79 @@ def test_garbage_snapshot_does_not_start_cooldown(
     assert cook is not None and cook.status == "cook"
 
 
+def test_unknown_fire_state_records_cooldown_sample_without_gap(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(snap(setpoint=275, fire="Running"))
+    assert cook is not None
+    clock.advance(seconds=10)
+    service.process(snap(setpoint=275, power="Fan", mode="off", fire="Cool Down"))
+    clock.advance(seconds=10)
+
+    cook = service.process(
+        snap(setpoint=275, power="Fan", mode="fan_only", fire="Unknown")
+    )
+
+    assert cook is not None and cook.status == "cooldown" and not cook.has_gap
+    with sessions() as session:
+        samples = list(
+            session.scalars(select(Sample).where(Sample.cook_id == cook.id).order_by(Sample.ts))
+        )
+    assert len(samples) == 3
+    assert samples[-1].fire_state == "Unknown"
+    assert "data_gap" not in kinds(sessions, cook.id)
+
+
+def test_two_unknown_core_entities_with_unknown_warning_are_rejected(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(snap(setpoint=275, fire="Running"))
+    assert cook is not None
+    clock.advance(seconds=10)
+    assert (
+        snap(setpoint=275, power="Unknown", mode="off", fire="Unknown").implausible_reason()
+        == "core entity fire_state is unavailable while others are present"
+    )
+
+    cook = service.process(
+        snap(
+            setpoint=275,
+            power="Unknown",
+            mode="off",
+            fire="Unknown",
+            warning="Unknown",
+        )
+    )
+
+    assert cook is not None and cook.status == "cook"
+    with sessions() as session:
+        samples = list(session.scalars(select(Sample).where(Sample.cook_id == cook.id)))
+    assert len(samples) == 1
+
+
+def test_unknown_fire_during_cooldown_closes_only_on_off_states(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(snap(setpoint=275, fire="Running"))
+    assert cook is not None
+    clock.advance(seconds=10)
+    service.process(snap(setpoint=275, power="Fan", mode="off", fire="Cool Down"))
+    clock.advance(seconds=10)
+
+    open_cook = service.process(
+        snap(setpoint=275, power="Fan", mode="fan_only", fire="Unknown")
+    )
+    assert open_cook is not None and open_cook.status == "cooldown"
+    clock.advance(seconds=10)
+
+    closed = service.process(snap(setpoint=275, power="Off", mode="off", fire="Off"))
+    assert closed is not None and closed.status == "closed"
+    assert closed.cooldown_ended_at == clock.now()
+
+
 def test_repeated_valid_snapshot_records_each_change_once(
     sessions: sessionmaker[Session], clock: FakeClock
 ) -> None:

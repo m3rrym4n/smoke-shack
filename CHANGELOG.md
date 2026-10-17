@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Preserve otherwise valid samples when only one core grill entity is unavailable.
 - Prevent older dev builds from overwriting newer deployed image tags during CI write-back races.
 - Sample the latest Home Assistant grill state on a timer while connected.
 - Ignore implausible grill snapshots and coalesce Home Assistant update bursts.
