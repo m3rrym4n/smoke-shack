@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Make Pit showcase image selection row-specific and save smoke positions immediately.
 - Stack the Pit showcase vertically with full-width, frameless grill photos and wrapping names.
 - Accept safely validated SVG files for Pit showcase logos.
 - List and default live and planned cooks correctly in Pit Notes.

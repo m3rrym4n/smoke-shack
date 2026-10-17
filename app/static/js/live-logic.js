@@ -35,6 +35,28 @@ export function clampStackPosition(value, fallback) {
   return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : fallback;
 }
 
+export function readStackPosition(storage, key) {
+  try {
+    const saved = JSON.parse(storage.getItem(key));
+    return { x: clampStackPosition(saved?.x, 50), y: clampStackPosition(saved?.y, 5) };
+  } catch {
+    return { x: 50, y: 5 };
+  }
+}
+
+export function writeStackPosition(storage, key, position) {
+  const saved = {
+    x: clampStackPosition(position?.x, 50),
+    y: clampStackPosition(position?.y, 5),
+  };
+  storage.setItem(key, JSON.stringify(saved));
+  return saved;
+}
+
+export function showcaseSaveEnabled(file) {
+  return Boolean(file);
+}
+
 function secondsBetween(start, end) {
   if (!start || !end) return 0;
   return Math.max(0, Math.round((new Date(end) - new Date(start)) / 1000));

@@ -168,3 +168,36 @@ def test_showcase_placeholders_layout_and_stack_clamping() -> None:
         "layouts": ["showcase-mobile", "showcase-wide"],
         "positions": [0, 38, 100, 5],
     }
+
+
+def test_showcase_anchor_persistence_clamps_and_defaults() -> None:
+    expression = """
+      const values = new Map();
+      const storage = {
+        getItem: key => values.get(key) ?? null,
+        setItem: (key, value) => values.set(key, value),
+      };
+      const defaults = logic.readStackPosition(storage, "anchor");
+      const saved = logic.writeStackPosition(storage, "anchor", {x: -12, y: 140});
+      const restored = logic.readStackPosition(storage, "anchor");
+      values.set("anchor", "not json");
+      const malformed = logic.readStackPosition(storage, "anchor");
+      console.log(JSON.stringify({defaults, saved, restored, malformed}));
+    """
+    assert run_logic(expression) == {
+        "defaults": {"x": 50, "y": 5},
+        "saved": {"x": 0, "y": 100},
+        "restored": {"x": 0, "y": 100},
+        "malformed": {"x": 50, "y": 5},
+    }
+
+
+def test_showcase_save_is_enabled_only_when_a_file_is_chosen() -> None:
+    expression = """
+      console.log(JSON.stringify([
+        logic.showcaseSaveEnabled(null),
+        logic.showcaseSaveEnabled(undefined),
+        logic.showcaseSaveEnabled({name: "grill.jpg"}),
+      ]));
+    """
+    assert run_logic(expression) == [False, False, True]
