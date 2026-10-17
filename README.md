@@ -34,8 +34,10 @@ authenticates to `/api/websocket`, loads an initial state snapshot, subscribes t
 | `TZ` | Display timezone reserved for the UI | `America/Los_Angeles` |
 | `ENTITIES_CONFIG` | Entity mapping YAML path | `config/entities.yaml` |
 
-Never commit `HA_TOKEN`. The API is available at `/health`, `/api/cooks`, and the per-cook
-detail, `samples`, and `events` routes.
+Never commit `HA_TOKEN`. `GET /health` reports only application health and does not depend on
+Home Assistant. `GET /status` reports HA connection state, the latest event and sample times,
+the active cook, the sampling interval, and the application version. Cook data is available at
+`/api/cooks` and the per-cook detail, `samples`, and `events` routes.
 
 ## Test and build
 

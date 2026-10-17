@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base, make_engine, make_session_factory
+from app.ha import HAStatus
 from app.service import GrillSnapshot
 
 
@@ -27,6 +28,7 @@ class FakeClock:
 class FakeHAClient:
     def __init__(self, snapshots: list[GrillSnapshot] | None = None) -> None:
         self.items = snapshots or []
+        self.status = HAStatus(configured=True)
 
     async def snapshots(self) -> AsyncIterator[GrillSnapshot]:
         for snapshot in self.items:
