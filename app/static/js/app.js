@@ -2,6 +2,7 @@ import { getStatus } from "./api.js";
 import { mountCookList } from "./views/cooks.js";
 import { mountCookView, mountLiveView } from "./views/live.js";
 import { mountMeatView } from "./views/meat.js";
+import { mountPelletsView } from "./views/pellets.js";
 
 const routes = new Set(["live", "cooks", "profiles", "pellets", "meat", "notes", "pitmaster"]);
 const view = document.querySelector("#view");
@@ -39,6 +40,10 @@ function renderRoute() {
   }
   if (route.name === "meat") {
     disposeView = mountMeatView(view);
+    return;
+  }
+  if (route.name === "pellets") {
+    disposeView = mountPelletsView(view);
     return;
   }
   view.innerHTML = `

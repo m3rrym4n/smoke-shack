@@ -76,6 +76,23 @@ export function getPellets() {
   return getJson("/api/pellets");
 }
 
+export function getCooksForPellet(pelletId) {
+  const params = new URLSearchParams({ pellet_id: pelletId, limit: 1 });
+  return getJson(`/api/cooks?${params}`);
+}
+
+export function createPellet(body) {
+  return sendJson("POST", "/api/pellets", body);
+}
+
+export function updatePellet(pelletId, body) {
+  return sendJson("PATCH", `/api/pellets/${pelletId}`, body);
+}
+
+export function deletePellet(pelletId) {
+  return sendJson("DELETE", `/api/pellets/${pelletId}`);
+}
+
 export function createCookEvent(cookId, body) {
   return sendJson("POST", `/api/cooks/${cookId}/events`, body);
 }
