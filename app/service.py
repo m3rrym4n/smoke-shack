@@ -36,6 +36,39 @@ class GrillSnapshot:
     hvac_mode: str | None = None
     warning: str | None = None
 
+    def implausible_reason(self) -> str | None:
+        if self.setpoint is not None and not 100 <= self.setpoint <= 550:
+            return f"setpoint {self.setpoint} is outside 100-550"
+        for name, value in (
+            ("pit temperature", self.pit_temp),
+            ("probe 1 temperature", self.probe1),
+            ("probe 2 temperature", self.probe2),
+            *(
+                (f"extra probe {name} temperature", value)
+                for name, value in self.extra_probes.items()
+            ),
+        ):
+            if value is not None and (value > 600 or value == 65535):
+                return f"{name} {value} is invalid"
+        if _normalized(self.warning) == "unknown":
+            return "warning is unknown"
+        core = {
+            "climate": self.hvac_mode,
+            "fire_state": self.fire_state,
+            "power_state": self.power_state,
+        }
+        missing = [
+            name
+            for name, value in core.items()
+            if value is None or _normalized(value) in {"unknown", "unavailable"}
+        ]
+        if missing and len(missing) != len(core):
+            return f"core entity {missing[0]} is unavailable while others are present"
+        return None
+
+    def is_plausible(self) -> bool:
+        return self.implausible_reason() is None
+
 
 class Clock(Protocol):
     def now(self) -> datetime: ...
@@ -58,6 +91,8 @@ class CookService:
         self.clock = clock or SystemClock()
         self.sample_interval = timedelta(seconds=sample_interval_seconds)
         self.incomplete_timeout = timedelta(minutes=incomplete_timeout_minutes)
+        self._invalid_since: datetime | None = None
+        self._previous_snapshots: dict[int, GrillSnapshot] = {}
 
     def process(self, snapshot: GrillSnapshot, at: datetime | None = None) -> Cook | None:
         now = as_utc(at or self.clock.now()).replace(microsecond=0)
@@ -65,6 +100,17 @@ class CookService:
             cook = session.scalar(
                 select(Cook).where(Cook.ended_at.is_(None)).order_by(Cook.started_at.desc())
             )
+            reason = snapshot.implausible_reason()
+            if reason is not None:
+                if self._invalid_since is None:
+                    self._invalid_since = now
+                    logger.info("ignoring implausible snapshot: %s", reason)
+                return cook
+            resumed_after_invalid = self._invalid_since is not None
+            self._invalid_since = None
+            if cook is not None and cook.status == "cooldown" and self._is_ignition(snapshot):
+                self._close(session, cook, now, incomplete=True)
+                cook = None
             if cook is None:
                 if not self._is_ignition(snapshot):
                     return None
@@ -86,21 +132,34 @@ class CookService:
             previous = session.scalar(
                 select(Sample).where(Sample.cook_id == cook.id).order_by(Sample.ts.desc()).limit(1)
             )
-            self._record_changes(session, cook, previous, snapshot, now)
-            if previous is None or now - as_utc(previous.ts) >= self.sample_interval:
-                if previous is not None and now - as_utc(previous.ts) > self.sample_interval * 3:
-                    cook.has_gap = True
-                    self._event(
-                        session,
-                        cook,
-                        now,
-                        "data_gap",
-                        "Home Assistant data gap",
-                        {"start": _iso(as_utc(previous.ts)), "end": _iso(now)},
-                    )
+            previous_snapshot = self._previous_snapshots.get(cook.id)
+            if previous_snapshot is None and previous is not None:
+                previous_snapshot = self._snapshot_from_sample(previous)
+            self._record_changes(session, cook, previous_snapshot, snapshot, now)
+            gap_detected = previous is not None and (
+                resumed_after_invalid or now - as_utc(previous.ts) > self.sample_interval * 3
+            )
+            if gap_detected and previous is not None:
+                cook.has_gap = True
+                self._event(
+                    session,
+                    cook,
+                    now,
+                    "data_gap",
+                    "Home Assistant data gap",
+                    {"start": _iso(as_utc(previous.ts)), "end": _iso(now)},
+                )
+            if (
+                previous is None
+                or resumed_after_invalid
+                or now - as_utc(previous.ts) >= self.sample_interval
+            ):
+                if gap_detected:
+                    logger.info("cook %s Home Assistant data gap ended", cook.id)
                 session.add(self._sample(cook.id, snapshot, now))
-            self._advance_phase(session, cook, snapshot, now)
+            self._advance_phase(session, cook, previous, snapshot, now)
             self._record_time_to_done(session, cook, snapshot, now)
+            self._previous_snapshots[cook.id] = snapshot
             cook.updated_at = now
             session.commit()
             return cook
@@ -113,18 +172,24 @@ class CookService:
     def _is_ignition(snapshot: GrillSnapshot) -> bool:
         mode = _normalized(snapshot.hvac_mode)
         fire = _normalized(snapshot.fire_state)
-        power = _normalized(snapshot.power_state)
-        return mode == "heat" and (fire in {"startup", "running"} or power == "on")
+        return mode == "heat" and fire in {"startup", "running"}
 
     def _advance_phase(
-        self, session: Session, cook: Cook, snapshot: GrillSnapshot, now: datetime
+        self,
+        session: Session,
+        cook: Cook,
+        previous: Sample | None,
+        snapshot: GrillSnapshot,
+        now: datetime,
     ) -> None:
         mode = _normalized(snapshot.hvac_mode)
         fire = _normalized(snapshot.fire_state)
         power = _normalized(snapshot.power_state)
         if cook.status == "startup" and snapshot.setpoint is not None and snapshot.setpoint != 150:
             self._start_cook_phase(session, cook, now)
-        if cook.status in {"startup", "cook"} and (mode == "off" or fire == "cool down"):
+        previous_fire = _normalized(previous.fire_state) if previous is not None else None
+        cooldown_started = mode == "off" or (fire == "cool down" and previous_fire == "cool down")
+        if cook.status in {"startup", "cook"} and cooldown_started:
             old_status = cook.status
             if cook.startup_ended_at is None:
                 cook.startup_ended_at = now
@@ -191,7 +256,7 @@ class CookService:
         self,
         session: Session,
         cook: Cook,
-        previous: Sample | None,
+        previous: GrillSnapshot | None,
         current: GrillSnapshot,
         now: datetime,
     ) -> None:
@@ -208,11 +273,11 @@ class CookService:
             if old != new:
                 self._event(session, cook, now, kind, title, {"from": old, "to": new})
         for name, old, new in (
-            ("probe1", previous.probe1, current.probe1),
-            ("probe2", previous.probe2, current.probe2),
+            ("probe1", previous.probe1_connected, current.probe1_connected),
+            ("probe2", previous.probe2_connected, current.probe2_connected),
         ):
-            if (old is None) != (new is None):
-                state = "connected" if new is not None else "disconnected"
+            if old != new:
+                state = "connected" if new else "disconnected"
                 self._event(
                     session,
                     cook,
@@ -300,6 +365,23 @@ class CookService:
             fire_state=snapshot.fire_state,
             power_state=snapshot.power_state,
             hvac_mode=snapshot.hvac_mode,
+        )
+
+    @staticmethod
+    def _snapshot_from_sample(sample: Sample) -> GrillSnapshot:
+        return GrillSnapshot(
+            pit_temp=sample.pit_temp,
+            setpoint=sample.setpoint,
+            probe1=sample.probe1,
+            probe2=sample.probe2,
+            probe1_connected=sample.probe1 is not None,
+            probe2_connected=sample.probe2 is not None,
+            probe1_target=sample.probe1_target,
+            probe2_target=sample.probe2_target,
+            extra_probes=sample.extra_probes,
+            fire_state=sample.fire_state,
+            power_state=sample.power_state,
+            hvac_mode=sample.hvac_mode,
         )
 
     @staticmethod
