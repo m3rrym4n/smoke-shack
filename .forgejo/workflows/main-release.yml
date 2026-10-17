@@ -1,0 +1,36 @@
+name: Main Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-stack-main-release
+  cancel-in-progress: false
+
+jobs:
+  release-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse release from non-main branch
+        run: |
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "Refusing release from ${{ github.ref_name }}"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -e '.[dev]'
+      - name: Verify
+        run: |
+          ruff check .
+          mypy app
+          pytest
+      - name: Build image
+        run: docker build -t 192.168.1.73:5050/smoke-stack/smoke-stack:main-${{ github.sha }} .
+      - name: Release and deployment placeholder
+        run: echo "TODO job after first main promotion; compose.main.yml does not exist yet."
