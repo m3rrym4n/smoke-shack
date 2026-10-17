@@ -1,4 +1,5 @@
-import { getRecentCooks } from "../api.js";
+import { getPlannedCooks, getRecentCooks } from "../api.js";
+import { orderPlannedCooks } from "../live-logic.js";
 
 const PAGE_SIZE = 20;
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -14,13 +15,15 @@ function duration(seconds) {
 }
 
 function cookDate(value) {
+  if (!value) return "Next cook";
   return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(new Date(value));
 }
 
 function row(cook) {
   const meat = cook.meat?.type || "Cook details not set";
   const setpoint = cook.effective_setpoint !== null && cook.effective_setpoint !== undefined && Number.isFinite(Number(cook.effective_setpoint)) ? `${Math.round(cook.effective_setpoint)}°` : "—";
-  return `<a class="cook-row" href="#cooks/${cook.id}"><div><span class="cook-date">${cookDate(cook.started_at)}</span><strong>${escapeHtml(meat)}</strong>${cook.incomplete ? '<span class="incomplete">incomplete</span>' : ""}</div><span>${setpoint}</span><span>${duration(cook.grill_duration_seconds)}</span><span class="cook-arrow" aria-hidden="true">›</span></a>`;
+  const planned = cook.state === "planned";
+  return `<a class="cook-row${planned ? " planned" : ""}" href="#cooks/${cook.id}"><div><span class="cook-date">${cookDate(cook.started_at)}</span><strong>${escapeHtml(meat)}</strong>${planned ? '<span class="planned-tag">Planned</span>' : ""}${cook.incomplete ? '<span class="incomplete">incomplete</span>' : ""}</div><span>${planned ? "—" : setpoint}</span><span>${planned ? "—" : duration(cook.grill_duration_seconds)}</span><span class="cook-arrow" aria-hidden="true">›</span></a>`;
 }
 
 export function mountCookList(container) {
@@ -37,12 +40,12 @@ export function mountCookList(container) {
     button.disabled = true;
     message.textContent = offset ? "Loading more cooks…" : "Loading cooks…";
     try {
-      const cooks = await getRecentCooks(PAGE_SIZE, offset);
+      const [plans, cooks] = await Promise.all([offset === 0 ? getPlannedCooks() : [], getRecentCooks(PAGE_SIZE, offset)]);
       if (disposed) return;
-      rows.insertAdjacentHTML("beforeend", cooks.map(row).join(""));
+      rows.insertAdjacentHTML("beforeend", [...orderPlannedCooks(plans), ...cooks].map(row).join(""));
       offset += cooks.length;
       button.hidden = cooks.length < PAGE_SIZE;
-      message.textContent = offset ? (cooks.length ? "" : "That’s every cook in the book.") : "No cooks in the book yet.";
+      message.textContent = offset || plans.length ? (cooks.length ? "" : "That’s every cook in the book.") : "No cooks in the book yet.";
     } catch (error) {
       console.error("Could not load cooks", error);
       message.textContent = "Could not load the cook log.";

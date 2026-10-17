@@ -1,7 +1,6 @@
-export function availableMeat(meat, cooks, cookId) {
-  const used = new Set(cooks.filter((cook) => cook.id !== cookId && cook.meat_id != null).map((cook) => cook.meat_id));
-  return meat.filter((item) => !used.has(item.id));
-}
+import { eligibleMeat } from "./live-logic.js";
+
+export const availableMeat = eligibleMeat;
 
 export function meatOptionLabel(item) {
   const [year, month, day] = String(item.purchased_on).split("-").map(Number);
