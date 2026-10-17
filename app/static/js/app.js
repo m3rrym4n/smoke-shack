@@ -1,5 +1,6 @@
 import { getStatus } from "./api.js";
-import { mountLiveView } from "./views/live.js";
+import { mountCookList } from "./views/cooks.js";
+import { mountCookView, mountLiveView } from "./views/live.js";
 
 const routes = new Set(["live", "cooks", "profiles", "pellets", "meat", "notes", "pitmaster"]);
 const view = document.querySelector("#view");
@@ -7,8 +8,11 @@ const neon = document.querySelector("#now-smoking");
 let disposeView = () => {};
 
 function currentRoute() {
-  const route = window.location.hash.slice(1);
-  return routes.has(route) ? route : "live";
+  const value = window.location.hash.slice(1);
+  const cookMatch = value.match(/^cooks\/(\d+)$/);
+  if (cookMatch) return { name: "cook-detail", cookId: Number(cookMatch[1]), nav: "cooks" };
+  const name = routes.has(value) ? value : "live";
+  return { name, nav: name };
 }
 
 function renderRoute() {
@@ -16,12 +20,20 @@ function renderRoute() {
   disposeView = () => {};
   const route = currentRoute();
   document.querySelectorAll(".nav a").forEach((link) => {
-    link.classList.toggle("on", link.hash === `#${route}`);
+    link.classList.toggle("on", link.hash === `#${route.nav}`);
   });
-  if (route === "live") {
+  if (route.name === "live") {
     disposeView = mountLiveView(view, (active) => {
       neon.hidden = !active;
     });
+    return;
+  }
+  if (route.name === "cooks") {
+    disposeView = mountCookList(view);
+    return;
+  }
+  if (route.name === "cook-detail") {
+    disposeView = mountCookView(view, { cookId: route.cookId });
     return;
   }
   view.innerHTML = `
@@ -32,7 +44,7 @@ function renderRoute() {
 }
 
 async function updateCookSign() {
-  if (document.hidden || currentRoute() === "live") return;
+  if (document.hidden || currentRoute().name === "live") return;
   try {
     const status = await getStatus();
     neon.hidden = status.active_cook === null;

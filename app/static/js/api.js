@@ -38,6 +38,11 @@ export function getCookSamples(cookId) {
   return getJson(`/api/cooks/${cookId}/samples`);
 }
 
-export function getRecentCooks(limit = 1) {
-  return getJson(`/api/cooks?limit=${limit}`);
+export function getCookEvents(cookId) {
+  return getJson(`/api/cooks/${cookId}/events`);
+}
+
+export function getRecentCooks(limit = 1, offset = 0) {
+  const params = new URLSearchParams({ limit, offset });
+  return getJson(`/api/cooks?${params}`);
 }
