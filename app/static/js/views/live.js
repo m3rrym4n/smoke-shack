@@ -7,6 +7,7 @@ import { clampPercent, orderPlannedCooks, phaseDurations, phasePercentages, sele
 import { confirmDelete } from "../components/ui.js";
 import { bindShowcase, showcaseMarkup } from "../components/showcase.js";
 import { mountSmoke } from "../components/smoke.js";
+import { smokeDemoMode } from "../smoke-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -117,7 +118,9 @@ async function load(container, onStatus, isCurrent, requestedCookId, refresh, se
     order = orderPadMarkup(orderCook, meat, pellets, [...closedCooks, ...planned, ...(active && cook ? [cook] : [])], { ...selection, planned: sortedPlans, photos });
   }
   const resultPhotos = !liveForms && cook ? `<section class="order-pad cook-results"><span class="tape" aria-hidden="true"></span><h2>How it turned out</h2><p>${escapeHtml(cook.results_text || "No write-up yet.")}</p>${photoGalleryMarkup(detailPhotos)}</section>` : "";
-  const cookContent = cook ? `${heroMarkup(cook, samples.at(-1), active, requestedCookId != null, showcase, status.grill_name)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
+  const demo = requestedCookId == null && smokeDemoMode(window.location.hash);
+  const demoPit = `<section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">smoke demo</span></div>${gaugeSvg(null, 0)}${showcaseMarkup(showcase, status.grill_name, window.innerWidth)}</section>`;
+  const cookContent = cook ? `${heroMarkup(cook, samples.at(-1), active, requestedCookId != null, showcase, status.grill_name)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : demo ? demoPit : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
   const liveDetail = requestedCookId != null && cook && cook.ended_at == null;
   const backLink = liveDetail
     ? '<a class="back-link cc" href="#live">← Back to live cook</a>'

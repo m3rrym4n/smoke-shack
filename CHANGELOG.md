@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Render a realistic, state-aware smoke plume above the full live page with a demo mode.
 - Make Pit showcase image selection row-specific and save smoke positions immediately.
 - Stack the Pit showcase vertically with full-width, frameless grill photos and wrapping names.
 - Accept safely validated SVG files for Pit showcase logos.

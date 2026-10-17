@@ -33,7 +33,7 @@ input,textarea,select{font-family:inherit}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{min-width:0;background-color:#4a2d19;background-image:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,0) 180px),repeating-linear-gradient(90deg,rgba(20,10,4,.35) 0,rgba(20,10,4,.35) 3px,transparent 3px,transparent 150px);color:#f1efe4;font-family:'Patrick Hand',cursive;overflow-x:hidden}
-.smoke-canvas{position:fixed;inset:0;z-index:0;pointer-events:none}.page{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:30px 24px;display:flex;flex-direction:column;gap:36px}
+.smoke-canvas{position:fixed;inset:0;z-index:9999;pointer-events:none}.page{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:30px 24px;display:flex;flex-direction:column;gap:36px}
 .signs{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:28px;padding:4px 8px}
 .brand-sign{transform:rotate(-1deg);padding:18px 25px 14px;text-align:center;background:#a3231a;color:#f6ead0;border:5px solid #f1e3c0;outline:5px solid #2a1b10;border-radius:5px;box-shadow:0 9px 0 #5e130e;font-family:'Rye',serif;font-size:46px;line-height:1}
 .brand-sign small{display:block;margin-top:12px;font-family:'Patrick Hand',cursive;font-size:18px;letter-spacing:.2em;line-height:1.2}
