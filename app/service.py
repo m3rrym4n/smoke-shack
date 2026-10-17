@@ -65,6 +65,9 @@ class CookService:
             cook = session.scalar(
                 select(Cook).where(Cook.ended_at.is_(None)).order_by(Cook.started_at.desc())
             )
+            if cook is not None and cook.status == "cooldown" and self._is_ignition(snapshot):
+                self._close(session, cook, now, incomplete=True)
+                cook = None
             if cook is None:
                 if not self._is_ignition(snapshot):
                     return None
@@ -99,7 +102,7 @@ class CookService:
                         {"start": _iso(as_utc(previous.ts)), "end": _iso(now)},
                     )
                 session.add(self._sample(cook.id, snapshot, now))
-            self._advance_phase(session, cook, snapshot, now)
+            self._advance_phase(session, cook, previous, snapshot, now)
             self._record_time_to_done(session, cook, snapshot, now)
             cook.updated_at = now
             session.commit()
@@ -113,18 +116,26 @@ class CookService:
     def _is_ignition(snapshot: GrillSnapshot) -> bool:
         mode = _normalized(snapshot.hvac_mode)
         fire = _normalized(snapshot.fire_state)
-        power = _normalized(snapshot.power_state)
-        return mode == "heat" and (fire in {"startup", "running"} or power == "on")
+        return mode == "heat" and fire in {"startup", "running"}
 
     def _advance_phase(
-        self, session: Session, cook: Cook, snapshot: GrillSnapshot, now: datetime
+        self,
+        session: Session,
+        cook: Cook,
+        previous: Sample | None,
+        snapshot: GrillSnapshot,
+        now: datetime,
     ) -> None:
         mode = _normalized(snapshot.hvac_mode)
         fire = _normalized(snapshot.fire_state)
         power = _normalized(snapshot.power_state)
         if cook.status == "startup" and snapshot.setpoint is not None and snapshot.setpoint != 150:
             self._start_cook_phase(session, cook, now)
-        if cook.status in {"startup", "cook"} and (mode == "off" or fire == "cool down"):
+        previous_fire = _normalized(previous.fire_state) if previous is not None else None
+        cooldown_started = mode == "off" or (
+            fire == "cool down" and previous_fire == "cool down"
+        )
+        if cook.status in {"startup", "cook"} and cooldown_started:
             old_status = cook.status
             if cook.startup_ended_at is None:
                 cook.startup_ended_at = now
