@@ -32,11 +32,7 @@ function photoMarkup(url, position) {
 
 export function showcaseMarkup(showcase, grillName, width = window.innerWidth, smokeControl = true) {
   const position = readStackPosition();
-  const logo = showcasePlaceholder(showcase?.logo_url) === "image"
-    ? `<img src="${escapeHtml(showcase.logo_url)}" alt="Grill logo">`
-    : `<span>GREEN MOUNTAIN GRILLS</span>`;
   return `<div class="pit-showcase ${showcaseLayoutClass(width)}">
-    <div class="showcase-logo">${logo}</div>
     <div class="showcase-name" title="${escapeHtml(grillName)}">${escapeHtml(grillName || "My grill")}</div>
     ${photoMarkup(showcase?.photo_url, position)}
     <div class="showcase-controls">${smokeControl ? '<button class="smoke-toggle cc" type="button" aria-pressed="true">Smoke</button>' : ""}<button class="change-pictures" type="button" aria-expanded="false">Change pictures</button></div>
@@ -61,7 +57,7 @@ function editorRow(kind, label, imageUrl) {
   return `<div class="showcase-image-field" data-image-kind="${kind}"><label><span>${label}</span><input type="file" accept="${accept}"></label><button class="showcase-preview" type="button" aria-label="Choose ${label.toLowerCase()}">${preview}</button><div class="showcase-image-actions"><button class="cc save-showcase" type="button" disabled>Save</button><span class="showcase-message" role="status"></span><button class="cc remove-showcase" type="button" ${imageUrl ? "" : "disabled"}>Remove</button></div></div>`;
 }
 
-export function bindShowcase(container, { setBusy }) {
+export function bindShowcase(container, { onLogoChange = () => {}, setBusy }) {
   const strip = container.querySelector(".pit-showcase");
   if (!strip) return () => {};
   const editor = strip.querySelector(".showcase-editor");
@@ -97,9 +93,7 @@ export function bindShowcase(container, { setBusy }) {
         ? `<img src="${escapeHtml(currentUrl)}" alt="Current ${kind} preview">`
         : `<span>No ${kind === "logo" ? "logo" : "grill photo"} uploaded</span>`;
       if (kind === "logo") {
-        strip.querySelector(".showcase-logo").innerHTML = currentUrl
-          ? `<img src="${escapeHtml(currentUrl)}" alt="Grill logo">`
-          : "<span>GREEN MOUNTAIN GRILLS</span>";
+        onLogoChange(currentUrl);
       } else {
         const position = readStackPosition();
         strip.querySelector(".showcase-photo").outerHTML = photoMarkup(currentUrl, position);
