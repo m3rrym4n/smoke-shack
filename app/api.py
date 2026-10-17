@@ -48,6 +48,7 @@ def create_app(
             config.ha_token,
             config.load_entities(),
             config.sample_interval_seconds,
+            config.ha_ws_max_size_bytes,
         )
     if client is not None:
         ha_status = client.status

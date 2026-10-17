@@ -34,7 +34,12 @@ class HAClient(Protocol):
 
 class HomeAssistantClient:
     def __init__(
-        self, url: str, token: str, entities: EntityConfig, poll_interval_seconds: int = 10
+        self,
+        url: str,
+        token: str,
+        entities: EntityConfig,
+        poll_interval_seconds: int = 10,
+        max_size_bytes: int = 67_108_864,
     ) -> None:
         parsed = urlsplit(url)
         scheme = {"http": "ws", "https": "wss"}.get(parsed.scheme, parsed.scheme)
@@ -42,7 +47,9 @@ class HomeAssistantClient:
         self.host = parsed.hostname or parsed.netloc
         self.token = token
         self.entities = entities
+        self.entity_ids = entities.all
         self.poll_interval_seconds = poll_interval_seconds
+        self.max_size_bytes = max_size_bytes
         self.status = HAStatus(configured=bool(url and token))
 
     async def snapshots(self) -> AsyncIterator[GrillSnapshot]:
@@ -61,7 +68,7 @@ class HomeAssistantClient:
                 delay = min(delay * 2, 60)
 
     async def _connected(self) -> AsyncIterator[GrillSnapshot]:
-        async with websockets.connect(self.websocket_url) as socket:
+        async with websockets.connect(self.websocket_url, max_size=self.max_size_bytes) as socket:
             await socket.recv()
             await socket.send(json.dumps({"type": "auth", "access_token": self.token}))
             auth = json.loads(await socket.recv())
@@ -73,7 +80,8 @@ class HomeAssistantClient:
             await socket.send(json.dumps({"id": 1, "type": "get_states"}))
             initial = json.loads(await socket.recv())
             self.status.last_event_at = datetime.now(UTC).replace(microsecond=0)
-            states = {item["entity_id"]: item for item in initial.get("result", [])}
+            states = self._configured_states(initial.get("result", []))
+            del initial
             yield self._snapshot(states)
             await socket.send(
                 json.dumps({"id": 2, "type": "subscribe_events", "event_type": "state_changed"})
@@ -87,16 +95,29 @@ class HomeAssistantClient:
                     request_id += 1
                     raw = await socket.recv()
                 message = json.loads(raw)
+                del raw
                 self.status.last_event_at = datetime.now(UTC).replace(microsecond=0)
                 if message.get("type") == "result" and isinstance(message.get("result"), list):
-                    states = {item["entity_id"]: item for item in message["result"]}
+                    states = self._configured_states(message["result"])
+                    del message
                     yield self._snapshot(states)
                     continue
                 event = message.get("event", {}).get("data", {})
                 entity_id = event.get("entity_id")
-                if entity_id in self.entities.all and event.get("new_state") is not None:
+                if entity_id not in self.entity_ids:
+                    continue
+                if event.get("new_state") is not None:
                     states[entity_id] = event["new_state"]
                     yield self._snapshot(states)
+
+    def _configured_states(self, result: object) -> dict[str, dict[str, Any]]:
+        if not isinstance(result, list):
+            return {}
+        return {
+            item["entity_id"]: item
+            for item in result
+            if isinstance(item, dict) and item.get("entity_id") in self.entity_ids
+        }
 
     def _short_reason(self, exc: BaseException) -> str:
         reason = str(exc).splitlines()[0]
