@@ -85,7 +85,9 @@ def create_app(
     @app.get("/status")
     def status(session: Session = Depends(get_session)) -> dict[str, Any]:
         active = session.scalar(
-            select(Cook).where(Cook.ended_at.is_(None)).order_by(Cook.started_at.desc())
+            select(Cook)
+            .where(Cook.ended_at.is_(None), Cook.status != "planned")
+            .order_by(Cook.started_at.desc())
         )
         last_sample = session.scalar(select(Sample.ts).order_by(Sample.ts.desc()).limit(1))
         return {

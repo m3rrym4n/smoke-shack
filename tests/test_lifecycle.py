@@ -173,6 +173,52 @@ def test_restart_resumes_active_phase(sessions: sessionmaker[Session], clock: Fa
     assert processed is not None and processed.started_at == cook.started_at
 
 
+def test_live_start_adopts_oldest_plan_once_and_preserves_fields(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    with sessions() as session:
+        oldest = Cook(
+            started_at=None,
+            status="planned",
+            seasonings="SPG",
+            sauces="Mustard",
+            prep_time_minutes=25,
+            rotisserie=True,
+        )
+        newer = Cook(started_at=None, status="planned", seasonings="Paprika")
+        session.add_all([oldest, newer])
+        session.commit()
+        oldest_id, newer_id = oldest.id, newer.id
+
+    first_service = CookService(sessions, clock)
+    adopted = first_service.process(snap())
+    assert adopted is not None
+    assert adopted.id == oldest_id
+    assert adopted.status == "startup"
+    assert adopted.started_at == clock.now()
+    assert adopted.seasonings == "SPG"
+    assert adopted.sauces == "Mustard"
+    assert adopted.prep_time_minutes == 25
+    assert adopted.rotisserie is True
+
+    restarted = CookService(sessions, clock)
+    resumed = restarted.process(snap())
+    assert resumed is not None and resumed.id == oldest_id
+    with sessions() as session:
+        assert session.query(Cook).count() == 2
+        remaining = session.get(Cook, newer_id)
+        assert remaining is not None and remaining.status == "planned"
+    assert kinds(sessions, oldest_id).count("fire_lit") == 1
+
+
+def test_live_start_without_plan_creates_cook(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    cook = CookService(sessions, clock).process(snap())
+
+    assert cook is not None and cook.status == "startup" and cook.started_at == clock.now()
+
+
 def test_aggregate_setpoint_and_override(sessions: sessionmaker[Session], clock: FakeClock) -> None:
     service = CookService(sessions, clock)
     cook = service.process(snap(setpoint=275))

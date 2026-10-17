@@ -47,7 +47,7 @@ export function getCookEvents(cookId) {
 }
 
 export function getRecentCooks(limit = 1, offset = 0) {
-  const params = new URLSearchParams({ limit, offset });
+  const params = new URLSearchParams({ limit, offset, state: "closed" });
   return getJson(`/api/cooks?${params}`);
 }
 

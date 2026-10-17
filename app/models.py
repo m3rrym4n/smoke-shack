@@ -46,7 +46,7 @@ class UTCDateTime(TypeDecorator[datetime]):
 class Cook(Base):
     __tablename__ = "cooks"
     id: Mapped[int] = mapped_column(primary_key=True)
-    started_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     startup_ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     cook_ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     cooldown_ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime())

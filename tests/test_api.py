@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api import create_app
 from app.config import Settings
 from app.ha import HAStatus
+from app.models import Cook
 from app.service import CookService, GrillSnapshot
 
 
@@ -72,6 +73,15 @@ def test_status_with_ha_unconfigured(sessions: sessionmaker[Session]) -> None:
     assert status["active_cook"] is None
     assert status["ingest"]["sample_interval_seconds"] == 10
     assert status["version"] == "0.1.0"
+
+
+def test_status_does_not_report_planned_cook(sessions: sessionmaker[Session]) -> None:
+    with sessions() as session:
+        session.add(Cook(started_at=None, status="planned"))
+        session.commit()
+
+    with TestClient(create_app(Settings(), sessions)) as client:
+        assert client.get("/status").json()["active_cook"] is None
 
 
 def test_status_after_simulated_connect(sessions: sessionmaker[Session]) -> None:

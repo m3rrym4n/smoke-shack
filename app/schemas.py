@@ -86,6 +86,20 @@ class CookUpdate(BaseModel):
         return value
 
 
+class PlannedCookCreate(BaseModel):
+    state: Literal["planned"]
+    meat_id: int | None = None
+    pellet_id: int | None = None
+    profile_id: int | None = None
+    rotisserie: bool = False
+    seasonings: str | None = None
+    sauces: str | None = None
+    prep_time_minutes: int | None = Field(default=None, ge=0)
+    results_text: str | None = None
+    setpoint_override: float | None = None
+    pellets_used_lb: float | None = Field(default=None, ge=0)
+
+
 NoteScope = Literal["this_cook", "pellets", "gear"]
 
 

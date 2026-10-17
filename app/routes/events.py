@@ -46,6 +46,8 @@ def event_json(event: Event, started_at: datetime) -> dict[str, Any]:
 
 
 def _validate_ts(ts: datetime, cook: Cook) -> None:
+    if cook.started_at is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Planned cooks cannot have events")
     if as_utc(ts) < as_utc(cook.started_at):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -60,6 +62,8 @@ def _validate_ts(ts: datetime, cook: Cook) -> None:
 )
 def create_event(cook_id: int, payload: UserEventCreate, session: SessionDep) -> dict[str, Any]:
     cook = _get_cook(cook_id, session)
+    if cook.started_at is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Planned cooks cannot have events")
     event_ts = payload.ts or utc_now()
     _validate_ts(event_ts, cook)
     event = Event(
@@ -81,6 +85,8 @@ def create_event(cook_id: int, payload: UserEventCreate, session: SessionDep) ->
 def update_event(event_id: int, payload: UserEventUpdate, session: SessionDep) -> dict[str, Any]:
     event = _get_event(event_id, session)
     cook = _get_cook(event.cook_id, session)
+    if cook.started_at is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Planned cooks cannot have events")
     changes = payload.model_dump(exclude_unset=True)
     if changes.get("ts") is not None:
         _validate_ts(changes["ts"], cook)

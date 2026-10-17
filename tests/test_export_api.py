@@ -204,3 +204,17 @@ def test_all_json_shape_excludes_samples_and_photo_binaries(
     assert exported["cooks"][0]["photos"][0]["caption"] == "Done"
     assert "path" not in exported["cooks"][0]["photos"][0]
     assert exported["profiles"][0]["steps"][0]["instructions"] == "Smoke"
+
+
+def test_planned_cook_is_only_in_full_export(sessions: sessionmaker[Session]) -> None:
+    with sessions() as session:
+        session.add(Cook(started_at=None, status="planned", seasonings="SPG"))
+        session.commit()
+
+    with TestClient(create_app(Settings(), sessions)) as client:
+        csv_response = client.get("/api/export/cooks.csv")
+        full_response = client.get("/api/export/all.json")
+
+    assert _rows(csv_response.text) == []
+    assert full_response.json()["cooks"][0]["state"] == "planned"
+    assert full_response.json()["cooks"][0]["started_at"] is None

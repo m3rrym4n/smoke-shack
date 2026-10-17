@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.deps import get_session
 from app.models import Cook, Event, Meat, Note, Pellet, Photo, Profile, Sample
 from app.routes.events import event_json
-from app.schemas import CookUpdate
+from app.schemas import CookUpdate, PlannedCookCreate
 from app.service import as_utc
 
 router = APIRouter(prefix="/api/cooks", tags=["cooks"])
@@ -42,6 +42,7 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
         "cooldown_ended_at": _iso(cook.cooldown_ended_at),
         "ended_at": _iso(cook.ended_at),
         "status": cook.status,
+        "state": cook.status,
         "meat_id": cook.meat_id,
         "pellet_id": cook.pellet_id,
         "profile_id": cook.profile_id,
@@ -105,6 +106,7 @@ def list_cooks(
     meat_id: int | None = None,
     pellet_id: int | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
+    state: str | None = None,
     limit: int = Query(default=50, ge=1),
     offset: int = Query(default=0, ge=0),
 ) -> list[dict[str, Any]]:
@@ -113,10 +115,53 @@ def list_cooks(
         query = query.where(Cook.meat_id == meat_id)
     if pellet_id is not None:
         query = query.where(Cook.pellet_id == pellet_id)
-    if status_filter is not None:
-        query = query.where(Cook.status == status_filter)
-    query = query.order_by(Cook.started_at.desc()).limit(limit).offset(offset)
+    requested_state = state if state is not None else status_filter
+    if requested_state is not None:
+        query = query.where(Cook.status == requested_state)
+    query = (
+        query.order_by(Cook.started_at.desc(), Cook.created_at.desc(), Cook.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     return [_cook_json(cook, session) for cook in session.scalars(query)]
+
+
+def _validate_references(changes: dict[str, Any], session: Session) -> None:
+    references = (
+        ("meat_id", Meat, "Meat"),
+        ("pellet_id", Pellet, "Pellet"),
+        ("profile_id", Profile, "Profile"),
+    )
+    for field, model, label in references:
+        value = changes.get(field)
+        if value is not None and session.get(model, value) is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{label} not found")
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+def create_planned_cook(
+    payload: PlannedCookCreate, session: SessionDep
+) -> dict[str, Any]:
+    values = payload.model_dump(exclude={"state"})
+    _validate_references(values, session)
+    cook = Cook(started_at=None, status="planned", **values)
+    session.add(cook)
+    session.commit()
+    session.refresh(cook)
+    return _cook_json(cook, session, include_cost=True)
+
+
+@router.get("/next")
+def next_planned_cook(session: SessionDep) -> dict[str, Any]:
+    cook = session.scalar(
+        select(Cook)
+        .where(Cook.status == "planned")
+        .order_by(Cook.created_at, Cook.id)
+        .limit(1)
+    )
+    if cook is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No planned cook")
+    return _cook_json(cook, session, include_cost=True)
 
 
 @router.get("/{cook_id}")
@@ -128,15 +173,7 @@ def get_cook(cook_id: int, session: SessionDep) -> dict[str, Any]:
 def update_cook(cook_id: int, payload: CookUpdate, session: SessionDep) -> dict[str, Any]:
     cook = _get_cook(cook_id, session)
     changes = payload.model_dump(exclude_unset=True)
-    references = (
-        ("meat_id", Meat, "Meat"),
-        ("pellet_id", Pellet, "Pellet"),
-        ("profile_id", Profile, "Profile"),
-    )
-    for field, model, label in references:
-        value = changes.get(field)
-        if value is not None and session.get(model, value) is None:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{label} not found")
+    _validate_references(changes, session)
     for field, value in changes.items():
         setattr(cook, field, value)
     session.commit()
@@ -147,7 +184,7 @@ def update_cook(cook_id: int, payload: CookUpdate, session: SessionDep) -> dict[
 @router.delete("/{cook_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_cook(cook_id: int, session: SessionDep, request: Request) -> Response:
     cook = _get_cook(cook_id, session)
-    if cook.ended_at is None:
+    if cook.ended_at is None and cook.status != "planned":
         raise HTTPException(status.HTTP_409_CONFLICT, "Active cook cannot be deleted")
     photo_paths = list(session.scalars(select(Photo.path).where(Photo.cook_id == cook_id)))
     session.execute(delete(Photo).where(Photo.cook_id == cook_id))
@@ -173,7 +210,9 @@ def samples(cook_id: int, session: SessionDep) -> list[dict[str, Any]]:
     return [_sample_json(row, cook.started_at) for row in rows]
 
 
-def _sample_json(sample: Sample, started: datetime) -> dict[str, Any]:
+def _sample_json(sample: Sample, started: datetime | None) -> dict[str, Any]:
+    if started is None:
+        raise ValueError("planned cooks cannot have samples")
     return {
         "id": sample.id,
         "ts": _iso(sample.ts),
@@ -194,5 +233,7 @@ def _sample_json(sample: Sample, started: datetime) -> dict[str, Any]:
 @router.get("/{cook_id}/events")
 def events(cook_id: int, session: SessionDep) -> list[dict[str, Any]]:
     cook = _get_cook(cook_id, session)
+    if cook.started_at is None:
+        return []
     rows = session.scalars(select(Event).where(Event.cook_id == cook_id).order_by(Event.ts))
     return [event_json(row, cook.started_at) for row in rows]

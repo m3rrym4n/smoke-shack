@@ -21,8 +21,8 @@ def _utc_boundary(value: date) -> datetime:
     return datetime.combine(value, time.min, PACIFIC).astimezone(UTC)
 
 
-def _iso(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+def _iso(value: datetime | None) -> str | None:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z") if value else None
 
 
 def _summary(values: list[int | None]) -> dict[str, int | None]:
@@ -50,7 +50,9 @@ def cook_stats(
     include_incomplete: bool = False,
     exclude_gaps: bool = False,
 ) -> dict[str, Any]:
-    query = select(Cook, Meat).join(Meat, Cook.meat_id == Meat.id).where(Cook.ended_at.is_not(None))
+    query = select(Cook, Meat).join(Meat, Cook.meat_id == Meat.id).where(
+        Cook.ended_at.is_not(None), Cook.status != "planned"
+    )
     if meat_type is not None:
         query = query.where(func.lower(Meat.type).contains(meat_type.lower(), autoescape=True))
     if pounds_min is not None:
@@ -105,7 +107,7 @@ def meat_types(session: SessionDep) -> list[dict[str, Any]]:
     rows = session.execute(
         select(Meat.type, func.count(Cook.id))
         .join(Cook, Cook.meat_id == Meat.id)
-        .where(Cook.ended_at.is_not(None))
+        .where(Cook.ended_at.is_not(None), Cook.status != "planned")
         .group_by(Meat.type)
         .order_by(Meat.type)
     )
