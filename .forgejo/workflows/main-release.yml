@@ -30,7 +30,10 @@ jobs:
           .quality-venv/bin/ruff check .
           .quality-venv/bin/mypy app
           .quality-venv/bin/pytest
+      - name: Install Docker CLI
+        run: apt-get update && apt-get install -y docker.io
       - name: Build image
         run: docker build -t 192.168.1.73:5050/smoke-stack/smoke-stack:main-${{ github.sha }} .
       - name: Release and deployment placeholder
+        if: github.event_name == 'push'
         run: echo "TODO job after first main promotion; compose.main.yml does not exist yet."

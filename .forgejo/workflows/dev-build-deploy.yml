@@ -33,9 +33,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install Docker CLI
+        run: apt-get update && apt-get install -y docker.io
       - name: Build image
         run: docker build -t 192.168.1.73:5050/smoke-stack/smoke-stack:job1-${{ github.sha }} .
+      # There is no dev branch yet, so push-triggered deploy steps do not run for now.
       - name: Dockhand deploy placeholder
+        if: github.event_name == 'push'
         run: |
           echo "TODO: authenticate to Zot, push the immutable image, rewrite compose.yml,"
           echo "and trigger Dockhand using the documented registry and Dockhand secrets."

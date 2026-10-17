@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Install the Docker CLI in image-build jobs and keep pull request runs build-only.
 - Run CI quality checks with uv-managed Python 3.12 on Forgejo runners.
 - Rename the health endpoint to `/health` across the app and deployment configuration.
 - Scaffold the FastAPI service, persistent cook lifecycle, Home Assistant ingest,
