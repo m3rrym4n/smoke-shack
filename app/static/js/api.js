@@ -29,3 +29,15 @@ export function sendJson(method, path, body) {
 export function getStatus() {
   return getJson("/status");
 }
+
+export function getCook(cookId) {
+  return getJson(`/api/cooks/${cookId}`);
+}
+
+export function getCookSamples(cookId) {
+  return getJson(`/api/cooks/${cookId}/samples`);
+}
+
+export function getRecentCooks(limit = 1) {
+  return getJson(`/api/cooks?limit=${limit}`);
+}

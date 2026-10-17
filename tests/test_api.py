@@ -31,6 +31,19 @@ def test_static_shell_and_existing_routes(sessions: sessionmaker[Session]) -> No
         assert client.get("/docs").status_code == 200
 
 
+def test_live_view_static_assets_exist(sessions: sessionmaker[Session]) -> None:
+    app = create_app(Settings(), sessions, FakeHAClient())
+    with TestClient(app) as client:
+        for path in (
+            "/js/views/live.js",
+            "/js/components/gauge.js",
+            "/js/live-logic.js",
+        ):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert "javascript" in response.headers["content-type"]
+
+
 def test_status_with_ha_unconfigured(sessions: sessionmaker[Session]) -> None:
     app = create_app(Settings(), sessions)
     with TestClient(app) as client:

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add the read-only live cook boards with pit gauge, phase progress, probes, and paused background polling.
 - Add the BBQ signage UI shell, hash navigation, and active-cook neon indicator.
 - Add filtered cook CSV, raw sample CSV, and full journal JSON export APIs.
 - Add filtered cook duration statistics and meat-type count APIs.
