@@ -77,13 +77,13 @@ async function load(container, onStatus, isCurrent, requestedCookId, refresh, se
     return;
   }
   const liveForms = requestedCookId == null;
-  const [cook, samples, events, meat, pellets] = await Promise.all([
+  const [cook, samples, events, meat, pellets, cooks] = await Promise.all([
     getCook(cookId), getCookSamples(cookId), getCookEvents(cookId),
-    liveForms ? getMeat() : [], liveForms ? getPellets() : [],
+    liveForms ? getMeat() : [], liveForms ? getPellets() : [], liveForms ? getRecentCooks(10000) : [],
   ]);
   if (!isCurrent()) return;
   const log = liveForms ? `<div class="log-pin-grid">${cookLogMarkup(events, true)}${pinBoardMarkup()}</div>` : cookLogMarkup(events);
-  const order = liveForms ? orderPadMarkup(cook, meat, pellets) : "";
+  const order = liveForms ? orderPadMarkup(cook, meat, pellets, cooks) : "";
   container.innerHTML = `<div class="cook-detail">${requestedCookId == null ? "" : '<a class="back-link cc" href="#cooks">← All cooks</a>'}${heroMarkup(cook, samples.at(-1), active, requestedCookId != null)}${chartMarkup(samples, events, cook)}${log}${order}</div>`;
   if (liveForms) bindLiveForms(container, { cook, events, meat, pellets, refresh, setBusy });
 }

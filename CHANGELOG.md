@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Complete the Order Pad with available-purchase selectors, pellet usage, and cook costs.
+- Add the Ask the Pitmaster cook-time statistics board with bookmarkable filters.
+- Add the Pit Notes board with cook-aware create, filtering, inline edit, and delete controls.
+- Add the Pellet Pantry purchase board with create, edit, linked-cook, and delete controls.
+- Add the Butcher Case purchase board with create, edit, linked-cook, and delete controls.
 - Preserve otherwise valid samples when only one core grill entity is unavailable.
 - Prevent older dev builds from overwriting newer deployed image tags during CI write-back races.
 - Sample the latest Home Assistant grill state on a timer while connected.

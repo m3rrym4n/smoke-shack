@@ -1,4 +1,5 @@
 import { createCookEvent, deleteCookEvent, updateCook, updateCookEvent } from "../api.js";
+import { availableMeat, meatOptionLabel, pelletOptionLabel, validatePelletsUsed } from "../order-pad-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -32,16 +33,26 @@ function options(rows, selected, label) {
   return rows.map((row) => `<option value="${row.id}"${row.id === selected ? " selected" : ""}>${escapeHtml(label(row))}</option>`).join("");
 }
 
-export function orderPadMarkup(cook, meat, pellets) {
+function money(value) {
+  return value == null ? "—" : `$${Number(value).toFixed(2)}`;
+}
+
+export function orderPadMarkup(cook, meat, pellets, cooks = []) {
+  const choices = availableMeat(meat, cooks, cook.id);
+  const meatEmpty = choices.length === 0;
+  const pelletEmpty = pellets.length === 0;
   return `<section class="order-pad">
     <span class="tape" aria-hidden="true"></span><div class="order-heading"><h2>ORDER PAD</h2><span>No. ${String(cook.id).padStart(4, "0")}</span></div>
     <form id="order-form" novalidate>
-      <label class="paper-field"><span>Meat</span><select name="meat_id"><option value="">Not selected</option>${options(meat, cook.meat_id, (row) => `${row.type} · ${row.store || "No store"}`)}<option value="add">+ Add new...</option></select></label>
+      <label class="paper-field"><span>Meat</span><select name="meat_id"><option value="">Not selected</option>${options(choices, cook.meat_id, meatOptionLabel)}<option value="add">${meatEmpty ? "Nothing in the case yet, add some" : "+ Add new..."}</option></select></label>
       <label class="paper-field"><span>Weight</span><input name="weight" readonly value="${escapeHtml(cook.meat?.pounds ? `${cook.meat.pounds} lb` : "—")}"></label>
+      <div class="paper-field"><span>Meat cost</span><output name="meat_cost">${money(cook.cost?.meat_cost)}</output></div>
       <label class="paper-field"><span>Seasonings</span><input name="seasonings" value="${escapeHtml(cook.seasonings)}"></label>
       <label class="paper-field"><span>Sauces</span><input name="sauces" value="${escapeHtml(cook.sauces)}"></label>
       <label class="paper-field"><span>Prep time</span><span class="input-suffix"><input name="prep_time_minutes" type="number" min="0" step="1" value="${cook.prep_time_minutes ?? ""}"><b>minutes</b></span></label>
-      <label class="paper-field"><span>Pellets</span><select name="pellet_id"><option value="">Not selected</option>${options(pellets, cook.pellet_id, (row) => `${row.vendor} · ${row.product_name}`)}<option value="add">+ Add new...</option></select></label>
+      <label class="paper-field"><span>Pellets</span><select name="pellet_id"><option value="">Not selected</option>${options(pellets, cook.pellet_id, pelletOptionLabel)}<option value="add">${pelletEmpty ? "Nothing in the pantry yet, add some" : "+ Add new..."}</option></select></label>
+      <label class="paper-field"><span>Pellets used</span><span class="input-suffix"><input name="pellets_used_lb" type="number" min="0" step="0.01" value="${cook.pellets_used_lb ?? ""}"><b>lb</b></span></label>
+      <div class="paper-field"><span>Pellet cost</span><output name="pellet_cost">${money(cook.cost?.pellet_cost)}</output></div>
       <label class="paper-field"><span>Profile used</span><input readonly value="${escapeHtml(cook.profile_name || "None")}"></label>
       <fieldset class="paper-field rotisserie"><legend>Rotisserie</legend><label><input type="radio" name="rotisserie" value="true"${cook.rotisserie ? " checked" : ""}> Yes</label><label><input type="radio" name="rotisserie" value="false"${cook.rotisserie ? "" : " checked"}> No</label></fieldset>
       <label class="paper-field paper-area"><span>How it turned out</span><textarea name="results_text" rows="4">${escapeHtml(cook.results_text)}</textarea></label>
@@ -155,19 +166,25 @@ export function bindLiveForms(container, { cook, events, meat, pellets, refresh,
     event.preventDefault();
     const prep = orderForm.elements.prep_time_minutes.value;
     if (prep && (!Number.isInteger(Number(prep)) || Number(prep) < 0)) return showMessage(orderForm, "Prep time must be a whole number of minutes.", true);
+    const pelletsUsed = orderForm.elements.pellets_used_lb.value;
+    const pelletsUsedError = validatePelletsUsed(pelletsUsed);
+    if (pelletsUsedError) return showMessage(orderForm, pelletsUsedError, true);
     const body = {
       meat_id: orderForm.elements.meat_id.value ? Number(orderForm.elements.meat_id.value) : null,
       pellet_id: orderForm.elements.pellet_id.value ? Number(orderForm.elements.pellet_id.value) : null,
       seasonings: orderForm.elements.seasonings.value.trim() || null,
       sauces: orderForm.elements.sauces.value.trim() || null,
       prep_time_minutes: prep === "" ? null : Number(prep),
+      pellets_used_lb: pelletsUsed === "" ? null : Number(pelletsUsed),
       rotisserie: orderForm.elements.rotisserie.value === "true",
       results_text: orderForm.elements.results_text.value.trim() || null,
     };
     const submit = orderForm.querySelector(".order-save");
     submit.disabled = true;
     try {
-      await updateCook(cook.id, body);
+      const updated = await updateCook(cook.id, body);
+      orderForm.elements.meat_cost.value = money(updated.cost?.meat_cost);
+      orderForm.elements.pellet_cost.value = money(updated.cost?.pellet_cost);
       setBusy(false);
       showMessage(orderForm, "Order saved.");
       submit.disabled = false;
