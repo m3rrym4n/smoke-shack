@@ -123,6 +123,29 @@ def test_particle_spawn_and_update_stay_in_bounded_ranges() -> None:
     assert result["max"] == 140
 
 
+def test_page_to_screen_changes_by_exact_scroll_delta() -> None:
+    expression = """
+      const point = {x:320,y:740};
+      console.log(JSON.stringify([
+        logic.pageToScreen(point, {x:20,y:100}),
+        logic.pageToScreen(point, {x:55,y:260}),
+      ]));
+    """
+    assert run_logic(expression) == [{"x": 300, "y": 640}, {"x": 265, "y": 480}]
+
+
+def test_particle_simulation_does_not_depend_on_scroll() -> None:
+    expression = """
+      const particle = logic.spawnParticle({x:320,y:740}, () => .5, .58);
+      const first = logic.updateParticle(particle, .1, {emitting:true,wind:2});
+      logic.pageToScreen(first, {x:0,y:100});
+      const second = logic.updateParticle(particle, .1, {emitting:true,wind:2});
+      logic.pageToScreen(second, {x:0,y:500});
+      console.log(JSON.stringify([first, second]));
+    """
+    assert run_logic(expression)[0] == run_logic(expression)[1]
+
+
 def test_cleanup_runs_once_in_reverse_order_and_late_tasks_immediately() -> None:
     expression = """
       const calls = []; const bag = logic.createCleanupBag();

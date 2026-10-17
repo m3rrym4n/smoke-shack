@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Anchor the smoke source and plume to the grill photo while the page scrolls.
 - Move the showcase logo into the bottom of the temperature gauge.
 - Render a realistic, state-aware smoke plume above the full live page with a demo mode.
 - Make Pit showcase image selection row-specific and save smoke positions immediately.

@@ -23,6 +23,10 @@ export function shouldAnimateSmoke({ liveCook, intensity, reducedMotion, hidden,
   return Boolean(liveCook && intensity > 0 && !reducedMotion && !hidden && enabled && anchor);
 }
 
+export function pageToScreen(point, scroll) {
+  return { x: point.x - scroll.x, y: point.y - scroll.y };
+}
+
 function lattice(x, y, seed) {
   let value = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 1442695041);
   value = Math.imul(value ^ (value >>> 13), 1274126177);
@@ -79,7 +83,7 @@ export function updateParticle(particle, elapsedSeconds, options = {}) {
   const fade = Math.pow(1 - progress, 1.35);
   const stopped = emitting ? 1 : clamp(1 - next.inactiveAge / 3200, 0, 1);
   next.opacity = appear * fade * stopped * (0.16 + next.density * 0.18);
-  next.remove = progress >= 1 || next.inactiveAge >= 3200 || next.y + next.radius < -20;
+  next.remove = progress >= 1 || next.inactiveAge >= 3200;
   return next;
 }
 

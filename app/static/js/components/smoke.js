@@ -1,6 +1,6 @@
 import {
   MAX_SMOKE_PARTICLES, createCleanupBag, shouldAnimateSmoke, smokeDemoMode, smokeIntensity,
-  spawnParticle, updateParticle, valueNoise2D,
+  pageToScreen, spawnParticle, updateParticle, valueNoise2D,
 } from "../smoke-logic.js";
 
 const SMOKE_ENABLED_KEY = "smoke-stack.showcase.smoke-enabled";
@@ -29,12 +29,25 @@ export function mountSmoke(container) {
   const context = canvas.getContext("2d");
   const sprites = [smokeSprite("186,202,210"), smokeSprite("213,211,202"), smokeSprite("238,235,224")];
   let enabled = readEnabled(window.localStorage), liveCook = false, intensity = 0, anchor = null;
+  let scrollContainer = window;
   let particles = [], frame = 0, previousTime = 0, spawnCarry = 0, windClock = 0;
+  const findScrollContainer = (element) => {
+    for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
+      const style = window.getComputedStyle(parent);
+      if (/(auto|scroll)/.test(`${style.overflow} ${style.overflowY}`) && parent.scrollHeight > parent.clientHeight) return parent;
+    }
+    return window;
+  };
+  const scrollPosition = () => ({
+    x: window.scrollX + (scrollContainer === window ? 0 : scrollContainer.scrollLeft),
+    y: window.scrollY + (scrollContainer === window ? 0 : scrollContainer.scrollTop),
+  });
   const locateAnchor = () => {
     const element = container.querySelector("[data-smokestack]");
     if (!element) { anchor = null; return; }
     const bounds = element.getBoundingClientRect();
-    anchor = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+    const scroll = scrollPosition();
+    anchor = { x: bounds.left + bounds.width / 2 + scroll.x, y: bounds.top + bounds.height / 2 + scroll.y };
   };
   const resize = () => {
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -52,11 +65,14 @@ export function mountSmoke(container) {
     });
   };
   const draw = (particle) => {
+    const screen = pageToScreen(particle, scrollPosition());
+    if (screen.y + particle.radius < -window.innerHeight || screen.y - particle.radius > window.innerHeight * 2
+      || screen.x + particle.radius < -window.innerWidth || screen.x - particle.radius > window.innerWidth * 2) return;
     const progress = Math.min(1, particle.age / particle.life);
     const sprite = sprites[Math.min(2, Math.floor(progress * 3))];
     const size = particle.radius * 2;
     context.save(); context.globalAlpha = particle.opacity;
-    context.translate(particle.x, particle.y); context.rotate(particle.rotation);
+    context.translate(screen.x, screen.y); context.rotate(particle.rotation);
     context.drawImage(sprite, -size, -size, size * 2, size * 2); context.restore();
   };
   const tick = (time) => {
@@ -77,16 +93,29 @@ export function mountSmoke(container) {
     else if (!frame) frame = window.requestAnimationFrame(tick);
   };
   const motionChanged = () => { particles = []; context.clearRect(0, 0, window.innerWidth, window.innerHeight); visibilityChanged(); };
-  window.addEventListener("resize", resize); window.addEventListener("scroll", locateAnchor, { passive: true });
+  const anchorChanged = () => locateAnchor();
+  const resizeObserver = new ResizeObserver(anchorChanged);
+  const observeLayout = () => {
+    resizeObserver.disconnect();
+    const photo = container.querySelector(".showcase-photo");
+    const pit = container.querySelector(".pit-board");
+    if (photo) resizeObserver.observe(photo);
+    if (pit) resizeObserver.observe(pit);
+  };
+  const imageLoaded = (event) => { if (event.target.matches?.(".showcase-photo img")) { observeLayout(); locateAnchor(); } };
+  scrollContainer = findScrollContainer(container.querySelector(".pit-board"));
+  window.addEventListener("resize", resize); scrollContainer.addEventListener("scroll", locateAnchor, { passive: true });
+  container.addEventListener("load", imageLoaded, true); observeLayout();
   document.addEventListener("visibilitychange", visibilityChanged); reduced.addEventListener("change", motionChanged); resize();
   if (!reduced.matches && !document.hidden) frame = window.requestAnimationFrame(tick);
   cleanup.add(() => canvas.remove()); cleanup.add(() => window.cancelAnimationFrame(frame));
   cleanup.add(() => reduced.removeEventListener("change", motionChanged)); cleanup.add(() => document.removeEventListener("visibilitychange", visibilityChanged));
-  cleanup.add(() => window.removeEventListener("scroll", locateAnchor)); cleanup.add(() => window.removeEventListener("resize", resize));
+  cleanup.add(() => resizeObserver.disconnect()); cleanup.add(() => container.removeEventListener("load", imageLoaded, true));
+  cleanup.add(() => scrollContainer.removeEventListener("scroll", locateAnchor)); cleanup.add(() => window.removeEventListener("resize", resize));
   return { update(cook, sample) {
     const demo = smokeDemoMode(window.location.hash);
     liveCook = demo || Boolean(cook && cook.ended_at == null && cook.status !== "planned");
     intensity = demo ? smokeIntensity("cook", "running") : smokeIntensity(cook?.status, sample?.fire_state);
-    syncToggle(); locateAnchor();
+    syncToggle(); observeLayout(); locateAnchor();
   }, cleanup: cleanup.cleanup };
 }
