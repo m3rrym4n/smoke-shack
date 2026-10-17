@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add meat and pellet purchase CRUD APIs with filtering and cook reference protection.
 - Raise the configurable HA websocket message limit and retain only configured entity states.
 - Add runtime Home Assistant and active-cook visibility through logs and `GET /status`.
 - Publish dev images to Zot and write the immutable tag back to `compose.yml`.

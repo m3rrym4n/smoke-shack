@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -15,8 +15,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings
 from app.database import make_engine, make_session_factory
+from app.deps import get_session
 from app.ha import HAClient, HAStatus, HomeAssistantClient
 from app.models import Cook, Event, Sample
+from app.routes.meat import router as meat_router
+from app.routes.pellets import router as pellets_router
 from app.service import CookService, as_utc
 
 logger = logging.getLogger(__name__)
@@ -67,10 +70,6 @@ def create_app(
                 await asyncio.gather(task, return_exceptions=True)
 
     app = FastAPI(title="Smoke Stack", lifespan=lifespan)
-
-    def get_session() -> Iterator[Session]:
-        with factory() as session:
-            yield session
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -135,6 +134,8 @@ def create_app(
 
     app.state.sessions = factory
     app.state.cook_service = service
+    app.include_router(meat_router)
+    app.include_router(pellets_router)
     return app
 
 
