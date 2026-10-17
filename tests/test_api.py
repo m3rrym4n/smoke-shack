@@ -73,6 +73,19 @@ def test_status_with_ha_unconfigured(sessions: sessionmaker[Session]) -> None:
     assert status["active_cook"] is None
     assert status["ingest"]["sample_interval_seconds"] == 10
     assert status["version"] == "0.1.0"
+    assert status["grill_name"] == "My grill"
+
+
+def test_status_grill_name_fallback_and_cached_ha_name(
+    sessions: sessionmaker[Session],
+) -> None:
+    fake = FakeHAClient()
+    app = create_app(Settings(grill_name="Backyard grill"), sessions, fake)
+    with TestClient(app) as client:
+        assert client.get("/status").json()["grill_name"] == "Backyard grill"
+        fake.status.grill_name = "Daniel Boone"
+        fake.status.connected = False
+        assert client.get("/status").json()["grill_name"] == "Daniel Boone"
 
 
 def test_status_does_not_report_planned_cook(sessions: sessionmaker[Session]) -> None:

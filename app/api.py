@@ -27,6 +27,7 @@ from app.routes.notes import router as notes_router
 from app.routes.pellets import router as pellets_router
 from app.routes.photos import router as photos_router
 from app.routes.profiles import router as profiles_router
+from app.routes.showcase import router as showcase_router
 from app.routes.stats import router as stats_router
 from app.service import CookService, as_utc
 
@@ -91,6 +92,7 @@ def create_app(
         )
         last_sample = session.scalar(select(Sample.ts).order_by(Sample.ts.desc()).limit(1))
         return {
+            "grill_name": ha_status.grill_name or config.grill_name.strip() or "My grill",
             "ha": {
                 "configured": ha_status.configured,
                 "connected": ha_status.connected,
@@ -115,6 +117,7 @@ def create_app(
 
     app.state.sessions = factory
     app.state.photo_dir = Path(config.photo_dir)
+    app.state.showcase_dir = Path(config.photo_dir).parent / "showcase"
     app.state.cook_service = service
     app.include_router(meat_router)
     app.include_router(pellets_router)
@@ -123,6 +126,7 @@ def create_app(
     app.include_router(profiles_router)
     app.include_router(cooks_router)
     app.include_router(photos_router)
+    app.include_router(showcase_router)
     app.include_router(stats_router)
     app.include_router(export_router)
     app.mount(

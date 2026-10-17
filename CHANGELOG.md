@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add the grill name and uploadable showcase logo and photo APIs.
 - Show planned, live, and incomplete cooks in the Cook Log with automatic refreshes.
 - Add immediate photo uploads and galleries to the Order Pad and cook details.
 - Add explicit live, planned, new-order, and closed-cook modes to the Order Pad UI.
