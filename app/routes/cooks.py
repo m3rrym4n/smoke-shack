@@ -44,6 +44,7 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
         )
     result: dict[str, Any] = {
         "id": cook.id,
+        "created_at": _iso(cook.created_at),
         "started_at": _iso(cook.started_at),
         "startup_ended_at": _iso(cook.startup_ended_at),
         "cook_ended_at": _iso(cook.cook_ended_at),

@@ -75,6 +75,13 @@ export async function getActiveCook() {
   return status.active_cook ? getCook(status.active_cook.id) : null;
 }
 
+export async function getCookLogCooks(closedLimit = 50) {
+  const [plans, active, closed] = await Promise.all([
+    getPlannedCooks(), getActiveCook(), getRecentCooks(closedLimit),
+  ]);
+  return [...plans, ...(active ? [active] : []), ...closed];
+}
+
 export function createPlannedCook(body) {
   return sendJson("POST", "/api/cooks", { ...body, state: "planned" });
 }
@@ -148,9 +155,12 @@ export function deletePellet(pelletId) {
   return sendJson("DELETE", `/api/pellets/${pelletId}`);
 }
 
-export function getNotes(scope = "all") {
-  const query = scope === "all" ? "" : `?${new URLSearchParams({ scope })}`;
-  return getJson(`/api/notes${query}`);
+export function getNotes(scope = "all", cookId = null) {
+  const params = new URLSearchParams();
+  if (scope !== "all") params.set("scope", scope);
+  if (cookId !== null) params.set("cook_id", cookId);
+  const query = params.toString();
+  return getJson(`/api/notes${query ? `?${query}` : ""}`);
 }
 
 export function createNote(body) {
