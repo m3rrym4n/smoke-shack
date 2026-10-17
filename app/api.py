@@ -18,7 +18,10 @@ from app.database import make_engine, make_session_factory
 from app.deps import get_session
 from app.ha import HAClient, HAStatus, HomeAssistantClient
 from app.models import Cook, Event, Sample
+from app.routes.events import event_json
+from app.routes.events import router as events_router
 from app.routes.meat import router as meat_router
+from app.routes.notes import router as notes_router
 from app.routes.pellets import router as pellets_router
 from app.service import CookService, as_utc
 
@@ -130,12 +133,14 @@ def create_app(
         if item is None:
             raise HTTPException(404, "Cook not found")
         rows = session.scalars(select(Event).where(Event.cook_id == cook_id).order_by(Event.ts))
-        return [_event(row, item.started_at) for row in rows]
+        return [event_json(row, item.started_at) for row in rows]
 
     app.state.sessions = factory
     app.state.cook_service = service
     app.include_router(meat_router)
     app.include_router(pellets_router)
+    app.include_router(notes_router)
+    app.include_router(events_router)
     return app
 
 
@@ -187,18 +192,4 @@ def _sample(sample: Sample, started: datetime) -> dict[str, Any]:
         "fire_state": sample.fire_state,
         "power_state": sample.power_state,
         "hvac_mode": sample.hvac_mode,
-    }
-
-
-def _event(event: Event, started: datetime) -> dict[str, Any]:
-    return {
-        "id": event.id,
-        "ts": _iso(event.ts),
-        "elapsed_seconds": int((as_utc(event.ts) - as_utc(started)).total_seconds()),
-        "kind": event.kind,
-        "source": event.source,
-        "title": event.title,
-        "description": event.description,
-        "data": event.data,
-        "photo_path": event.photo_path,
     }
