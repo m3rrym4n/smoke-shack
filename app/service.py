@@ -299,13 +299,33 @@ class CookService:
                 self._event(session, cook, now, "warning", "Grill fire state failed")
             self._record_warning_change(session, cook, current.warning, now)
             return
-        changes = (
-            ("setpoint_changed", previous.setpoint, current.setpoint, "Setpoint changed"),
-            ("mode_changed", previous.hvac_mode, current.hvac_mode, "Mode changed"),
-        )
-        for kind, old, new, title in changes:
-            if old != new:
-                self._event(session, cook, now, kind, title, {"from": old, "to": new})
+        if previous.setpoint != current.setpoint:
+            new_setpoint = _temperature_text(current.setpoint)
+            title = (
+                f"Setpoint changed to {new_setpoint}°F"
+                if new_setpoint is not None
+                else "Setpoint changed"
+            )
+            old_setpoint = _temperature_text(previous.setpoint)
+            description = f"from {old_setpoint}°F" if old_setpoint is not None else None
+            self._event(
+                session,
+                cook,
+                now,
+                "setpoint_changed",
+                title,
+                {"from": previous.setpoint, "to": current.setpoint},
+                description,
+            )
+        if previous.hvac_mode != current.hvac_mode:
+            self._event(
+                session,
+                cook,
+                now,
+                "mode_changed",
+                "Mode changed",
+                {"from": previous.hvac_mode, "to": current.hvac_mode},
+            )
         for name, old, new in (
             ("probe1", previous.probe1_connected, current.probe1_connected),
             ("probe2", previous.probe2_connected, current.probe2_connected),
@@ -453,9 +473,18 @@ class CookService:
         kind: str,
         title: str,
         data: dict[str, object] | None = None,
+        description: str | None = None,
     ) -> None:
         session.add(
-            Event(cook_id=cook.id, ts=ts, kind=kind, source="auto", title=title, data=data or {})
+            Event(
+                cook_id=cook.id,
+                ts=ts,
+                kind=kind,
+                source="auto",
+                title=title,
+                description=description,
+                data=data or {},
+            )
         )
 
 
@@ -474,3 +503,7 @@ def _duration_text(seconds: int) -> str:
     if minutes:
         return f"{minutes}m"
     return f"{remaining}s"
+
+
+def _temperature_text(value: float | None) -> str | None:
+    return str(round(value)) if value is not None else None

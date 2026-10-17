@@ -88,6 +88,29 @@ def test_return_to_150_stays_in_cook(sessions: sessionmaker[Session], clock: Fak
     assert kinds(sessions, cook.id).count("setpoint_changed") == 2
 
 
+def test_setpoint_change_event_names_new_value_and_details_old_value(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(snap(setpoint=225, fire="Running"))
+    assert cook is not None
+
+    clock.advance(seconds=10)
+    service.process(snap(setpoint=275, fire="Running"))
+
+    with sessions() as session:
+        event = session.scalar(
+            select(Event).where(
+                Event.cook_id == cook.id,
+                Event.kind == "setpoint_changed",
+            )
+        )
+        assert event is not None
+        assert event.title == "Setpoint changed to 275°F"
+        assert event.description == "from 225°F"
+        assert event.data == {"from": 225, "to": 275}
+
+
 def test_fan_only(sessions: sessionmaker[Session], clock: FakeClock) -> None:
     service = CookService(sessions, clock)
     assert service.process(snap(power="Fan", mode="fan_only", fire="Off")) is None
