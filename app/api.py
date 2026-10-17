@@ -25,6 +25,7 @@ from app.routes.notes import router as notes_router
 from app.routes.pellets import router as pellets_router
 from app.routes.photos import router as photos_router
 from app.routes.profiles import router as profiles_router
+from app.routes.stats import router as stats_router
 from app.service import CookService, as_utc
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,7 @@ def create_app(
     app.include_router(profiles_router)
     app.include_router(cooks_router)
     app.include_router(photos_router)
+    app.include_router(stats_router)
     return app
 
 

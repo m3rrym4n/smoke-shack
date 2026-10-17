@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add filtered cook duration statistics and meat-type count APIs.
 - Add cook and event photo upload, serving, editing, listing, and deletion APIs.
 - Add cook journal editing, linked summaries and costs, filtering, pagination, and deletion.
 - Add profiles and ordered profile steps CRUD APIs.
