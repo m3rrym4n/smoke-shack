@@ -34,6 +34,14 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
     meat = session.get(Meat, cook.meat_id) if cook.meat_id is not None else None
     pellet = session.get(Pellet, cook.pellet_id) if cook.pellet_id is not None else None
     profile = session.get(Profile, cook.profile_id) if cook.profile_id is not None else None
+    current_setpoint = None
+    if cook.ended_at is None and cook.status != "planned":
+        current_setpoint = session.scalar(
+            select(Sample.setpoint)
+            .where(Sample.cook_id == cook.id)
+            .order_by(Sample.ts.desc(), Sample.id.desc())
+            .limit(1)
+        )
     result: dict[str, Any] = {
         "id": cook.id,
         "started_at": _iso(cook.started_at),
@@ -82,6 +90,7 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
         "aggregate_setpoint": cook.aggregate_setpoint,
         "setpoint_override": cook.setpoint_override,
         "effective_setpoint": cook.effective_setpoint,
+        "current_setpoint": current_setpoint,
         "time_to_done_seconds": cook.time_to_done_seconds,
         "has_gap": cook.has_gap,
         "incomplete": cook.incomplete,

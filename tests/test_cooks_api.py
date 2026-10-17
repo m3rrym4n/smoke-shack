@@ -147,15 +147,31 @@ def test_list_cooks_filters_and_paginates(sessions: sessionmaker[Session]) -> No
                 _cook(started + timedelta(hours=2), pellet_id=pellet.id, status="complete"),
             ]
         )
+        active = _cook(started + timedelta(hours=3), ended_at=None, status="cook")
+        session.add(active)
+        session.flush()
+        session.add(
+            Sample(
+                cook_id=active.id,
+                ts=started + timedelta(hours=3, minutes=1),
+                setpoint=275,
+                extra_probes={},
+            )
+        )
         session.commit()
-        meat_id, pellet_id = meat.id, pellet.id
+        meat_id, pellet_id, active_id = meat.id, pellet.id, active.id
 
     with TestClient(create_app(Settings(), sessions)) as client:
+        all_cooks = client.get("/api/cooks").json()
         assert len(client.get(f"/api/cooks?meat_id={meat_id}").json()) == 2
         assert len(client.get(f"/api/cooks?pellet_id={pellet_id}").json()) == 2
         assert len(client.get("/api/cooks?status=incomplete").json()) == 1
         page = client.get("/api/cooks?limit=1&offset=1").json()
-        assert page[0]["status"] == "incomplete"
+        assert page[0]["status"] == "complete"
+        assert [cook["id"] for cook in client.get("/api/cooks?state=cook").json()] == [active_id]
+
+    assert all_cooks[0]["id"] == active_id
+    assert all_cooks[0]["current_setpoint"] == 275
 
 
 def test_delete_cook_rejects_active_and_removes_children(

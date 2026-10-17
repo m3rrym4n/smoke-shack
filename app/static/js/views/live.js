@@ -111,7 +111,11 @@ async function load(container, onStatus, isCurrent, requestedCookId, refresh, se
     order = orderPadMarkup(orderCook, meat, pellets, [...closedCooks, ...planned, ...(active && cook ? [cook] : [])], { ...selection, planned: sortedPlans, photos });
   }
   const cookContent = cook ? `${heroMarkup(cook, samples.at(-1), active, requestedCookId != null)}${chartMarkup(samples, events, cook)}${log}` : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
-  container.innerHTML = `<div class="cook-detail">${requestedCookId == null ? "" : '<a class="back-link cc" href="#cooks">← All cooks</a>'}${cookContent}${order}</div>`;
+  const liveDetail = requestedCookId != null && cook && cook.ended_at == null;
+  const backLink = liveDetail
+    ? '<a class="back-link cc" href="#live">← Back to live cook</a>'
+    : '<a class="back-link cc" href="#cooks">← All cooks</a>';
+  container.innerHTML = `<div class="cook-detail">${requestedCookId == null ? "" : backLink}${cookContent}${order}</div>`;
   if (liveForms) bindLiveForms(container, { cook, orderCook, events, meat, pellets, refresh, setBusy, mode });
 }
 
