@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add cook journal editing, linked summaries and costs, filtering, pagination, and deletion.
 - Add profiles and ordered profile steps CRUD APIs.
 - Add notes CRUD and editable user timeline event APIs.
 - Add meat and pellet purchase CRUD APIs with filtering and cook reference protection.

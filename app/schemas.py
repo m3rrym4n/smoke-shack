@@ -66,6 +66,26 @@ class PelletResponse(BaseModel):
     purchased_on: date
 
 
+class CookUpdate(BaseModel):
+    meat_id: int | None = None
+    pellet_id: int | None = None
+    profile_id: int | None = None
+    rotisserie: bool | None = None
+    seasonings: str | None = None
+    sauces: str | None = None
+    prep_time_minutes: int | None = Field(default=None, ge=0)
+    results_text: str | None = None
+    setpoint_override: float | None = None
+    pellets_used_lb: float | None = Field(default=None, ge=0)
+
+    @field_validator("rotisserie", mode="before")
+    @classmethod
+    def rotisserie_cannot_be_null(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("field cannot be null")
+        return value
+
+
 NoteScope = Literal["this_cook", "pellets", "gear"]
 
 

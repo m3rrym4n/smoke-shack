@@ -9,7 +9,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -17,8 +17,8 @@ from app.config import Settings
 from app.database import make_engine, make_session_factory
 from app.deps import get_session
 from app.ha import HAClient, HAStatus, HomeAssistantClient
-from app.models import Cook, Event, Sample
-from app.routes.events import event_json
+from app.models import Cook, Sample
+from app.routes.cooks import router as cooks_router
 from app.routes.events import router as events_router
 from app.routes.meat import router as meat_router
 from app.routes.notes import router as notes_router
@@ -108,34 +108,6 @@ def create_app(
             "version": _version(),
         }
 
-    @app.get("/api/cooks")
-    def cooks(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
-        query = select(Cook).order_by(Cook.started_at.desc())
-        return [_cook(item) for item in session.scalars(query)]
-
-    @app.get("/api/cooks/{cook_id}")
-    def cook(cook_id: int, session: Session = Depends(get_session)) -> dict[str, Any]:
-        item = session.get(Cook, cook_id)
-        if item is None:
-            raise HTTPException(404, "Cook not found")
-        return _cook(item)
-
-    @app.get("/api/cooks/{cook_id}/samples")
-    def samples(cook_id: int, session: Session = Depends(get_session)) -> list[dict[str, Any]]:
-        item = session.get(Cook, cook_id)
-        if item is None:
-            raise HTTPException(404, "Cook not found")
-        rows = session.scalars(select(Sample).where(Sample.cook_id == cook_id).order_by(Sample.ts))
-        return [_sample(row, item.started_at) for row in rows]
-
-    @app.get("/api/cooks/{cook_id}/events")
-    def events(cook_id: int, session: Session = Depends(get_session)) -> list[dict[str, Any]]:
-        item = session.get(Cook, cook_id)
-        if item is None:
-            raise HTTPException(404, "Cook not found")
-        rows = session.scalars(select(Event).where(Event.cook_id == cook_id).order_by(Event.ts))
-        return [event_json(row, item.started_at) for row in rows]
-
     app.state.sessions = factory
     app.state.cook_service = service
     app.include_router(meat_router)
@@ -143,6 +115,7 @@ def create_app(
     app.include_router(notes_router)
     app.include_router(events_router)
     app.include_router(profiles_router)
+    app.include_router(cooks_router)
     return app
 
 
@@ -155,43 +128,3 @@ def _version() -> str:
         return version("smoke-stack")
     except PackageNotFoundError:
         return "0.1.0"
-
-
-def _cook(cook: Cook) -> dict[str, Any]:
-    return {
-        "id": cook.id,
-        "started_at": _iso(cook.started_at),
-        "startup_ended_at": _iso(cook.startup_ended_at),
-        "cook_ended_at": _iso(cook.cook_ended_at),
-        "cooldown_ended_at": _iso(cook.cooldown_ended_at),
-        "ended_at": _iso(cook.ended_at),
-        "status": cook.status,
-        "startup_duration_seconds": cook.startup_duration_seconds,
-        "cook_duration_seconds": cook.cook_duration_seconds,
-        "cooldown_duration_seconds": cook.cooldown_duration_seconds,
-        "grill_duration_seconds": cook.grill_duration_seconds,
-        "aggregate_setpoint": cook.aggregate_setpoint,
-        "setpoint_override": cook.setpoint_override,
-        "effective_setpoint": cook.effective_setpoint,
-        "time_to_done_seconds": cook.time_to_done_seconds,
-        "has_gap": cook.has_gap,
-        "incomplete": cook.incomplete,
-    }
-
-
-def _sample(sample: Sample, started: datetime) -> dict[str, Any]:
-    return {
-        "id": sample.id,
-        "ts": _iso(sample.ts),
-        "elapsed_seconds": int((as_utc(sample.ts) - as_utc(started)).total_seconds()),
-        "pit_temp": sample.pit_temp,
-        "setpoint": sample.setpoint,
-        "probe1": sample.probe1,
-        "probe2": sample.probe2,
-        "probe1_target": sample.probe1_target,
-        "probe2_target": sample.probe2_target,
-        "extra_probes": sample.extra_probes,
-        "fire_state": sample.fire_state,
-        "power_state": sample.power_state,
-        "hvac_mode": sample.hvac_mode,
-    }
