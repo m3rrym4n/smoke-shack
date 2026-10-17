@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import EntityConfig
-from app.ha import HAStatus, HomeAssistantClient, ingest
+from app.ha import HAStatus, HomeAssistantClient, ingest, parse_device_template
 from app.models import Cook, Event, Sample
 from app.service import CookService, GrillSnapshot
 
@@ -402,3 +402,55 @@ async def test_ingest_caches_last_grill_name_when_ha_state_loses_it(
 
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        (
+            "Daniel Boone|Green Mountain Grills|Backyard Beast",
+            ("Daniel Boone", "Green Mountain Grills", "Backyard Beast"),
+        ),
+        ("None| None |None\n", (None, None, None)),
+        ("  |Green Mountain Grills| ", (None, "Green Mountain Grills", None)),
+    ],
+)
+def test_parse_device_template_fields_and_none(
+    output: str, expected: tuple[str | None, str | None, str | None]
+) -> None:
+    assert parse_device_template(output) == expected
+
+
+@pytest.mark.parametrize("output", ["", "garbage", "model|maker", "a|b|c|d"])
+def test_parse_device_template_rejects_empty_or_garbage(output: str) -> None:
+    with pytest.raises(ValueError):
+        parse_device_template(output)
+
+
+@pytest.mark.asyncio
+async def test_device_template_prefers_user_name_then_model_and_caches_on_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = HomeAssistantClient("http://ha", "secret", entity_config())
+    outputs = iter(
+        [
+            "Daniel Boone|Green Mountain Grills|Backyard Beast",
+            "Daniel Boone|Green Mountain Grills|None",
+        ]
+    )
+    monkeypatch.setattr(client, "_read_template", lambda _request: next(outputs))
+
+    await client._refresh_device_info()
+    assert client.status.grill_title == "Backyard Beast"
+    assert client.status.grill_maker == "Green Mountain Grills"
+
+    await client._refresh_device_info()
+    assert client.status.grill_title == "Daniel Boone"
+
+    def fail(_request: object) -> str:
+        raise OSError("HA unavailable")
+
+    monkeypatch.setattr(client, "_read_template", fail)
+    await client._refresh_device_info()
+    assert client.status.grill_title == "Daniel Boone"
+    assert client.status.grill_maker == "Green Mountain Grills"

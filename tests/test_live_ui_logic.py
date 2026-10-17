@@ -196,6 +196,28 @@ def test_showcase_placeholders_layout_and_stack_clamping() -> None:
     }
 
 
+def test_showcase_title_and_maker_rendering_rules() -> None:
+    expression = """
+      console.log(JSON.stringify([
+        logic.showcaseNameLines({grill_title:"Daniel Boone",
+          grill_maker:"Green Mountain Grills", grill_name:"Friendly"}),
+        logic.showcaseNameLines({grill_title:"Daniel Boone", grill_maker:null}),
+        logic.showcaseNameLines({grill_name:"Friendly"}),
+        logic.showcaseNameLines({}),
+      ]));
+    """
+    assert run_logic(expression) == [
+        {"title": "Daniel Boone", "maker": "Green Mountain Grills"},
+        {"title": "Daniel Boone", "maker": ""},
+        {"title": "Friendly", "maker": ""},
+        {"title": "My grill", "maker": ""},
+    ]
+
+    component = Path("app/static/js/components/showcase.js").read_text()
+    assert "title.textContent = name.title" in component
+    assert "maker.textContent = name.maker" in component
+
+
 def test_showcase_anchor_persistence_clamps_and_defaults() -> None:
     expression = """
       const values = new Map();

@@ -41,7 +41,7 @@ function probeBoard(name, reading, target) {
   </section>`;
 }
 
-function heroMarkup(cook, sample, active, historical, showcase, grillName) {
+function heroMarkup(cook, sample, active, historical, showcase, grillIdentity) {
   const times = phaseDurations(cook);
   const widths = phasePercentages(times);
   const setpoint = sample?.setpoint ?? cook.effective_setpoint ?? 0;
@@ -49,7 +49,7 @@ function heroMarkup(cook, sample, active, historical, showcase, grillName) {
   const weight = cook.meat?.pounds ? `<span>${escapeHtml(cook.meat.pounds)} lb</span>` : "";
   const details = [setpoint ? `${temp(setpoint)} setpoint` : null, cook.pellet ? `${cook.pellet.vendor} ${cook.pellet.product_name}` : null, cook.profile_name].filter(Boolean).map(escapeHtml).join(" · ");
   return `<div class="live-hero">
-    <section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">${active ? escapeHtml(cook.status) : "fire's out"}</span></div>${gaugeSvg(sample?.pit_temp, setpoint, showcase?.logo_url)}${showcaseMarkup(showcase, grillName, window.innerWidth, !historical)}</section>
+    <section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">${active ? escapeHtml(cook.status) : "fire's out"}</span></div>${gaugeSvg(sample?.pit_temp, setpoint, showcase?.logo_url)}${showcaseMarkup(showcase, grillIdentity, window.innerWidth, !historical)}</section>
     <div class="live-details">
       <section class="board special-board"><div class="board-title"><h2 class="hd">${historical ? "Cook Special" : "Today's Special"}</h2>${active ? "" : `<span class="cook-label">${historical ? "cook #" + cook.id : "last cook"}</span>`}</div>
         <div class="meat-name">${escapeHtml(meat)} ${weight}</div><p class="mut special-meta">${details || "Cook details not set"}</p>
@@ -119,14 +119,15 @@ async function load(container, onStatus, isCurrent, requestedCookId, refresh, se
   }
   const resultPhotos = !liveForms && cook ? `<section class="order-pad cook-results"><span class="tape" aria-hidden="true"></span><h2>How it turned out</h2><p>${escapeHtml(cook.results_text || "No write-up yet.")}</p>${photoGalleryMarkup(detailPhotos)}</section>` : "";
   const demo = requestedCookId == null && smokeDemoMode(window.location.hash);
-  const demoPit = `<section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">smoke demo</span></div>${gaugeSvg(null, 0, showcase?.logo_url)}${showcaseMarkup(showcase, status.grill_name, window.innerWidth)}</section>`;
-  const cookContent = cook ? `${heroMarkup(cook, samples.at(-1), active, requestedCookId != null, showcase, status.grill_name)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : demo ? demoPit : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
+  const demoPit = `<section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">smoke demo</span></div>${gaugeSvg(null, 0, showcase?.logo_url)}${showcaseMarkup(showcase, status, window.innerWidth)}</section>`;
+  const cookContent = cook ? `${heroMarkup(cook, samples.at(-1), active, requestedCookId != null, showcase, status)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : demo ? demoPit : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
   const liveDetail = requestedCookId != null && cook && cook.ended_at == null;
   const backLink = liveDetail
     ? '<a class="back-link cc" href="#live">← Back to live cook</a>'
     : '<a class="back-link cc" href="#cooks">← All cooks</a>';
   container.innerHTML = `<div class="cook-detail">${requestedCookId == null ? "" : backLink}${cookContent}${order}</div>`;
   setShowcaseCleanup(bindShowcase(container, {
+    grillIdentity: status,
     setBusy,
     onLogoChange: (url) => {
       const logo = container.querySelector(".gauge-logo-slot");
