@@ -1,6 +1,6 @@
 import { createCookEvent, createPlannedCook, deleteCook, deleteCookEvent, deletePhoto, updateCook, updateCookEvent, uploadCookPhoto } from "../api.js";
 import { availableMeat, meatOptionLabel, pelletOptionLabel, validatePelletsUsed } from "../order-pad-logic.js";
-import { closedCookReadOnlyFields, orderPadSavedMessage, orderPlannedCooks } from "../live-logic.js";
+import { PHOTO_MAX_BYTES, closedCookReadOnlyFields, downscaleSize, orderPadSavedMessage, orderPhotos, orderPlannedCooks, photoErrorMessage, validatePhotoFile } from "../live-logic.js";
 import { confirmDelete } from "./ui.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -39,6 +39,89 @@ function money(value) {
   return value == null ? "—" : `$${Number(value).toFixed(2)}`;
 }
 
+function photoMarkup(photo) {
+  return `<figure class="cook-photo" data-photo-id="${photo.id}"><a href="${photo.url}" target="_blank" rel="noopener"><img src="${photo.url}" alt="Cook photo ${photo.id}" loading="lazy"></a><figcaption><button class="paper-button delete-photo" type="button">Delete</button><span class="photo-confirm" hidden></span></figcaption></figure>`;
+}
+
+export function photoGalleryMarkup(photos) {
+  const ordered = orderPhotos(photos);
+  if (!ordered.length) return '<div class="cook-photo-gallery empty"><p>No photos yet.</p></div>';
+  return `<div class="cook-photo-gallery">${ordered.map(photoMarkup).join("")}</div>`;
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read this photo.")); };
+    image.src = url;
+  });
+}
+
+async function uploadFile(file) {
+  if (file.size <= PHOTO_MAX_BYTES) return file;
+  const image = await loadImage(file);
+  const size = downscaleSize(image.naturalWidth, image.naturalHeight);
+  const canvas = document.createElement("canvas");
+  canvas.width = size.width;
+  canvas.height = size.height;
+  canvas.getContext("2d").drawImage(image, 0, 0, size.width, size.height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  if (!blob) throw new Error("Could not resize this photo.");
+  if (blob.size > PHOTO_MAX_BYTES) throw new Error("This photo is still too large after resizing.");
+  return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+}
+
+export function bindPhotoGallery(container, { cookId } = {}) {
+  const gallery = container.querySelector(".cook-photo-gallery");
+  if (!gallery) return;
+  const bindDelete = (card) => {
+    const button = card.querySelector(".delete-photo");
+    if (!button) return;
+    button.addEventListener("click", () => confirmDelete(card.querySelector(".photo-confirm"), async () => {
+      try {
+        await deletePhoto(Number(card.dataset.photoId));
+        card.remove();
+        if (!gallery.querySelector(".cook-photo")) gallery.innerHTML = "<p>No photos yet.</p>";
+      } catch (error) {
+        card.querySelector(".photo-confirm").textContent = photoErrorMessage(error);
+      }
+    }));
+  };
+  gallery.querySelectorAll(".cook-photo").forEach(bindDelete);
+
+  const input = container.querySelector(".add-photos-input");
+  if (!input || !cookId) return;
+  const send = async (file, card) => {
+    card.innerHTML = `<div class="photo-sending">Sending ${escapeHtml(file.name)}…</div>`;
+    try {
+      const error = validatePhotoFile(file);
+      if (error) throw new Error(error);
+      const photo = await uploadCookPhoto(cookId, await uploadFile(file));
+      card.outerHTML = photoMarkup(photo);
+      bindDelete(gallery.querySelector(`[data-photo-id="${photo.id}"]`));
+      [...gallery.querySelectorAll(".cook-photo[data-photo-id]")]
+        .sort((left, right) => Number(left.dataset.photoId) - Number(right.dataset.photoId))
+        .forEach((item) => gallery.append(item));
+    } catch (error) {
+      card.innerHTML = `<div class="photo-error"><span>${escapeHtml(photoErrorMessage(error))}</span><button class="paper-button retry-photo" type="button">Retry</button></div>`;
+      card.querySelector(".retry-photo").addEventListener("click", () => send(file, card), { once: true });
+    }
+  };
+  input.addEventListener("change", () => {
+    gallery.classList.remove("empty");
+    gallery.querySelector(":scope > p")?.remove();
+    [...input.files].forEach((file) => {
+      const card = document.createElement("figure");
+      card.className = "cook-photo pending";
+      gallery.append(card);
+      send(file, card);
+    });
+    input.value = "";
+  });
+}
+
 export function orderPadMarkup(cook, meat, pellets, cooks = [], config = {}) {
   const { mode = "live", banner = "Cook in progress", planned = [], photos = [] } = config;
   const model = cook || { id: null, meat_id: null, pellet_id: null, rotisserie: false };
@@ -66,9 +149,8 @@ export function orderPadMarkup(cook, meat, pellets, cooks = [], config = {}) {
       <div class="paper-field"><span>Pellet cost</span><output name="pellet_cost">${money(model.cost?.pellet_cost)}</output></div>
       <label class="paper-field"><span>Profile used</span><input readonly value="${escapeHtml(model.profile_name || "None")}"></label>
       <fieldset class="paper-field rotisserie"${disabled("rotisserie")}><legend>Rotisserie</legend><label><input type="radio" name="rotisserie" value="true"${model.rotisserie ? " checked" : ""}${disabled("rotisserie")}> Yes</label><label><input type="radio" name="rotisserie" value="false"${model.rotisserie ? "" : " checked"}${disabled("rotisserie")}> No</label></fieldset>
-      <label class="paper-field paper-area"><span>How it turned out</span><textarea name="results_text" rows="4">${escapeHtml(model.results_text)}</textarea></label>
-      <label class="paper-field paper-area"><span>Photos</span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp"></label>
-      <div class="order-photos">${photos.map((photo) => `<span><a href="${photo.url}" target="_blank" rel="noopener">Photo ${photo.id}</a><button class="paper-button delete-photo" type="button" data-photo-id="${photo.id}">Delete</button></span>`).join("")}</div>
+      <div class="results-with-photos"><label class="paper-field paper-area"><span>How it turned out</span><textarea name="results_text" rows="4">${escapeHtml(model.results_text)}</textarea></label><label class="paper-button add-photos${model.id ? "" : " disabled"}">Add photos<input class="add-photos-input" name="photos" type="file" accept="image/*" multiple${model.id ? "" : " disabled"}></label></div>
+      ${photoGalleryMarkup(photos)}
       <p class="form-message" role="status" aria-live="polite"></p>
       <button class="pbtn order-save" type="submit">Save order</button>
     </form>
@@ -200,8 +282,6 @@ export function bindLiveForms(container, { cook, orderCook = cook, events, meat,
     submit.disabled = true;
     try {
       const updated = mode === "new" ? await createPlannedCook(body) : await updateCook(orderCook.id, body);
-      const photo = orderForm.elements.photo.files[0];
-      if (photo) await uploadCookPhoto(updated.id, photo);
       orderForm.elements.meat_cost.value = money(updated.cost?.meat_cost);
       orderForm.elements.pellet_cost.value = money(updated.cost?.pellet_cost);
       setBusy(false);
@@ -222,9 +302,5 @@ export function bindLiveForms(container, { cook, orderCook = cook, events, meat,
     const prompt = button.parentElement.querySelector(".plan-confirm");
     confirmDelete(prompt, async () => { await deleteCook(Number(button.dataset.cookId)); await refresh(); });
   }));
-  container.querySelectorAll(".delete-photo").forEach((button) => button.addEventListener("click", async () => {
-    button.disabled = true;
-    try { await deletePhoto(Number(button.dataset.photoId)); await refresh(); }
-    catch (error) { showMessage(orderForm, apiMessage(error), true); button.disabled = false; }
-  }));
+  bindPhotoGallery(orderForm, { cookId: orderCook?.id });
 }

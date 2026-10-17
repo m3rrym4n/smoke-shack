@@ -81,3 +81,47 @@ def test_planned_orders_are_oldest_first() -> None:
       console.log(JSON.stringify(logic.orderPlannedCooks(plans).map(item => item.id)));
     """
     assert run_logic(expression) == [4, 6, 8]
+
+
+def test_photo_validation_and_error_messages() -> None:
+    expression = """
+      console.log(JSON.stringify({
+        valid: logic.validatePhotoFile({type:"image/jpeg",size:10}),
+        type: logic.validatePhotoFile({type:"image/gif",size:10}),
+        empty: logic.validatePhotoFile({type:"image/png",size:0}),
+        api: logic.photoErrorMessage(new Error("Photo exceeds 15 MB limit")),
+        fallback: logic.photoErrorMessage({}),
+      }));
+    """
+    assert run_logic(expression) == {
+        "valid": "",
+        "type": "Choose a JPEG, PNG, or WebP photo.",
+        "empty": "This photo is empty.",
+        "api": "Photo exceeds 15 MB limit",
+        "fallback": "Could not send this photo. Please try again.",
+    }
+
+
+def test_photo_downscale_size_preserves_aspect_ratio_and_avoids_upscaling() -> None:
+    expression = """
+      console.log(JSON.stringify([
+        logic.downscaleSize(4000, 3000),
+        logic.downscaleSize(1200, 800),
+        logic.downscaleSize(1000, 3000),
+      ]));
+    """
+    assert run_logic(expression) == [
+        {"width": 2000, "height": 1500},
+        {"width": 1200, "height": 800},
+        {"width": 667, "height": 2000},
+    ]
+
+
+def test_photos_are_ordered_oldest_first_without_mutating_input() -> None:
+    expression = """
+      const photos = [{id:9},{id:2},{id:5}];
+      const ordered = logic.orderPhotos(photos);
+      console.log(JSON.stringify({ordered: ordered.map(item => item.id),
+                                  original: photos.map(item => item.id)}));
+    """
+    assert run_logic(expression) == {"ordered": [2, 5, 9], "original": [9, 2, 5]}
