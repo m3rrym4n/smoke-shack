@@ -20,6 +20,17 @@ def test_health(sessions: sessionmaker[Session]) -> None:
         assert client.get("/health").json() == {"status": "ok"}
 
 
+def test_static_shell_and_existing_routes(sessions: sessionmaker[Session]) -> None:
+    app = create_app(Settings(), sessions, FakeHAClient())
+    with TestClient(app) as client:
+        home = client.get("/")
+        assert home.status_code == 200
+        assert "text/html" in home.headers["content-type"]
+        assert "SMOKE-STACK" in home.text
+        assert client.get("/health").status_code == 200
+        assert client.get("/docs").status_code == 200
+
+
 def test_status_with_ha_unconfigured(sessions: sessionmaker[Session]) -> None:
     app = create_app(Settings(), sessions)
     with TestClient(app) as client:

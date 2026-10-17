@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -123,6 +124,11 @@ def create_app(
     app.include_router(photos_router)
     app.include_router(stats_router)
     app.include_router(export_router)
+    app.mount(
+        "/",
+        StaticFiles(directory=Path(__file__).parent / "static", html=True),
+        name="static",
+    )
     return app
 
 
