@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add filtered cook CSV, raw sample CSV, and full journal JSON export APIs.
+- Add filtered cook duration statistics and meat-type count APIs.
+- Add cook and event photo upload, serving, editing, listing, and deletion APIs.
+- Add cook journal editing, linked summaries and costs, filtering, pagination, and deletion.
+- Add profiles and ordered profile steps CRUD APIs.
+- Add notes CRUD and editable user timeline event APIs.
+- Add meat and pellet purchase CRUD APIs with filtering and cook reference protection.
 - Raise the configurable HA websocket message limit and retain only configured entity states.
 - Add runtime Home Assistant and active-cook visibility through logs and `GET /status`.
 - Publish dev images to Zot and write the immutable tag back to `compose.yml`.
