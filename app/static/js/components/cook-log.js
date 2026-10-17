@@ -33,6 +33,27 @@ function shortDuration(seconds) {
   return minutes ? `${minutes}m` : `${remaining}s`;
 }
 
+function wholeTemperature(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const temperature = Number(value);
+  return Number.isFinite(temperature) ? Math.round(temperature) : null;
+}
+
+export function presentEvent(event) {
+  if (event.kind !== "setpoint_changed") return event;
+  let newSetpoint = wholeTemperature(event.data?.to);
+  if (newSetpoint === null && event.description) {
+    const match = event.description.match(/\bto\s+(-?\d+(?:\.\d+)?)\s*°?\s*F\b/i);
+    newSetpoint = match ? wholeTemperature(match[1]) : null;
+  }
+  const oldSetpoint = wholeTemperature(event.data?.from);
+  return {
+    ...event,
+    title: newSetpoint === null ? event.title : `Setpoint changed to ${newSetpoint}°F`,
+    description: event.description || (oldSetpoint === null ? null : `from ${oldSetpoint}°F`),
+  };
+}
+
 export function collapseBriefDataGaps(events, thresholdSeconds = 120) {
   const collapsed = [];
   let group = [];
@@ -64,13 +85,15 @@ export function collapseBriefDataGaps(events, thresholdSeconds = 120) {
 
 export function cookLogMarkup(events, editable = false, dataGapEventMinSeconds = 120) {
   let userNumber = 0;
-  const rows = collapseBriefDataGaps(events, dataGapEventMinSeconds).map((event) => {
+  const rows = collapseBriefDataGaps(events, dataGapEventMinSeconds).map((storedEvent) => {
+    const event = presentEvent(storedEvent);
     const user = event.source === "user";
     if (user) userNumber += 1;
     const when = timestamp(event.ts);
     const pin = user ? userNumber : escapeHtml(autoIcons[event.kind] || "·");
     const edit = user && editable ? `<button class="ib event-edit" type="button" data-event-id="${event.id}" aria-label="Edit ${escapeHtml(event.title)}">✎</button>` : "";
-    return `<article class="ev${user ? " user-event" : ""}"><span class="pin${user ? "" : " auto"}" aria-hidden="true">${pin}</span><div class="event-copy"><h3>${escapeHtml(event.title)}</h3>${event.description ? `<p>${escapeHtml(event.description)}</p>` : ""}<div class="mut event-meta">${when.date} · ${when.time} · ${elapsed(event.elapsed_seconds)}${user ? "" : " · auto"}</div></div>${edit}</article>`;
+    const detailClass = event.kind === "setpoint_changed" ? ' class="mut"' : "";
+    return `<article class="ev${user ? " user-event" : ""}"><span class="pin${user ? "" : " auto"}" aria-hidden="true">${pin}</span><div class="event-copy"><h3>${escapeHtml(event.title)}</h3>${event.description ? `<p${detailClass}>${escapeHtml(event.description)}</p>` : ""}<div class="mut event-meta">${when.date} · ${when.time} · ${elapsed(event.elapsed_seconds)}${user ? "" : " · auto"}</div></div>${edit}</article>`;
   }).join("");
   return `<section class="board cook-log"><h2 class="hd">Cook Log</h2>${rows || '<p class="mut">Nothing chalked in the log yet.</p>'}</section>`;
 }

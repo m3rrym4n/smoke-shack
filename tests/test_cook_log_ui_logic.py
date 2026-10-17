@@ -20,6 +20,21 @@ def collapse(events: list[dict[str, object]], threshold: int = 120) -> list[dict
     return json.loads(result.stdout)  # type: ignore[no-any-return]
 
 
+def present(event: dict[str, object]) -> dict[str, object]:
+    module = Path("app/static/js/components/cook-log.js").resolve().as_uri()
+    script = (
+        f'import {{ presentEvent }} from "{module}"; '
+        f"console.log(JSON.stringify(presentEvent({json.dumps(event)})));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout)  # type: ignore[no-any-return]
+
+
 def gap(event_id: int, start: str, end: str) -> dict[str, object]:
     return {
         "id": event_id,
@@ -60,3 +75,42 @@ def test_empty_and_mixed_events_stay_in_order() -> None:
     brief = gap(10, "2026-01-01T00:05:00Z", "2026-01-01T00:05:30Z")
     rows = collapse([fire, brief, user])
     assert [row["id"] for row in rows] == [8, "brief-data-gaps-10", 9]
+
+
+def test_presents_stored_setpoint_event_from_data() -> None:
+    event = {
+        "kind": "setpoint_changed",
+        "title": "Setpoint changed",
+        "description": None,
+        "data": {"from": 225, "to": 275},
+    }
+    assert present(event) == {
+        **event,
+        "title": "Setpoint changed to 275°F",
+        "description": "from 225°F",
+    }
+
+
+def test_presents_stored_setpoint_event_from_details() -> None:
+    event = {
+        "kind": "setpoint_changed",
+        "title": "Setpoint changed",
+        "description": "from 225°F to 275°F",
+        "data": {},
+    }
+    assert present(event)["title"] == "Setpoint changed to 275°F"
+
+
+def test_setpoint_without_new_value_falls_back_to_stored_title() -> None:
+    event = {
+        "kind": "setpoint_changed",
+        "title": "Stored setpoint event",
+        "description": None,
+        "data": {"from": 225},
+    }
+    assert present(event)["title"] == "Stored setpoint event"
+
+
+def test_non_setpoint_event_is_untouched() -> None:
+    event = {"kind": "fire_lit", "title": "Fire lit", "data": {"to": 275}}
+    assert present(event) == event
