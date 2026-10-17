@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Prevent older dev builds from overwriting newer deployed image tags during CI write-back races.
 - Sample the latest Home Assistant grill state on a timer while connected.
 - Ignore implausible grill snapshots and coalesce Home Assistant update bursts.
 - Add live event pinning and editing plus the cook Order Pad form.
