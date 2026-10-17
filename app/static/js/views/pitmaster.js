@@ -1,7 +1,7 @@
 import { getCookStats, getCookStatsMeatTypes, getMeat, getPellets } from "../api.js";
 import { renderApiError } from "../components/ui.js";
 import {
-  buildAnswerSentence, cookTimePerPound, filtersFromHash, filtersToHash,
+  buildAnswerSentence, cookTimePerPound, filtersFromHash, filtersToHash, mergeMeatTypeOptions,
   formatDuration, statsQuery,
 } from "../pitmaster-logic.js";
 
@@ -77,7 +77,8 @@ export function mountPitmasterView(container) {
     try {
       const [meatTypes, pellets, meat] = await Promise.all([getCookStatsMeatTypes(), getPellets(), getMeat()]);
       if (disposed) return;
-      fillSelect("meat", meatTypes.map((item) => [item.meat_type, `${item.meat_type} (${item.count})`]), filters.meat);
+      const meatOptions = mergeMeatTypeOptions(meatTypes, meat, filters.meat);
+      fillSelect("meat", meatOptions.map((item) => [item.value, item.label]), filters.meat);
       const vendors = [...new Set(pellets.map((item) => item.vendor))].sort();
       const products = [...new Set(pellets.map((item) => item.product_name))].sort();
       const stores = [...new Set(meat.map((item) => item.store).filter(Boolean))].sort();

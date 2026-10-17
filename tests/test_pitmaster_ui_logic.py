@@ -38,6 +38,64 @@ def test_builds_no_match_signage_answer() -> None:
     )
 
 
+def test_builds_no_cooks_answer_for_selected_meat() -> None:
+    expression = (
+        'console.log(JSON.stringify(logic.buildAnswerSentence({meat:"Pork picnic shoulder"}, '
+        '{count:0})))'
+    )
+    assert run_logic(expression) == "No cooks logged yet for Pork picnic shoulder."
+
+
+def test_merges_meat_types_from_cooks_and_butcher_case() -> None:
+    stats = '[{meat_type:"Brisket",count:2},{meat_type:"pork BUTT",count:3}]'
+    meat = '[{type:"Pork butt"},{type:"Chicken"}]'
+    expression = f"console.log(JSON.stringify(logic.mergeMeatTypeOptions({stats},{meat},'')))"
+    assert run_logic(expression) == [
+        {"value": "Brisket", "label": "Brisket (2)", "count": 2},
+        {"value": "Chicken", "label": "Chicken (no cooks yet)", "count": 0},
+        {"value": "pork BUTT", "label": "pork BUTT (3)", "count": 3},
+    ]
+
+
+def test_merges_meat_types_with_an_empty_butcher_case() -> None:
+    expression = (
+        'console.log(JSON.stringify(logic.mergeMeatTypeOptions('
+        '[{meat_type:"Ribs",count:4}],[],"")))'
+    )
+    assert run_logic(expression) == [
+        {"value": "Ribs", "label": "Ribs (4)", "count": 4},
+    ]
+
+
+def test_merges_meat_types_with_empty_stats() -> None:
+    expression = (
+        'console.log(JSON.stringify(logic.mergeMeatTypeOptions('
+        '[],[{type:"Turkey"}],"")))'
+    )
+    assert run_logic(expression) == [
+        {"value": "Turkey", "label": "Turkey (no cooks yet)", "count": 0},
+    ]
+
+
+def test_merge_keeps_unknown_selected_meat_type() -> None:
+    expression = (
+        'console.log(JSON.stringify(logic.mergeMeatTypeOptions([],[],"Venison")))'
+    )
+    assert run_logic(expression) == [
+        {"value": "Venison", "label": "Venison (no cooks yet)", "count": 0},
+    ]
+
+
+def test_merge_keeps_selected_value_when_capitalization_differs() -> None:
+    expression = (
+        'console.log(JSON.stringify(logic.mergeMeatTypeOptions('
+        '[{meat_type:"PORK BUTT",count:2}],[],"Pork butt")))'
+    )
+    assert run_logic(expression) == [
+        {"value": "Pork butt", "label": "Pork butt (2)", "count": 2},
+    ]
+
+
 def test_hash_round_trip_and_api_query_use_exact_supported_names() -> None:
     filters = (
         '{meat:"Brisket",poundsMin:"8",poundsMax:"12",setpoint:"250",tolerance:"15",'
