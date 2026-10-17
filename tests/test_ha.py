@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
+from datetime import timedelta
 from typing import Any
 
 import pytest
+from conftest import FakeClock
+from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import EntityConfig
-from app.ha import HomeAssistantClient
+from app.ha import HAStatus, HomeAssistantClient, ingest
+from app.models import Cook, Event, Sample
+from app.service import CookService, GrillSnapshot
 
 
 class FakeSocket:
@@ -33,6 +40,116 @@ class FakeConnection:
 
     async def __aexit__(self, *args: object) -> None:
         return None
+
+
+class SnapshotSource:
+    def __init__(self, initial: GrillSnapshot) -> None:
+        self.initial = initial
+        self.status = HAStatus(configured=True, connected=True)
+        self.updates: asyncio.Queue[GrillSnapshot] = asyncio.Queue()
+
+    async def snapshots(self) -> AsyncIterator[GrillSnapshot]:
+        yield self.initial
+        while True:
+            yield await self.updates.get()
+
+
+class ControlledSleep:
+    def __init__(self) -> None:
+        self.ticks: asyncio.Queue[None] = asyncio.Queue()
+
+    async def __call__(self, _seconds: float) -> None:
+        await self.ticks.get()
+
+
+async def wait_for_samples(sessions: sessionmaker[Session], count: int) -> None:
+    for _ in range(100):
+        with sessions() as session:
+            if len(list(session.scalars(select(Sample)))) == count:
+                return
+        await asyncio.sleep(0)
+    pytest.fail(f"timed out waiting for {count} samples")
+
+
+def cooking_snapshot(pit_temp: float = 250) -> GrillSnapshot:
+    return GrillSnapshot(
+        pit_temp=pit_temp,
+        setpoint=275,
+        fire_state="Running",
+        power_state="On",
+        hvac_mode="heat",
+    )
+
+
+@pytest.mark.asyncio
+async def test_sample_tick_records_each_interval_without_events(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    source = SnapshotSource(cooking_snapshot())
+    sleeper = ControlledSleep()
+    task = asyncio.create_task(ingest(source, CookService(sessions, clock, 10), 10, sleeper))
+    await wait_for_samples(sessions, 1)
+
+    for expected in range(2, 5):
+        clock.advance(seconds=10)
+        sleeper.ticks.put_nowait(None)
+        await wait_for_samples(sessions, expected)
+
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_disconnected_tick_skips_samples_and_next_snapshot_records_gap(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    source = SnapshotSource(cooking_snapshot())
+    sleeper = ControlledSleep()
+    task = asyncio.create_task(ingest(source, CookService(sessions, clock, 10), 10, sleeper))
+    await wait_for_samples(sessions, 1)
+
+    source.status.connected = False
+    clock.advance(seconds=31)
+    sleeper.ticks.put_nowait(None)
+    await asyncio.sleep(0)
+    with sessions() as session:
+        assert len(list(session.scalars(select(Sample)))) == 1
+
+    source.status.connected = True
+    source.updates.put_nowait(cooking_snapshot(251))
+    await wait_for_samples(sessions, 2)
+    with sessions() as session:
+        cook = session.scalar(select(Cook))
+        gap = session.scalar(select(Event).where(Event.kind == "data_gap"))
+        assert cook is not None and cook.has_gap
+        assert gap is not None
+
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_event_and_tick_do_not_sample_twice_within_interval(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    source = SnapshotSource(cooking_snapshot())
+    sleeper = ControlledSleep()
+    task = asyncio.create_task(ingest(source, CookService(sessions, clock, 10), 10, sleeper))
+    await wait_for_samples(sessions, 1)
+
+    clock.advance(seconds=5)
+    source.updates.put_nowait(cooking_snapshot(251))
+    await asyncio.sleep(0)
+    clock.advance(seconds=5)
+    sleeper.ticks.put_nowait(None)
+    await wait_for_samples(sessions, 2)
+
+    with sessions() as session:
+        samples = list(session.scalars(select(Sample).order_by(Sample.ts)))
+    assert samples[1].ts - samples[0].ts == timedelta(seconds=10)
+
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
 
 
 def entity_config() -> EntityConfig:

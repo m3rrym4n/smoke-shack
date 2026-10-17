@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
@@ -12,7 +12,7 @@ from urllib.parse import urlsplit, urlunsplit
 import websockets
 
 from app.config import EntityConfig
-from app.service import GrillSnapshot
+from app.service import CookService, GrillSnapshot
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -30,6 +30,36 @@ class HAClient(Protocol):
     status: HAStatus
 
     def snapshots(self) -> AsyncIterator[GrillSnapshot]: ...
+
+
+async def ingest(
+    client: HAClient,
+    service: CookService,
+    sample_interval_seconds: int,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> None:
+    latest_snapshot: GrillSnapshot | None = None
+
+    async def sample_on_tick() -> None:
+        logger.info("HA sample tick started: interval=%ss", sample_interval_seconds)
+        while True:
+            await sleep(sample_interval_seconds)
+            logger.debug(
+                "HA sample tick: connected=%s snapshot=%s",
+                client.status.connected,
+                latest_snapshot is not None,
+            )
+            if client.status.connected and latest_snapshot is not None:
+                service.process(latest_snapshot)
+
+    tick_task = asyncio.create_task(sample_on_tick())
+    try:
+        async for snapshot in client.snapshots():
+            latest_snapshot = snapshot
+            service.process(snapshot)
+    finally:
+        tick_task.cancel()
+        await asyncio.gather(tick_task, return_exceptions=True)
 
 
 class HomeAssistantClient:

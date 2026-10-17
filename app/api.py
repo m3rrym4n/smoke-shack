@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import Settings
 from app.database import make_engine, make_session_factory
 from app.deps import get_session
-from app.ha import HAClient, HAStatus, HomeAssistantClient
+from app.ha import HAClient, HAStatus, HomeAssistantClient, ingest
 from app.models import Cook, Sample
 from app.routes.cooks import router as cooks_router
 from app.routes.events import router as events_router
@@ -32,11 +32,6 @@ from app.service import CookService, as_utc
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-async def consume(client: HAClient, service: CookService) -> None:
-    async for snapshot in client.snapshots():
-        service.process(snapshot)
 
 
 def create_app(
@@ -69,7 +64,11 @@ def create_app(
         Path(config.photo_dir).mkdir(parents=True, exist_ok=True)
         if not config.ha_url or not config.ha_token:
             logger.warning("HA_URL/HA_TOKEN not set; Home Assistant ingest disabled")
-        task = asyncio.create_task(consume(client, service)) if client else None
+        task = (
+            asyncio.create_task(ingest(client, service, config.sample_interval_seconds))
+            if client
+            else None
+        )
         try:
             yield
         finally:
