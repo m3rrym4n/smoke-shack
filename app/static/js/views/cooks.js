@@ -1,4 +1,4 @@
-import { getActiveCook, getPlannedCooks, getRecentCooks } from "../api.js";
+import { getCookLogCooks } from "../api.js";
 import { cookTag, elapsedSeconds, formatDuration, isLiveCook, orderCookLogRows } from "../cooks-logic.js";
 
 const PAGE_SIZE = 20;
@@ -37,12 +37,12 @@ export function mountCookList(container) {
     message.textContent = append ? "Loading more cooks…" : "Loading cooks…";
     try {
       if (append) requestedClosed += PAGE_SIZE;
-      const [plans, active, cooks] = await Promise.all([getPlannedCooks(), getActiveCook(), getRecentCooks(requestedClosed)]);
+      const allCooks = await getCookLogCooks(requestedClosed);
       if (disposed) return;
-      const allCooks = [...plans, ...(active ? [active] : []), ...cooks];
+      const closedCount = allCooks.filter((cook) => cook.state !== "planned" && !isLiveCook(cook)).length;
       const now = new Date();
       rows.innerHTML = orderCookLogRows(allCooks).map((cook) => row(cook, now)).join("");
-      button.hidden = cooks.length < requestedClosed;
+      button.hidden = closedCount < requestedClosed;
       message.textContent = allCooks.length ? "" : "No cooks in the book yet.";
     } catch (error) {
       console.error("Could not load cooks", error);

@@ -1,8 +1,11 @@
 import {
-  createNote, deleteNote, getNotes, getRecentCooks, getStatus, updateNote,
+  createNote, deleteNote, getCookLogCooks, getNotes, updateNote,
 } from "../api.js";
 import { confirmDelete, renderApiError } from "../components/ui.js";
-import { notePayload, validateNote } from "../notes-logic.js";
+import {
+  cookOptionLabel, defaultNoteCookId, notePayload, orderNoteCookOptions,
+  thisCookChipLabel, thisCookTarget, validateNote,
+} from "../notes-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -10,17 +13,10 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 
 const scopeLabels = { this_cook: "This cook", pellets: "Pellets", gear: "Gear" };
 
-function cookLabel(cook) {
-  const date = cook.started_at
-    ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(cook.started_at))
-    : "date unknown";
-  return `Cook #${cook.id} · ${cook.meat?.type || date}`;
-}
-
 function cookOptions(cooks, selectedCookId) {
   if (!cooks.length) return '<option value="">No cooks available</option>';
-  return `<option value="">Choose a cook</option>${cooks.map((cook) => (
-    `<option value="${cook.id}"${cook.id === selectedCookId ? " selected" : ""}>${escapeHtml(cookLabel(cook))}</option>`
+  return `<option value="">Choose a cook</option>${orderNoteCookOptions(cooks).map((cook) => (
+    `<option value="${cook.id}"${cook.id === selectedCookId ? " selected" : ""}>${escapeHtml(cookOptionLabel(cook))}</option>`
   )).join("")}`;
 }
 
@@ -78,7 +74,8 @@ export function mountNotesView(container) {
   let disposed = false;
   let filter = "all";
   let cooks = [];
-  let activeCookId = null;
+  let defaultCookId = null;
+  let filterCook = null;
   container.innerHTML = `<section class="board notes-board">
     <h1 class="hd">Pit Notes</h1>
     <div class="note-filters" aria-label="Filter notes">
@@ -115,7 +112,7 @@ export function mountNotesView(container) {
         await loadNotes();
         if (id === null) {
           form.reset();
-          form.querySelector('[name="cook_id"]').value = activeCookId ?? "";
+          form.querySelector('[name="cook_id"]').value = defaultCookId ?? "";
           form.querySelector(".cook-field").hidden = false;
         }
       } catch (error) {
@@ -147,9 +144,11 @@ export function mountNotesView(container) {
   async function loadNotes() {
     message.textContent = "Loading the notes…";
     try {
-      const notes = await getNotes(filter);
+      const notes = filter === "this_cook"
+        ? (filterCook ? await getNotes(filter, filterCook.id) : [])
+        : await getNotes(filter);
       if (disposed) return;
-      grid.innerHTML = notes.map((note) => noteCard(note, cooks, activeCookId)).join("");
+      grid.innerHTML = notes.map((note) => noteCard(note, cooks, defaultCookId)).join("");
       message.textContent = notes.length ? "" : "No notes pinned up yet.";
       bindCards();
     } catch (error) {
@@ -164,11 +163,13 @@ export function mountNotesView(container) {
     await loadNotes();
   }));
 
-  Promise.all([getRecentCooks(50), getStatus()]).then(([recentCooks, status]) => {
+  getCookLogCooks(50).then((availableCooks) => {
     if (disposed) return;
-    cooks = recentCooks;
-    activeCookId = status.active_cook?.id ?? null;
-    addForm.querySelector(".note-fields").innerHTML = fields(cooks, {}, activeCookId);
+    cooks = availableCooks;
+    defaultCookId = defaultNoteCookId(cooks);
+    filterCook = thisCookTarget(cooks);
+    container.querySelector('[data-scope="this_cook"]').textContent = thisCookChipLabel(filterCook);
+    addForm.querySelector(".note-fields").innerHTML = fields(cooks, {}, defaultCookId);
     bindForm(addForm);
     loadNotes();
   }).catch((error) => {
