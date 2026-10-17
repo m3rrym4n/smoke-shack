@@ -29,7 +29,7 @@ function grillIllustration() {
 
 function photoMarkup(url, position) {
   if (showcasePlaceholder(url) === "placeholder") return `<div class="showcase-photo placeholder">${grillIllustration()}</div>`;
-  return `<div class="showcase-photo"><span class="photo-tape" aria-hidden="true"></span><img src="${escapeHtml(url)}" alt="Grill"><span class="photo-stack-anchor" data-smokestack style="left:${position.x}%;top:${position.y}%" aria-hidden="true"></span></div>`;
+  return `<div class="showcase-photo"><img src="${escapeHtml(url)}" alt="Grill"><span class="photo-stack-anchor" data-smokestack style="left:${position.x}%;top:${position.y}%" aria-hidden="true"></span></div>`;
 }
 
 export function showcaseMarkup(showcase, grillName, width = window.innerWidth, smokeControl = true) {
