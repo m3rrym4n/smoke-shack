@@ -164,6 +164,18 @@ class EventResponse(BaseModel):
     photo_path: str | None
 
 
+class PhotoUpdate(BaseModel):
+    caption: str | None = None
+
+
+class PhotoResponse(BaseModel):
+    id: int
+    cook_id: int
+    event_id: int | None
+    caption: str | None
+    url: str
+
+
 StopMode = Literal["time", "internal_temp"]
 
 

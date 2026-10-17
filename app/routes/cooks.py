@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
@@ -144,16 +145,24 @@ def update_cook(cook_id: int, payload: CookUpdate, session: SessionDep) -> dict[
 
 
 @router.delete("/{cook_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_cook(cook_id: int, session: SessionDep) -> Response:
+def delete_cook(cook_id: int, session: SessionDep, request: Request) -> Response:
     cook = _get_cook(cook_id, session)
     if cook.ended_at is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Active cook cannot be deleted")
+    photo_paths = list(session.scalars(select(Photo.path).where(Photo.cook_id == cook_id)))
     session.execute(delete(Photo).where(Photo.cook_id == cook_id))
     session.execute(delete(Event).where(Event.cook_id == cook_id))
     session.execute(delete(Sample).where(Sample.cook_id == cook_id))
     session.execute(update(Note).where(Note.cook_id == cook_id).values(cook_id=None))
     session.delete(cook)
     session.commit()
+    for photo_path in photo_paths:
+        Path(photo_path).unlink(missing_ok=True)
+    cook_photo_dir = request.app.state.photo_dir / str(cook_id)
+    try:
+        cook_photo_dir.rmdir()
+    except OSError:
+        pass
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

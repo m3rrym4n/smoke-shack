@@ -23,6 +23,7 @@ from app.routes.events import router as events_router
 from app.routes.meat import router as meat_router
 from app.routes.notes import router as notes_router
 from app.routes.pellets import router as pellets_router
+from app.routes.photos import router as photos_router
 from app.routes.profiles import router as profiles_router
 from app.service import CookService, as_utc
 
@@ -109,6 +110,7 @@ def create_app(
         }
 
     app.state.sessions = factory
+    app.state.photo_dir = Path(config.photo_dir)
     app.state.cook_service = service
     app.include_router(meat_router)
     app.include_router(pellets_router)
@@ -116,6 +118,7 @@ def create_app(
     app.include_router(events_router)
     app.include_router(profiles_router)
     app.include_router(cooks_router)
+    app.include_router(photos_router)
     return app
 
 
