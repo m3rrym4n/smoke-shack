@@ -120,7 +120,7 @@ async def test_disconnected_tick_skips_samples_and_next_snapshot_records_gap(
     await wait_for_samples(sessions, 2)
     with sessions() as session:
         cook = session.scalar(select(Cook))
-        gap = session.scalar(select(Event).where(Event.kind == "data_gap"))
+        gap = session.scalar(select(Event).where(Event.kind == "data_gap_summary"))
         assert cook is not None and cook.has_gap
         assert gap is not None
 
