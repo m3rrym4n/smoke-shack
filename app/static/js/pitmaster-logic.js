@@ -71,10 +71,8 @@ export function filtersFromHash(hash) {
     poundsMax: params.get("pounds_max") || "",
     setpoint: params.get("setpoint") || "",
     tolerance: params.get("tolerance") || "10",
-    rotisserie: params.get("rotisserie") || "",
-    pelletVendor: params.get("pellet_vendor") || "",
-    pelletProduct: params.get("pellet_product") || "",
-    store: params.get("store") || "",
+    rotisserie: params.get("rotisserie") === "true" ? "true" : "false",
+    pelletId: params.get("pellet_id") || "",
   };
 }
 
@@ -84,8 +82,8 @@ export function filtersToHash(filters) {
     ["meat", filters.meat], ["pounds_min", filters.poundsMin],
     ["pounds_max", filters.poundsMax], ["setpoint", filters.setpoint],
     ["tolerance", filters.setpoint ? filters.tolerance : ""],
-    ["rotisserie", filters.rotisserie], ["pellet_vendor", filters.pelletVendor],
-    ["pellet_product", filters.pelletProduct], ["store", filters.store],
+    ["rotisserie", filters.rotisserie === "true" ? "true" : "false"],
+    ["pellet_id", filters.pelletId],
   ];
   fields.forEach(([key, value]) => { if (present(value)) params.set(key, value); });
   const query = params.toString();
@@ -101,7 +99,8 @@ export function statsQuery(filters) {
     params.set("setpoint", filters.setpoint);
     params.set("setpoint_tolerance", present(filters.tolerance) ? filters.tolerance : "10");
   }
-  if (present(filters.rotisserie)) params.set("rotisserie", filters.rotisserie);
+  params.set("rotisserie", filters.rotisserie === "true" ? "true" : "false");
+  if (present(filters.pelletId)) params.set("pellet_id", filters.pelletId);
   return params;
 }
 
@@ -122,10 +121,6 @@ export function buildAnswerSentence(filters, stats) {
   if (present(filters.setpoint)) details.push(`at ${filters.setpoint}°F`);
   if (filters.rotisserie === "true") details.push("on the rotisserie");
   if (filters.rotisserie === "false") details.push("without the rotisserie");
-  if (present(filters.pelletVendor) || present(filters.pelletProduct)) {
-    details.push(`with ${[filters.pelletVendor, filters.pelletProduct].filter(Boolean).join(" ")} pellets`);
-  }
-  if (present(filters.store)) details.push(`from ${filters.store}`);
   return `Based on ${count} ${count === 1 ? "cook" : "cooks"}: a ${subject}${details.length ? ` ${details.join(" ")}` : ""} averages ${formatDurationWords(stats.cook_seconds?.avg)}.`;
 }
 

@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_session
-from app.models import Cook, Meat
+from app.models import Cook, Meat, Pellet
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -45,6 +45,9 @@ def cook_stats(
     setpoint: float | None = None,
     setpoint_tolerance: float = Query(default=10, ge=0),
     rotisserie: bool | None = None,
+    pellet_id: int | None = None,
+    pellet_vendor: str | None = None,
+    pellet_product: str | None = None,
     since: date | None = None,
     until: date | None = None,
     include_incomplete: bool = False,
@@ -67,6 +70,18 @@ def cook_stats(
         )
     if rotisserie is not None:
         query = query.where(Cook.rotisserie == rotisserie)
+    if pellet_id is not None:
+        query = query.where(Cook.pellet_id == pellet_id)
+    if pellet_vendor is not None or pellet_product is not None:
+        query = query.join(Pellet, Cook.pellet_id == Pellet.id)
+        if pellet_vendor is not None:
+            query = query.where(
+                func.lower(Pellet.vendor).contains(pellet_vendor.lower(), autoescape=True)
+            )
+        if pellet_product is not None:
+            query = query.where(
+                func.lower(Pellet.product_name).contains(pellet_product.lower(), autoescape=True)
+            )
     if since is not None:
         query = query.where(Cook.started_at >= _utc_boundary(since))
     if until is not None:

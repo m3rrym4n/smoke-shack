@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api import create_app
 from app.config import Settings
-from app.models import Cook, Meat
+from app.models import Cook, Meat, Pellet
 
 
 def _meat(meat_type: str, pounds: str) -> Meat:
@@ -132,6 +132,45 @@ def test_cook_stats_date_filters_use_los_angeles_dates(
 
     assert [cook["id"] for cook in jan_first["cooks"]] == [before_midnight.id]
     assert [cook["id"] for cook in jan_second["cooks"]] == [after_midnight.id]
+
+
+def test_cook_stats_filters_by_pellet_id_and_legacy_pellet_names(
+    sessions: sessionmaker[Session], tmp_path: object
+) -> None:
+    with sessions() as session:
+        meat = _meat("Pork shoulder", "4.00")
+        hickory = Pellet(
+            vendor="Bear Mountain",
+            product_name="Hickory",
+            price_per_pound=Decimal("1.25"),
+            purchased_on=date(2026, 1, 1),
+        )
+        competition = Pellet(
+            vendor="Lumber Jack",
+            product_name="Competition Blend",
+            price_per_pound=Decimal("1.50"),
+            purchased_on=date(2026, 1, 2),
+        )
+        session.add_all([meat, hickory, competition])
+        session.flush()
+        first = _cook(datetime(2026, 6, 1, 15, tzinfo=UTC), meat.id)
+        first.pellet_id = hickory.id
+        second = _cook(datetime(2026, 6, 2, 15, tzinfo=UTC), meat.id)
+        second.pellet_id = competition.id
+        session.add_all([first, second])
+        session.commit()
+
+    with _client(sessions, tmp_path) as client:
+        by_id = client.get(f"/api/stats/cooks?pellet_id={hickory.id}").json()
+        unknown = client.get("/api/stats/cooks?pellet_id=999999").json()
+        by_vendor = client.get("/api/stats/cooks?pellet_vendor=bear").json()
+        by_product = client.get("/api/stats/cooks?pellet_product=competition").json()
+
+    assert [cook["id"] for cook in by_id["cooks"]] == [first.id]
+    assert unknown["count"] == 0
+    assert unknown["cook_seconds"] == {"avg": None, "min": None, "max": None}
+    assert [cook["id"] for cook in by_vendor["cooks"]] == [first.id]
+    assert [cook["id"] for cook in by_product["cooks"]] == [second.id]
 
 
 def test_meat_types_returns_distinct_types_and_cook_counts(
