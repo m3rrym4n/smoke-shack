@@ -53,3 +53,19 @@ def test_papers_are_shown_only_for_nonempty_content() -> None:
         "results": True,
     }
     assert run("logic.shownPapers([], null)") == {"notes": False, "results": False}
+
+
+def test_export_photo_defaults_to_most_recent_photo() -> None:
+    photos = [{"id": 4}, {"id": 9}, {"id": 6}]
+    assert run(f"logic.exportPhotoSelection({json.dumps(photos)}, null)") == "9"
+
+
+def test_export_photo_uses_remembered_choice_while_it_exists() -> None:
+    photos = [{"id": 4}, {"id": 9}]
+    assert run(f"logic.exportPhotoSelection({json.dumps(photos)}, '4')") == "4"
+    assert run(f"logic.exportPhotoSelection({json.dumps(photos)}, 'none')") == "none"
+
+
+def test_export_photo_falls_back_when_remembered_photo_was_removed() -> None:
+    photos = [{"id": 4}, {"id": 9}]
+    assert run(f"logic.exportPhotoSelection({json.dumps(photos)}, '7')") == "9"

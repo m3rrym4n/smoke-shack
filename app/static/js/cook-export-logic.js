@@ -19,6 +19,21 @@ export function shownPapers(notes, resultsText) {
   };
 }
 
+export const NO_PHOTO = "none";
+
+export function exportPhotoSelection(photos, remembered) {
+  const available = Array.isArray(photos) ? photos : [];
+  const rememberedValue = remembered == null ? "" : String(remembered);
+  if (rememberedValue === NO_PHOTO) return NO_PHOTO;
+  if (available.some((photo) => String(photo.id) === rememberedValue)) {
+    return rememberedValue;
+  }
+  if (!available.length) return NO_PHOTO;
+  return String(available.reduce((latest, photo) => (
+    Number(photo.id) > Number(latest.id) ? photo : latest
+  )).id);
+}
+
 function slug(value) {
   return String(value || "cook")
     .normalize("NFKD")

@@ -1,4 +1,4 @@
-import { buildExportFilename, pelletLine, shownPapers, weightText } from "../cook-export-logic.js";
+import { buildExportFilename, exportPhotoSelection, NO_PHOTO, pelletLine, shownPapers, weightText } from "../cook-export-logic.js";
 import { phaseDurations, showcaseNameLines } from "../live-logic.js";
 import { chartMarkup } from "./chart.js";
 
@@ -95,35 +95,73 @@ async function shareOrDownload(blob, filename) {
   download(blob, filename);
 }
 
+function rememberedPhoto(cookId) {
+  try { return localStorage.getItem(`smoke-stack:share-photo:${cookId}`); } catch { return null; }
+}
+
+function rememberPhoto(cookId, selection) {
+  try { localStorage.setItem(`smoke-stack:share-photo:${cookId}`, selection); } catch { /* Export still works without storage. */ }
+}
+
+function choosePhoto(cook, photos) {
+  const selected = exportPhotoSelection(photos, rememberedPhoto(cook.id));
+  const dialog = document.createElement("dialog");
+  dialog.className = "share-photo-picker";
+  const choices = [
+    ...photos.map((photo) => `<label><input type="radio" name="share-photo" value="${photo.id}"${String(photo.id) === selected ? " checked" : ""}><span class="share-picker-thumb"><img src="${escapeHtml(photo.url)}" alt=""></span><span>${escapeHtml(photo.caption || `Photo ${photo.id}`)}</span></label>`),
+    `<label><input type="radio" name="share-photo" value="${NO_PHOTO}"${selected === NO_PHOTO ? " checked" : ""}><span class="share-picker-empty">COOK<br>PHOTO</span><span>No photo</span></label>`,
+  ].join("");
+  dialog.innerHTML = `<form method="dialog"><h2>Pick the cook photo</h2><div class="share-picker-choices">${choices}</div><div class="share-picker-actions"><button class="cc" value="cancel" type="submit">Cancel</button><button class="pbtn" value="make" type="submit">Make PNG</button></div></form>`;
+  document.body.append(dialog);
+  dialog.showModal();
+  return new Promise((resolve) => dialog.addEventListener("close", () => {
+    const choice = dialog.querySelector('input[name="share-photo"]:checked')?.value || NO_PHOTO;
+    const confirmed = dialog.returnValue === "make";
+    dialog.remove();
+    if (!confirmed) resolve(undefined);
+    else {
+      rememberPhoto(cook.id, choice);
+      resolve(photos.find((photo) => String(photo.id) === choice)?.url || null);
+    }
+  }, { once: true }));
+}
+
+async function exportCook(button, message, cook, content, photoUrl) {
+  button.disabled = true;
+  button.textContent = "Making PNG…";
+  message.textContent = "";
+  const card = makeCard(cook, { ...content, photoUrl });
+  const host = document.createElement("div");
+  host.className = "cook-export-host";
+  host.append(card);
+  document.body.append(host);
+  try {
+    await document.fonts?.ready;
+    await waitForImages(card);
+    const blob = await window.htmlToImage.toBlob(card, {
+      backgroundColor: "#4a2d19", cacheBust: true, pixelRatio: 2,
+      width: EXPORT_WIDTH, height: EXPORT_HEIGHT,
+    });
+    if (!blob) throw new Error("The browser did not create an image.");
+    await shareOrDownload(blob, buildExportFilename(cook));
+  } catch (error) {
+    console.error("Could not export cook", error);
+    message.textContent = "Could not make the PNG. Please try again.";
+  } finally {
+    host.remove();
+    button.disabled = false;
+    button.textContent = "Export PNG";
+  }
+}
+
 export function bindCookExport(detail, cook, content) {
   const button = detail.querySelector(".export-cook");
   const message = detail.querySelector(".export-message");
   if (!button) return;
   button.addEventListener("click", async () => {
-    button.disabled = true;
-    button.textContent = "Making PNG…";
-    message.textContent = "";
-    const card = makeCard(cook, content);
-    const host = document.createElement("div");
-    host.className = "cook-export-host";
-    host.append(card);
-    document.body.append(host);
-    try {
-      await document.fonts?.ready;
-      await waitForImages(card);
-      const blob = await window.htmlToImage.toBlob(card, {
-        backgroundColor: "#4a2d19", cacheBust: true, pixelRatio: 2,
-        width: EXPORT_WIDTH, height: EXPORT_HEIGHT,
-      });
-      if (!blob) throw new Error("The browser did not create an image.");
-      await shareOrDownload(blob, buildExportFilename(cook));
-    } catch (error) {
-      console.error("Could not export cook", error);
-      message.textContent = "Could not make the PNG. Please try again.";
-    } finally {
-      host.remove();
-      button.disabled = false;
-      button.textContent = "Export PNG";
-    }
+    const photos = content.photos || [];
+    const photoUrl = photos.length ? await choosePhoto(cook, photos) : null;
+    if (photos.length && photoUrl === undefined) return;
+    await exportCook(button, message, cook, content, photoUrl);
   });
 }
