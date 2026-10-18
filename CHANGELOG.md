@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Hide data-gap diagnostics from live and detail Cook Logs while retaining them in the API.
 - Simplify Pitmaster filters to rotisserie yes/no and one pantry pellet choice.
 - Revalidate frontend static files on every load so deployed UI changes appear immediately.
 - Show the new grill temperature in setpoint-change event titles and the old value in details.

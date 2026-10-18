@@ -97,8 +97,7 @@ async function load(container, onStatus, isCurrent, requestedCookId, refresh, se
     getShowcase(),
   ]);
   if (!isCurrent()) return;
-  const gapThreshold = status.ingest.data_gap_event_min_seconds;
-  const log = liveForms ? `<div class="log-pin-grid">${cookLogMarkup(events, true, gapThreshold)}${pinBoardMarkup()}</div>` : cookLogMarkup(events, false, gapThreshold);
+  const log = liveForms ? `<div class="log-pin-grid">${cookLogMarkup(events, true)}${pinBoardMarkup()}</div>` : cookLogMarkup(events, false);
   let order = "";
   let orderCook = cook;
   let mode;
