@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Revalidate frontend static files on every load so deployed UI changes appear immediately.
 - Show the new grill temperature in setpoint-change event titles and the old value in details.
 - Show the grill's Home Assistant device name or model with its manufacturer in The Pit.
 - Collapse brief Home Assistant data gaps into one Cook Log summary.

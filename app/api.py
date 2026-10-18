@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -10,9 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.types import Scope
 
 from app.config import Settings
 from app.database import make_engine, make_session_factory
@@ -33,6 +36,19 @@ from app.service import CookService, as_utc
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+class RevalidatingStaticFiles(StaticFiles):
+    def file_response(
+        self,
+        full_path: str | os.PathLike[str],
+        stat_result: os.stat_result,
+        scope: Scope,
+        status_code: int = 200,
+    ) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 def create_app(
@@ -136,7 +152,7 @@ def create_app(
     app.include_router(export_router)
     app.mount(
         "/",
-        StaticFiles(directory=Path(__file__).parent / "static", html=True),
+        RevalidatingStaticFiles(directory=Path(__file__).parent / "static", html=True),
         name="static",
     )
     return app

@@ -41,6 +41,7 @@ body{min-width:0;background-color:#4a2d19;background-image:linear-gradient(rgba(
 .nav{display:flex;flex-wrap:wrap;gap:14px}
 .nav .pbtn{flex:1 1 135px;padding:8px 14px;background:#6b3f1f;color:#f1e3c0;text-decoration:none;text-align:center}
 .nav .pbtn.on{background:#f1e3c0;color:#17110c}
+.build-footer{color:#b9c3b5;text-align:center;font-size:15px;letter-spacing:.08em}
 .coming-soon{padding:34px;min-height:220px}
 .coming-soon p{font-size:24px}
 .live-hero{display:grid;grid-template-columns:minmax(320px,.9fr) minmax(420px,1.3fr);gap:36px;align-items:start}

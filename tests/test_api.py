@@ -32,6 +32,26 @@ def test_static_shell_and_existing_routes(sessions: sessionmaker[Session]) -> No
         assert client.get("/docs").status_code == 200
 
 
+def test_static_files_revalidate_without_changing_api_cache(
+    sessions: sessionmaker[Session],
+) -> None:
+    app = create_app(Settings(), sessions, FakeHAClient())
+    with TestClient(app) as client:
+        for path in ("/", "/js/app.js", "/css/signage.css"):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert response.headers["cache-control"] == "no-cache"
+            assert response.headers["etag"]
+            assert response.headers["last-modified"]
+
+            revalidated = client.get(path, headers={"If-None-Match": response.headers["etag"]})
+            assert revalidated.status_code == 304
+            assert revalidated.headers["cache-control"] == "no-cache"
+
+        health = client.get("/health")
+        assert "cache-control" not in health.headers
+
+
 def test_live_view_static_assets_exist(sessions: sessionmaker[Session]) -> None:
     app = create_app(Settings(), sessions, FakeHAClient())
     with TestClient(app) as client:
