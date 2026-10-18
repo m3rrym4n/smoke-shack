@@ -163,7 +163,7 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
   else if (cook) {
     bindPhotoGallery(container.querySelector(".cook-results"), { cookId: cook.id });
     bindCookExport(container.querySelector(".cook-detail"), cook, {
-      notes, resultsText: cook.results_text, photos: detailPhotos, samples, events,
+      notes, resultsText: cook.results_text, samples, events, showcase, grillIdentity: status,
     });
   }
 }
