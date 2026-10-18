@@ -28,24 +28,44 @@ def test_export_filename_uses_cook_date_and_meat_slug() -> None:
     )
 
 
-def test_export_sections_are_in_required_order_and_omit_empty_panes() -> None:
-    assert run("logic.exportSectionKeys()") == ["special"]
-    content = {
-        "notes": [{"body": "Wrap it"}],
-        "resultsText": "Tender",
-        "photos": [{"url": "/photos/1"}],
-        "samples": [{"pit_temp": 225}],
-        "events": [{"kind": "wrapped"}],
+def test_pellet_line_includes_vendor_product_and_suffix() -> None:
+    pellet = {"vendor": "Bear Mountain", "product_name": "Hickory"}
+    assert run(f"logic.pelletLine({json.dumps(pellet)})") == (
+        "Bear Mountain Hickory Pellets"
+    )
+    assert run("logic.pelletLine(null)") == ""
+
+
+def test_weight_text_only_formats_positive_numbers() -> None:
+    assert run("logic.weightText(8)") == "8 lb"
+    assert run('logic.weightText("4.5")') == "4.5 lb"
+    assert run("logic.weightText(null)") == ""
+
+
+def test_papers_are_shown_only_for_nonempty_content() -> None:
+    notes = [{"body": "  "}, {"body": "Wrap at the stall"}]
+    assert run(f"logic.shownPapers({json.dumps(notes)}, '  ')") == {
+        "notes": True,
+        "results": False,
     }
-    assert run(f"logic.exportSectionKeys({json.dumps(content)})") == [
-        "special",
-        "notes",
-        "results",
-        "chart",
-        "log",
-    ]
+    assert run("logic.shownPapers([], 'Tender and juicy')") == {
+        "notes": False,
+        "results": True,
+    }
+    assert run("logic.shownPapers([], null)") == {"notes": False, "results": False}
 
 
-def test_data_gap_events_alone_do_not_add_cook_log() -> None:
-    content = {"events": [{"kind": "data_gap"}, {"kind": "data_gap_summary"}]}
-    assert run(f"logic.exportSectionKeys({json.dumps(content)})") == ["special"]
+def test_export_photo_defaults_to_most_recent_photo() -> None:
+    photos = [{"id": 4}, {"id": 9}, {"id": 6}]
+    assert run(f"logic.exportPhotoSelection({json.dumps(photos)}, null)") == "9"
+
+
+def test_export_photo_uses_remembered_choice_while_it_exists() -> None:
+    photos = [{"id": 4}, {"id": 9}]
+    assert run(f"logic.exportPhotoSelection({json.dumps(photos)}, '4')") == "4"
+    assert run(f"logic.exportPhotoSelection({json.dumps(photos)}, 'none')") == "none"
+
+
+def test_export_photo_falls_back_when_remembered_photo_was_removed() -> None:
+    photos = [{"id": 4}, {"id": 9}]
+    assert run(f"logic.exportPhotoSelection({json.dumps(photos)}, '7')") == "9"

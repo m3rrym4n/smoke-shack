@@ -1,23 +1,37 @@
-const EXPORT_PANES = [
-  ["special", ".special-board"],
-  ["notes", ".cook-notes"],
-  ["results", ".cook-results"],
-  ["chart", ".chart-board"],
-  ["log", ".cook-log"],
-];
-
-function hasVisibleEvent(events) {
-  return events.some((event) => !["data_gap", "data_gap_summary"].includes(event.kind));
+function clean(value) {
+  return String(value ?? "").trim();
 }
 
-export function exportSectionKeys({ notes = [], resultsText = null, photos = [], samples = [], events = [] } = {}) {
-  return [
-    "special",
-    ...(notes.length ? ["notes"] : []),
-    ...(String(resultsText || "").trim() || photos.length ? ["results"] : []),
-    ...(samples.length ? ["chart"] : []),
-    ...(hasVisibleEvent(events) ? ["log"] : []),
-  ];
+export function pelletLine(pellet) {
+  const name = [clean(pellet?.vendor), clean(pellet?.product_name)].filter(Boolean).join(" ");
+  return name ? `${name} Pellets` : "";
+}
+
+export function weightText(pounds) {
+  const value = Number(pounds);
+  return Number.isFinite(value) && value > 0 ? `${value} lb` : "";
+}
+
+export function shownPapers(notes, resultsText) {
+  return {
+    notes: Array.isArray(notes) && notes.some((note) => clean(note?.body)),
+    results: Boolean(clean(resultsText)),
+  };
+}
+
+export const NO_PHOTO = "none";
+
+export function exportPhotoSelection(photos, remembered) {
+  const available = Array.isArray(photos) ? photos : [];
+  const rememberedValue = remembered == null ? "" : String(remembered);
+  if (rememberedValue === NO_PHOTO) return NO_PHOTO;
+  if (available.some((photo) => String(photo.id) === rememberedValue)) {
+    return rememberedValue;
+  }
+  if (!available.length) return NO_PHOTO;
+  return String(available.reduce((latest, photo) => (
+    Number(photo.id) > Number(latest.id) ? photo : latest
+  )).id);
 }
 
 function slug(value) {
@@ -34,9 +48,4 @@ export function buildExportFilename(cook, today = new Date()) {
   const date = /^\d{4}-\d{2}-\d{2}/.exec(String(sourceDate || ""))?.[0]
     || today.toISOString().slice(0, 10);
   return `smoke-stack-${date}-${slug(cook?.meat?.type)}.png`;
-}
-
-export function exportPaneSelectors(keys) {
-  const included = new Set(keys);
-  return EXPORT_PANES.filter(([key]) => included.has(key)).map(([, selector]) => selector);
 }

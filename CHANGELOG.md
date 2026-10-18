@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Export a past cook's details, notes, results, chart, and log as a shareable PNG.
+- Export a past cook as a fixed 1080×1350 Instagram-style share card with cook details, notes, results, chart, and a remembered gallery photo choice.
 - Edit any planned, live, or closed cook and its photos from the Cook Log detail view.
 - Show cook-linked notes on Cook Log detail views.
 - Hide data-gap diagnostics from live and detail Cook Logs while retaining them in the API.
