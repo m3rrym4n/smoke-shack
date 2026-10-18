@@ -14,6 +14,8 @@ let disposeView = () => {};
 
 function currentRoute() {
   const value = window.location.hash.slice(1);
+  const cookEditMatch = value.match(/^cooks\/(\d+)\/edit$/);
+  if (cookEditMatch) return { name: "cook-detail", cookId: Number(cookEditMatch[1]), editing: true, nav: "cooks" };
   const cookMatch = value.match(/^cooks\/(\d+)$/);
   if (cookMatch) return { name: "cook-detail", cookId: Number(cookMatch[1]), nav: "cooks" };
   const name = value.split("?", 1)[0];
@@ -39,7 +41,7 @@ function renderRoute() {
     return;
   }
   if (route.name === "cook-detail") {
-    disposeView = mountCookView(view, { cookId: route.cookId });
+    disposeView = mountCookView(view, { cookId: route.cookId, editing: route.editing });
     return;
   }
   if (route.name === "meat") {

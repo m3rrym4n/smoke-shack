@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Edit any planned, live, or closed cook and its photos from the Cook Log detail view.
 - Show cook-linked notes on Cook Log detail views.
 - Hide data-gap diagnostics from live and detail Cook Logs while retaining them in the API.
 - Simplify Pitmaster filters to rotisserie yes/no and one pantry pellet choice.
