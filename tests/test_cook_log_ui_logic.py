@@ -5,11 +5,11 @@ import subprocess
 from pathlib import Path
 
 
-def collapse(events: list[dict[str, object]], threshold: int = 120) -> list[dict[str, object]]:
+def markup(events: list[dict[str, object]], editable: bool = False) -> str:
     module = Path("app/static/js/components/cook-log.js").resolve().as_uri()
     script = (
-        f'import {{ collapseBriefDataGaps }} from "{module}"; '
-        f"console.log(JSON.stringify(collapseBriefDataGaps({json.dumps(events)}, {threshold})));"
+        f'import {{ cookLogMarkup }} from "{module}"; '
+        f"console.log(cookLogMarkup({json.dumps(events)}, {json.dumps(editable)}));"
     )
     result = subprocess.run(
         ["node", "--input-type=module", "--eval", script],
@@ -17,7 +17,7 @@ def collapse(events: list[dict[str, object]], threshold: int = 120) -> list[dict
         capture_output=True,
         text=True,
     )
-    return json.loads(result.stdout)  # type: ignore[no-any-return]
+    return result.stdout
 
 
 def present(event: dict[str, object]) -> dict[str, object]:
@@ -35,46 +35,48 @@ def present(event: dict[str, object]) -> dict[str, object]:
     return json.loads(result.stdout)  # type: ignore[no-any-return]
 
 
-def gap(event_id: int, start: str, end: str) -> dict[str, object]:
+def event(event_id: int, kind: str, title: str, source: str = "auto") -> dict[str, object]:
     return {
         "id": event_id,
-        "kind": "data_gap",
-        "source": "auto",
-        "title": "Home Assistant data gap",
-        "ts": end,
+        "kind": kind,
+        "source": source,
+        "title": title,
+        "ts": "2026-01-01T00:05:00Z",
         "elapsed_seconds": event_id * 100,
-        "data": {"start": start, "end": end},
+        "data": {},
     }
 
 
-def test_collapses_consecutive_brief_stored_gaps() -> None:
-    rows = collapse(
+def test_data_gap_events_are_hidden_from_live_and_detail_logs() -> None:
+    events = [
+        event(1, "fire_lit", "Fire lit"),
+        event(2, "data_gap", "Home Assistant data gap"),
+        event(3, "data_gap_summary", "Brief Home Assistant data gaps"),
+        event(4, "wrapped", "Wrapped", "user"),
+    ]
+
+    for editable in (True, False):
+        rendered = markup(events, editable)
+        assert "Home Assistant data gap" not in rendered
+        assert "Brief Home Assistant data gaps" not in rendered
+        assert "Fire lit" in rendered
+        assert "Wrapped" in rendered
+
+
+def test_hidden_data_gaps_do_not_affect_user_event_numbering_or_order() -> None:
+    rendered = markup(
         [
-            gap(1, "2026-01-01T00:00:00Z", "2026-01-01T00:00:40Z"),
-            gap(2, "2026-01-01T00:02:00Z", "2026-01-01T00:03:10Z"),
+            event(1, "wrapped", "First user event", "user"),
+            event(2, "data_gap", "Hidden gap"),
+            event(3, "setpoint_changed", "Setpoint changed"),
+            event(4, "spritzed", "Second user event", "user"),
         ]
     )
-    assert len(rows) == 1
-    assert rows[0]["kind"] == "data_gap_summary"
-    assert rows[0]["title"] == "2 brief data gaps (1m 50s total, longest 70s)"
-    assert rows[0]["data"] == {"count": 2, "total_seconds": 110, "longest_seconds": 70}
 
-
-def test_long_gap_breaks_brief_groups() -> None:
-    brief_one = gap(1, "2026-01-01T00:00:00Z", "2026-01-01T00:00:40Z")
-    long_gap = gap(2, "2026-01-01T00:01:00Z", "2026-01-01T00:03:00Z")
-    brief_two = gap(3, "2026-01-01T00:04:00Z", "2026-01-01T00:05:00Z")
-    rows = collapse([brief_one, long_gap, brief_two])
-    assert [row["kind"] for row in rows] == ["data_gap_summary", "data_gap", "data_gap_summary"]
-
-
-def test_empty_and_mixed_events_stay_in_order() -> None:
-    assert collapse([]) == []
-    fire = {"id": 8, "kind": "fire_lit", "title": "Fire lit"}
-    user = {"id": 9, "kind": "wrapped", "source": "user", "title": "Wrapped"}
-    brief = gap(10, "2026-01-01T00:05:00Z", "2026-01-01T00:05:30Z")
-    rows = collapse([fire, brief, user])
-    assert [row["id"] for row in rows] == [8, "brief-data-gaps-10", 9]
+    assert rendered.index("First user event") < rendered.index("Setpoint changed")
+    assert rendered.index("Setpoint changed") < rendered.index("Second user event")
+    assert '<span class="pin" aria-hidden="true">1</span>' in rendered
+    assert '<span class="pin" aria-hidden="true">2</span>' in rendered
 
 
 def test_presents_stored_setpoint_event_from_data() -> None:

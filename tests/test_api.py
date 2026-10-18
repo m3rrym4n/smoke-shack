@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api import create_app
 from app.config import Settings
 from app.ha import HAStatus
-from app.models import Cook
+from app.models import Cook, Event
 from app.service import CookService, GrillSnapshot
 
 
@@ -208,3 +208,33 @@ def test_exact_timestamp_and_elapsed_seconds(
         samples = client.get(f"/api/cooks/{cook.id}/samples").json()
         assert samples[-1]["ts"] == "2026-10-16T16:58:18Z"
         assert samples[-1]["elapsed_seconds"] == 75
+
+
+def test_events_api_still_returns_data_gap_events(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(
+        GrillSnapshot(setpoint=150, fire_state="Startup", power_state="On", hvac_mode="heat")
+    )
+    assert cook is not None
+    with sessions() as session:
+        session.add(
+            Event(
+                cook_id=cook.id,
+                ts=clock.now(),
+                kind="data_gap",
+                source="auto",
+                title="Home Assistant data gap",
+                description=None,
+                data={"start": clock.now().isoformat(), "end": clock.now().isoformat()},
+            )
+        )
+        session.commit()
+
+    app = create_app(Settings(), sessions, FakeHAClient())
+    with TestClient(app) as client:
+        response = client.get(f"/api/cooks/{cook.id}/events")
+
+    assert response.status_code == 200
+    assert any(event["kind"] == "data_gap" for event in response.json())
