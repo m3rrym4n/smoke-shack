@@ -2,6 +2,7 @@ import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, get
 import { chartMarkup } from "../components/chart.js";
 import { cookLogMarkup } from "../components/cook-log.js";
 import { cookNotesMarkup } from "../components/cook-notes.js";
+import { bindCookExport } from "../components/cook-export.js";
 import { gaugeLogoMarkup, gaugeSvg } from "../components/gauge.js";
 import { bindLiveForms, bindPhotoGallery, orderPadMarkup, photoGalleryMarkup, pinBoardMarkup } from "../components/live-forms.js";
 import { clampPercent, orderPlannedCooks, phaseDurations, phasePercentages, selectOrderPadMode } from "../live-logic.js";
@@ -147,7 +148,7 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
   const backLink = liveDetail
     ? '<a class="back-link cc" href="#live">← Back to live cook</a>'
     : '<a class="back-link cc" href="#cooks">← All cooks</a>';
-  const detailActions = requestedCookId == null ? "" : `<div class="detail-actions">${backLink}<a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div>`;
+  const detailActions = requestedCookId == null ? "" : `<div class="detail-actions">${backLink}<div class="detail-action-buttons"><button class="pbtn export-cook" type="button">Export PNG</button><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><span class="export-message" role="status" aria-live="polite"></span></div>`;
   container.innerHTML = `<div class="cook-detail">${detailActions}${cookContent}${order}</div>`;
   setShowcaseCleanup(bindShowcase(container, {
     grillIdentity: status,
@@ -159,7 +160,12 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
   }));
   updateSmoke(active ? cook : null, samples.at(-1));
   if (liveForms) bindLiveForms(container, { cook, orderCook, events, meat, pellets, refresh, setBusy, mode });
-  else if (cook) bindPhotoGallery(container.querySelector(".cook-results"), { cookId: cook.id });
+  else if (cook) {
+    bindPhotoGallery(container.querySelector(".cook-results"), { cookId: cook.id });
+    bindCookExport(container.querySelector(".cook-detail"), cook, {
+      notes, resultsText: cook.results_text, photos: detailPhotos, samples, events,
+    });
+  }
 }
 
 export function mountCookView(container, { cookId = null, editing = false, onStatus = () => {} } = {}) {
