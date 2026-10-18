@@ -16,9 +16,8 @@ function formValues(form) {
   return {
     meat: String(data.get("meat") || ""), poundsMin: String(data.get("pounds_min") || ""),
     poundsMax: String(data.get("pounds_max") || ""), setpoint: String(data.get("setpoint") || ""),
-    tolerance: String(data.get("tolerance") || "10"), rotisserie: String(data.get("rotisserie") || ""),
-    pelletVendor: String(data.get("pellet_vendor") || ""), pelletProduct: String(data.get("pellet_product") || ""),
-    store: String(data.get("store") || ""),
+    tolerance: String(data.get("tolerance") || "10"), rotisserie: String(data.get("rotisserie") || "false"),
+    pelletId: String(data.get("pellet_id") || ""),
   };
 }
 
@@ -47,6 +46,8 @@ function renderResult(target, filters, stats) {
 export function mountPitmasterView(container) {
   let disposed = false;
   const filters = filtersFromHash(window.location.hash);
+  const canonicalHash = filtersToHash(filters);
+  if (window.location.hash !== canonicalHash) window.history.replaceState(null, "", canonicalHash);
   container.innerHTML = `<section class="board pitmaster-board">
     <h1 class="hd">Ask the Pitmaster</h1>
     <p class="mut">Tell me what's headed for the smoker.</p>
@@ -56,11 +57,9 @@ export function mountPitmasterView(container) {
       <label class="fl"><span class="lb">Maximum pounds</span><input class="ci" name="pounds_max" type="number" min="0" step="0.1" inputmode="decimal" value="${escapeHtml(filters.poundsMax)}"></label>
       <label class="fl"><span class="lb">Setpoint °F</span><input class="ci" name="setpoint" type="number" step="1" inputmode="numeric" value="${escapeHtml(filters.setpoint)}"></label>
       <label class="fl"><span class="lb">Plus or minus °F</span><input class="ci" name="tolerance" type="number" min="0" step="1" inputmode="numeric" value="${escapeHtml(filters.tolerance)}"></label>
-      <label class="fl"><span class="lb">Rotisserie</span><select class="ci" name="rotisserie">${option("", "Any", filters.rotisserie)}${option("true", "Yes", filters.rotisserie)}${option("false", "No", filters.rotisserie)}</select></label>
-      <label class="fl"><span class="lb">Pellet vendor</span><select class="ci" name="pellet_vendor"><option value="">Any vendor</option></select></label>
-      <label class="fl"><span class="lb">Pellet product</span><select class="ci" name="pellet_product"><option value="">Any product</option></select></label>
-      <label class="fl"><span class="lb">Store</span><select class="ci" name="store"><option value="">Any store</option></select></label>
-      <div class="pitmaster-actions"><button class="pbtn" type="submit">Ask the pitmaster</button><a class="cc" href="#pitmaster">Clear filters</a></div>
+      <label class="fl"><span class="lb">Rotisserie</span><select class="ci" name="rotisserie">${option("true", "Yes", filters.rotisserie)}${option("false", "No", filters.rotisserie)}</select></label>
+      <label class="fl"><span class="lb">Pellets</span><select class="ci" name="pellet_id"><option value="">Any pellets</option></select></label>
+      <div class="pitmaster-actions"><button class="pbtn" type="submit">Ask the pitmaster</button><a class="cc" href="${filtersToHash({})}">Clear filters</a></div>
       <p class="form-message" role="status"></p>
     </form>
     <div class="pitmaster-result" aria-live="polite"><p class="mut">Consulting the cook log…</p></div>
@@ -79,12 +78,10 @@ export function mountPitmasterView(container) {
       if (disposed) return;
       const meatOptions = mergeMeatTypeOptions(meatTypes, meat, filters.meat);
       fillSelect("meat", meatOptions.map((item) => [item.value, item.label]), filters.meat);
-      const vendors = [...new Set(pellets.map((item) => item.vendor))].sort();
-      const products = [...new Set(pellets.map((item) => item.product_name))].sort();
-      const stores = [...new Set(meat.map((item) => item.store).filter(Boolean))].sort();
-      fillSelect("pellet_vendor", vendors.map((item) => [item, item]), filters.pelletVendor);
-      fillSelect("pellet_product", products.map((item) => [item, item]), filters.pelletProduct);
-      fillSelect("store", stores.map((item) => [item, item]), filters.store);
+      const pelletOptions = pellets
+        .map((item) => [String(item.id), `${item.vendor} - ${item.product_name}`])
+        .sort((left, right) => left[1].localeCompare(right[1], undefined, { sensitivity: "base" }));
+      fillSelect("pellet_id", pelletOptions, filters.pelletId);
       const stats = await getCookStats(statsQuery(filters));
       if (!disposed) renderResult(result, filters, stats);
     } catch (error) {

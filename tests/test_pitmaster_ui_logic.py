@@ -99,21 +99,39 @@ def test_merge_keeps_selected_value_when_capitalization_differs() -> None:
 def test_hash_round_trip_and_api_query_use_exact_supported_names() -> None:
     filters = (
         '{meat:"Brisket",poundsMin:"8",poundsMax:"12",setpoint:"250",tolerance:"15",'
-        'rotisserie:"true",pelletVendor:"Traeger",pelletProduct:"Hickory",store:"Market"}'
+        'rotisserie:"true",pelletId:"42"}'
     )
     expression = (
         f"console.log(JSON.stringify(logic.filtersFromHash(logic.filtersToHash({filters}))))"
     )
     assert run_logic(expression) == {
         "meat": "Brisket", "poundsMin": "8", "poundsMax": "12", "setpoint": "250",
-        "tolerance": "15", "rotisserie": "true", "pelletVendor": "Traeger",
-        "pelletProduct": "Hickory", "store": "Market",
+        "tolerance": "15", "rotisserie": "true", "pelletId": "42",
     }
     query = f"console.log(JSON.stringify(logic.statsQuery({filters}).toString()))"
     assert run_logic(query) == (
         "meat_type=Brisket&pounds_min=8&pounds_max=12&setpoint=250&"
-        "setpoint_tolerance=15&rotisserie=true"
+        "setpoint_tolerance=15&rotisserie=true&pellet_id=42"
     )
+
+
+def test_rotisserie_defaults_to_no_for_empty_and_old_hashes() -> None:
+    expression = (
+        'console.log(JSON.stringify(['
+        'logic.filtersFromHash("#pitmaster").rotisserie,'
+        'logic.filtersFromHash("#pitmaster?meat=Ribs").rotisserie,'
+        'logic.filtersToHash({})]))'
+    )
+    assert run_logic(expression) == ["false", "false", "#pitmaster?rotisserie=false"]
+
+
+def test_pitmaster_form_uses_one_pellet_select_and_no_store() -> None:
+    source = Path("app/static/js/views/pitmaster.js").read_text()
+    assert 'name="pellet_id"' in source
+    assert "Any pellets" in source
+    assert 'name="pellet_vendor"' not in source
+    assert 'name="pellet_product"' not in source
+    assert 'name="store"' not in source
 
 
 def test_calculates_average_cook_time_per_pound() -> None:
