@@ -64,6 +64,15 @@ function makeCard(cook, content) {
   return card;
 }
 
+function inlineSvgStyles(card) {
+  card.querySelectorAll("svg, svg *").forEach((element) => {
+    const styles = window.getComputedStyle(element);
+    for (const property of styles) {
+      element.style.setProperty(property, styles.getPropertyValue(property));
+    }
+  });
+}
+
 async function waitForImages(card) {
   await Promise.all([...card.querySelectorAll("img")].map((image) => {
     if (image.complete) return image.decode?.().catch(() => {}) || Promise.resolve();
@@ -138,6 +147,9 @@ async function exportCook(button, message, cook, content, photoUrl) {
   try {
     await document.fonts?.ready;
     await waitForImages(card);
+    // html-to-image serializes the SVG outside the page stylesheet context.
+    // Preserve the live chart's resolved strokes, fills, fonts, and pin styles.
+    inlineSvgStyles(card);
     const blob = await window.htmlToImage.toBlob(card, {
       backgroundColor: "#4a2d19", cacheBust: true, pixelRatio: 2,
       width: EXPORT_WIDTH, height: EXPORT_HEIGHT,
