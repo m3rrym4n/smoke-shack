@@ -131,7 +131,9 @@ export function orderPadMarkup(cook, meat, pellets, cooks = [], config = {}) {
   const locked = new Set(mode === "closed" ? closedCookReadOnlyFields() : []);
   const disabled = (name) => locked.has(name) ? " disabled" : "";
   const otherPlans = orderPlannedCooks(planned).filter((item) => item.id !== model.id);
-  const actions = mode === "closed"
+  const actions = mode === "history"
+    ? `<a class="paper-link" href="#cooks/${model.id}">Cancel editing</a>`
+    : mode === "closed"
     ? '<a class="paper-link" href="#live">Back to the next order</a>'
     : `${mode === "live" || mode === "planned" ? '<a class="paper-button" href="#live?new=1">New order for the next cook</a>' : ""}<a class="paper-link" href="#live?closed=1">Write up the last cook</a>`;
   return `<section class="order-pad">
@@ -168,7 +170,7 @@ function apiMessage(error) {
   return typeof error.message === "string" ? error.message : "Something went wrong. Please try again.";
 }
 
-export function bindLiveForms(container, { cook, orderCook = cook, events, meat, pellets, refresh, setBusy, mode = "live" }) {
+export function bindLiveForms(container, { cook, orderCook = cook, events, meat, pellets, refresh, setBusy, mode = "live", afterSave = null }) {
   const eventForm = container.querySelector("#event-form");
   const orderForm = container.querySelector("#order-form");
   if (eventForm) {
@@ -292,6 +294,10 @@ export function bindLiveForms(container, { cook, orderCook = cook, events, meat,
       }
       showMessage(orderForm, savedMessage);
       submit.disabled = false;
+      if (afterSave) {
+        afterSave(updated);
+        return;
+      }
       if (savedMessage !== "Order saved.") window.history.replaceState(null, "", `#live?order=${updated.id}`);
     } catch (error) {
       showMessage(orderForm, apiMessage(error), true);
