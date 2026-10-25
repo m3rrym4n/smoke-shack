@@ -157,8 +157,20 @@ export function deletePellet(pelletId) {
   return sendJson("DELETE", `/api/pellets/${pelletId}`);
 }
 
-export function getSpices() {
+export function listSpices() {
   return getJson("/api/spices");
+}
+
+export function createSpice(body) {
+  return sendJson("POST", "/api/spices", body);
+}
+
+export function updateSpice(spiceId, body) {
+  return sendJson("PATCH", `/api/spices/${spiceId}`, body);
+}
+
+export function deleteSpice(spiceId) {
+  return sendJson("DELETE", `/api/spices/${spiceId}`);
 }
 
 export function uploadPhoto(kind, id, blob) {
