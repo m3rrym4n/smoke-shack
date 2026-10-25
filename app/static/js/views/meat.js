@@ -1,6 +1,6 @@
 import { createMeat, deleteMeat, getCooksForMeat, getMeat, updateMeat } from "../api.js";
 import { confirmDelete, formatDate, formatMoney, renderApiError } from "../components/ui.js";
-import { totalCost, validateMeat } from "../meat-logic.js";
+import { cookedFilterValue, totalCost, validateMeat } from "../meat-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -49,11 +49,12 @@ function showValidation(form, errors) {
 
 function purchaseRow(item, cook) {
   const badge = cook ? `<a class="used-badge" href="#cooks/${cook.id}">used in cook #${cook.id}</a>` : "";
-  return `<article class="meat-row" data-id="${item.id}">
+  return `<article class="meat-row${item.cooked ? " is-cooked" : ""}" data-id="${item.id}">
     <div class="meat-summary">
-      <div class="meat-title-line"><strong>${escapeHtml(item.type)}</strong>${badge}</div>
+      <div class="meat-title-line"><strong>${escapeHtml(item.type)}</strong><span class="cooked-badge"${item.cooked ? "" : " hidden"}>Cooked</span>${badge}</div>
       <div class="ld meat-details"><span>${item.pounds} lb · ${formatMoney(item.price_per_pound)}/lb · ${escapeHtml(item.store || "Store not noted")} · ${formatDate(item.purchased_on)}</span><i></i><b>${formatMoney(totalCost(item.pounds, item.price_per_pound))}</b></div>
-      <div class="row-actions"><button class="cc edit-meat" type="button">Edit</button><button class="cc delete-meat" type="button">Delete</button></div>
+      <div class="row-actions"><label class="cooked-control"><input class="cooked-toggle" type="checkbox"${item.cooked ? " checked" : ""}><span>Cooked</span></label><button class="cc edit-meat" type="button">Edit</button><button class="cc delete-meat" type="button">Delete</button></div>
+      <p class="toggle-message form-message" role="status"></p>
       <div class="delete-confirm" hidden></div>
     </div>
     <form class="stp edit-form" hidden>${fields(item)}<div class="form-actions"><button class="pbtn save-meat" type="submit">Save cut</button><button class="cc cancel-edit" type="button">Cancel</button></div><p class="form-message" role="status"></p></form>
@@ -62,9 +63,14 @@ function purchaseRow(item, cook) {
 
 export function mountMeatView(container) {
   let disposed = false;
-  container.innerHTML = `<section class="board meat-board"><h1 class="hd">The Butcher Case</h1><p class="mut case-message" role="status">Checking the case…</p><div class="meat-list"></div><form class="stp add-meat"><h2>Add a cut</h2>${fields()}<div class="form-actions"><button class="pbtn save-meat" type="submit">Add to the case</button></div><p class="form-message" role="status"></p></form></section>`;
+  let activeFilter = "all";
+  container.innerHTML = `<section class="board meat-board"><h1 class="hd">The Butcher Case</h1><div class="meat-filters" aria-label="Filter meat"><button class="cc active" type="button" data-filter="all" aria-pressed="true">All</button><button class="cc" type="button" data-filter="uncooked" aria-pressed="false">Uncooked</button><button class="cc" type="button" data-filter="cooked" aria-pressed="false">Cooked</button></div><p class="mut case-message" role="status">Checking the case…</p><div class="meat-list"></div><form class="stp add-meat"><h2>Add a cut</h2>${fields()}<div class="form-actions"><button class="pbtn save-meat" type="submit">Add to the case</button></div><p class="form-message" role="status"></p></form></section>`;
   const list = container.querySelector(".meat-list");
   const caseMessage = container.querySelector(".case-message");
+
+  const updateEmptyMessage = () => {
+    caseMessage.textContent = list.children.length ? "" : "Nothing in the case for this filter.";
+  };
 
   const bindForm = (form, id = null) => form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -90,6 +96,32 @@ export function mountMeatView(container) {
     const id = Number(row.dataset.id);
     const summary = row.querySelector(".meat-summary");
     const editForm = row.querySelector(".edit-form");
+    const cookedToggle = row.querySelector(".cooked-toggle");
+    cookedToggle.addEventListener("change", async () => {
+      const cooked = cookedToggle.checked;
+      const message = row.querySelector(".toggle-message");
+      cookedToggle.disabled = true;
+      message.textContent = "Saving…";
+      message.classList.remove("error");
+      try {
+        const updated = await updateMeat(id, { cooked });
+        if (disposed) return;
+        cookedToggle.checked = updated.cooked;
+        row.classList.toggle("is-cooked", updated.cooked);
+        row.querySelector(".cooked-badge").hidden = !updated.cooked;
+        message.textContent = updated.cooked ? "Marked cooked." : "Marked uncooked.";
+        if (cookedFilterValue(activeFilter) !== null && cookedFilterValue(activeFilter) !== updated.cooked) {
+          row.remove();
+          updateEmptyMessage();
+        }
+      } catch (error) {
+        cookedToggle.checked = !cooked;
+        message.textContent = error.message;
+        message.classList.add("error");
+      } finally {
+        if (!disposed && cookedToggle.isConnected) cookedToggle.disabled = false;
+      }
+    });
     row.querySelector(".edit-meat").addEventListener("click", () => {
       summary.hidden = true;
       editForm.hidden = false;
@@ -116,7 +148,7 @@ export function mountMeatView(container) {
   async function load() {
     caseMessage.textContent = "Loading the case…";
     try {
-      const items = await getMeat();
+      const items = await getMeat(cookedFilterValue(activeFilter));
       const cooks = await Promise.all(items.map((item) => getCooksForMeat(item.id)));
       if (disposed) return;
       list.innerHTML = items.map((item, index) => purchaseRow(item, cooks[index][0])).join("");
@@ -130,6 +162,17 @@ export function mountMeatView(container) {
   }
 
   bindForm(container.querySelector(".add-meat"));
+  container.querySelectorAll(".meat-filters button").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeFilter = button.dataset.filter;
+      container.querySelectorAll(".meat-filters button").forEach((candidate) => {
+        const active = candidate === button;
+        candidate.classList.toggle("active", active);
+        candidate.setAttribute("aria-pressed", String(active));
+      });
+      load();
+    });
+  });
   load();
   return () => { disposed = true; };
 }

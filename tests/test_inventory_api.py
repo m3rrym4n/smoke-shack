@@ -34,6 +34,7 @@ def test_meat_crud_filter_and_sort(sessions: sessionmaker[Session]) -> None:
         )
 
         assert older.status_code == 201
+        assert older.json()["cooked"] is False
         assert isinstance(older.json()["pounds"], float)
         assert isinstance(older.json()["price_per_pound"], float)
         assert [row["id"] for row in client.get("/api/meat").json()] == [
@@ -50,6 +51,18 @@ def test_meat_crud_filter_and_sort(sessions: sessionmaker[Session]) -> None:
         assert patched.json()["store"] == "Market"
         assert patched.json()["pounds"] == 9
 
+        cooked = client.patch(f"/api/meat/{older.json()['id']}", json={"cooked": True})
+        assert cooked.status_code == 200
+        assert cooked.json()["cooked"] is True
+        assert client.get("/api/meat?cooked=true").json() == [cooked.json()]
+        assert client.get("/api/meat?cooked=false").json() == [newer.json()]
+        assert client.get("/api/meat?type=pork&cooked=true").json() == [cooked.json()]
+        assert client.get("/api/meat?type=beef&cooked=true").json() == []
+
+        uncooked = client.patch(f"/api/meat/{older.json()['id']}", json={"cooked": False})
+        assert uncooked.status_code == 200
+        assert uncooked.json()["cooked"] is False
+
         assert client.delete(f"/api/meat/{newer.json()['id']}").status_code == 204
         assert client.get(f"/api/meat/{newer.json()['id']}").json() == {
             "detail": "Meat not found"
@@ -63,6 +76,7 @@ def test_meat_defaults_validation_and_referenced_delete(sessions: sessionmaker[S
         )
         assert created.status_code == 201
         assert created.json()["purchased_on"] == date.today().isoformat()
+        assert created.json()["cooked"] is False
         for payload in (
             {"type": "", "pounds": 1, "price_per_pound": 1},
             {"type": "   ", "pounds": 1, "price_per_pound": 1},

@@ -150,6 +150,7 @@ class Meat(Base):
     price_per_pound: Mapped[Decimal] = mapped_column(Numeric(8, 2))
     store: Mapped[str | None]
     purchased_on: Mapped[date] = mapped_column(Date)
+    cooked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Pellet(Base):
