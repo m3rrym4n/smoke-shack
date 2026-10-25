@@ -166,6 +166,7 @@ class Meat(Base):
     store: Mapped[str | None]
     purchased_on: Mapped[date] = mapped_column(Date)
     photo_path: Mapped[str | None]
+    cooked: Mapped[bool] = mapped_column(Boolean, default=False)
 
     @property
     def has_photo(self) -> bool:

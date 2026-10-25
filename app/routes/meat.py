@@ -35,11 +35,15 @@ def _get_meat(meat_id: int, session: Session) -> Meat:
 
 @router.get("", response_model=list[MeatResponse])
 def list_meat(
-    session: SessionDep, type_filter: str | None = Query(default=None, alias="type")
+    session: SessionDep,
+    type_filter: str | None = Query(default=None, alias="type"),
+    cooked: bool | None = None,
 ) -> list[Meat]:
     query = select(Meat)
     if type_filter is not None:
         query = query.where(func.lower(Meat.type).contains(type_filter.lower()))
+    if cooked is not None:
+        query = query.where(Meat.cooked == cooked)
     return list(session.scalars(query.order_by(Meat.purchased_on.desc(), Meat.id.desc())))
 
 

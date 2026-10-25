@@ -1,14 +1,14 @@
 """add spice catalog
 
 Revision ID: 1ccda11b4107
-Revises: 8a64bf01d21e
+Revises: b67a21d9942f
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "1ccda11b4107"
-down_revision = "8a64bf01d21e"
+down_revision = "b67a21d9942f"
 branch_labels = None
 depends_on = None
 

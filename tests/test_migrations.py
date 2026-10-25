@@ -4,7 +4,32 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
+
+
+def test_migration_chain_has_exactly_one_head() -> None:
+    script = ScriptDirectory.from_config(Config("alembic.ini"))
+
+    assert len(script.get_heads()) == 1
+
+
+def test_empty_database_upgrades_to_complete_head(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    database = tmp_path / "empty-to-head.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))  # type: ignore[attr-defined]
+    config = Config("alembic.ini")
+
+    command.upgrade(config, "head")
+
+    schema = inspect(create_engine(f"sqlite:///{database}"))
+    assert "spices" in schema.get_table_names()
+    assert "cook_spices" in schema.get_table_names()
+    assert "cooked" in {column["name"] for column in schema.get_columns("meat")}
+    assert "photo_path" in {column["name"] for column in schema.get_columns("meat")}
+    assert "photo_path" in {column["name"] for column in schema.get_columns("pellets")}
+    assert "photo_path" in {column["name"] for column in schema.get_columns("spices")}
 
 
 def test_upgrade_from_previous_head_preserves_existing_cooks(
@@ -36,3 +61,30 @@ def test_upgrade_from_previous_head_preserves_existing_cooks(
         row = connection.execute(text("SELECT started_at, status FROM cooks")).one()
     assert started["nullable"] is True
     assert row == ("2026-10-16T16:57:03Z", "closed")
+
+
+def test_cooked_migration_defaults_existing_meat_to_false(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    database = tmp_path / "meat-migration.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))  # type: ignore[attr-defined]
+    config = Config("alembic.ini")
+    command.upgrade(config, "8a64bf01d21e")
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO meat (type, pounds, price_per_pound, purchased_on) "
+                "VALUES ('Pork butt', 8.5, 2.49, '2026-10-16')"
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    cooked_column = next(
+        column for column in inspect(engine).get_columns("meat") if column["name"] == "cooked"
+    )
+    with engine.connect() as connection:
+        cooked = connection.execute(text("SELECT cooked FROM meat")).scalar_one()
+    assert cooked_column["nullable"] is False
+    assert cooked == 0

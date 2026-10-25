@@ -21,6 +21,7 @@ class MeatCreate(BaseModel):
     price_per_pound: float = Field(ge=0)
     store: str | None = None
     purchased_on: date = Field(default_factory=date.today)
+    cooked: bool = False
 
 
 class MeatUpdate(BaseModel):
@@ -29,6 +30,14 @@ class MeatUpdate(BaseModel):
     price_per_pound: float | None = Field(default=None, ge=0)
     store: str | None = None
     purchased_on: date | None = None
+    cooked: bool | None = None
+
+    @field_validator("cooked", mode="before")
+    @classmethod
+    def cooked_cannot_be_null(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("field cannot be null")
+        return value
 
 
 class MeatResponse(BaseModel):
@@ -42,6 +51,7 @@ class MeatResponse(BaseModel):
     purchased_on: date
     has_photo: bool
     photo_url: str | None
+    cooked: bool
 
 
 class PelletCreate(BaseModel):
