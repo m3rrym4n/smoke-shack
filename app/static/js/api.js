@@ -104,8 +104,9 @@ export function deletePhoto(photoId) {
   return sendJson("DELETE", `/api/photos/${photoId}`);
 }
 
-export function getMeat() {
-  return getJson("/api/meat");
+export function getMeat(cooked = null) {
+  if (cooked === null) return getJson("/api/meat");
+  return getJson(`/api/meat?cooked=${cooked}`);
 }
 
 export function getCooksForMeat(meatId) {

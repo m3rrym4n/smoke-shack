@@ -5,6 +5,12 @@ export function totalCost(pounds, pricePerPound) {
   return Math.round((weight * price + Number.EPSILON) * 100) / 100;
 }
 
+export function cookedFilterValue(filter) {
+  if (filter === "cooked") return true;
+  if (filter === "uncooked") return false;
+  return null;
+}
+
 export function validateMeat(values) {
   const errors = {};
   if (!String(values.type || "").trim()) errors.type = "Enter a cut or meat type.";
