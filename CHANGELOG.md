@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Consolidate Pellets and Meat under a responsive Pantry navigation shell.
 - Add a seeded Meat Church spice rack catalog and CRUD API.
 - Attach selected spice-rack entries to cooks and include them in cook exports.
 - Export a past cook as a fixed 1080×1350 Instagram-style share card with cook details, notes, results, a correctly styled chart, and a remembered gallery photo choice.

@@ -1,12 +1,12 @@
 import { getStatus } from "./api.js";
 import { mountCookList } from "./views/cooks.js";
 import { mountCookView, mountLiveView } from "./views/live.js";
-import { mountMeatView } from "./views/meat.js";
 import { mountNotesView } from "./views/notes.js";
-import { mountPelletsView } from "./views/pellets.js";
+import { legacyPantryRedirect, parsePantryRoute } from "./pantry-logic.js";
+import { mountPantryView } from "./views/pantry.js";
 import { mountPitmasterView } from "./views/pitmaster.js";
 
-const routes = new Set(["live", "cooks", "profiles", "pellets", "meat", "notes", "pitmaster"]);
+const routes = new Set(["live", "cooks", "profiles", "notes", "pitmaster"]);
 const view = document.querySelector("#view");
 const neon = document.querySelector("#now-smoking");
 const buildVersion = document.querySelector("#build-version");
@@ -14,6 +14,8 @@ let disposeView = () => {};
 
 function currentRoute() {
   const value = window.location.hash.slice(1);
+  const pantryRoute = parsePantryRoute(value);
+  if (pantryRoute) return pantryRoute;
   const cookEditMatch = value.match(/^cooks\/(\d+)\/edit$/);
   if (cookEditMatch) return { name: "cook-detail", cookId: Number(cookEditMatch[1]), editing: true, nav: "cooks" };
   const cookMatch = value.match(/^cooks\/(\d+)$/);
@@ -24,6 +26,11 @@ function currentRoute() {
 }
 
 function renderRoute() {
+  const redirect = legacyPantryRedirect(window.location.hash);
+  if (redirect) {
+    window.location.replace(redirect);
+    return;
+  }
   disposeView();
   disposeView = () => {};
   const route = currentRoute();
@@ -44,12 +51,8 @@ function renderRoute() {
     disposeView = mountCookView(view, { cookId: route.cookId, editing: route.editing });
     return;
   }
-  if (route.name === "meat") {
-    disposeView = mountMeatView(view);
-    return;
-  }
-  if (route.name === "pellets") {
-    disposeView = mountPelletsView(view);
+  if (route.name === "pantry") {
+    disposeView = mountPantryView(view, route.pantryTab);
     return;
   }
   if (route.name === "notes") {
