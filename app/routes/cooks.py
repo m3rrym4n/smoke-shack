@@ -10,7 +10,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.deps import get_session
-from app.models import Cook, Event, Meat, Note, Pellet, Photo, Profile, Sample
+from app.models import Cook, Event, Meat, Note, Pellet, Photo, Profile, Sample, Spice
 from app.routes.events import event_json
 from app.schemas import CookUpdate, PlannedCookCreate
 from app.service import as_utc
@@ -57,6 +57,17 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
         "profile_id": cook.profile_id,
         "rotisserie": cook.rotisserie,
         "seasonings": cook.seasonings,
+        "spices": [
+            {
+                "id": spice.id,
+                "name": spice.name,
+                "brand": spice.brand,
+                "category": spice.brand,
+                "is_custom": spice.is_custom,
+                "photo_url": spice.photo_url,
+            }
+            for spice in cook.spices
+        ],
         "sauces": cook.sauces,
         "prep_time_minutes": cook.prep_time_minutes,
         "results_text": cook.results_text,
@@ -148,13 +159,22 @@ def _validate_references(changes: dict[str, Any], session: Session) -> None:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{label} not found")
 
 
+def _get_spices(spice_ids: list[int], session: Session) -> list[Spice]:
+    unique_ids = set(spice_ids)
+    spices = list(session.scalars(select(Spice).where(Spice.id.in_(unique_ids))))
+    if len(spices) != len(unique_ids):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Spice not found")
+    return spices
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_planned_cook(
     payload: PlannedCookCreate, session: SessionDep
 ) -> dict[str, Any]:
-    values = payload.model_dump(exclude={"state"})
+    values = payload.model_dump(exclude={"state", "spice_ids"})
     _validate_references(values, session)
     cook = Cook(started_at=None, status="planned", **values)
+    cook.spices = _get_spices(payload.spice_ids, session)
     session.add(cook)
     session.commit()
     session.refresh(cook)
@@ -183,9 +203,12 @@ def get_cook(cook_id: int, session: SessionDep) -> dict[str, Any]:
 def update_cook(cook_id: int, payload: CookUpdate, session: SessionDep) -> dict[str, Any]:
     cook = _get_cook(cook_id, session)
     changes = payload.model_dump(exclude_unset=True)
+    spice_ids = changes.pop("spice_ids", None)
     _validate_references(changes, session)
     for field, value in changes.items():
         setattr(cook, field, value)
+    if spice_ids is not None:
+        cook.spices = _get_spices(spice_ids, session)
     session.commit()
     session.refresh(cook)
     return _cook_json(cook, session, include_cost=True)

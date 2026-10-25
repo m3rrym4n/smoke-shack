@@ -2,6 +2,7 @@ import {
   createPellet, deletePellet, getCooksForPellet, getPellets, updatePellet,
 } from "../api.js";
 import { confirmDelete, formatDate, formatMoney, renderApiError } from "../components/ui.js";
+import { bindItemPhoto, itemPhotoMarkup } from "../components/item-photo.js";
 import { validatePellet } from "../pellets-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -53,6 +54,7 @@ function purchaseRow(item, cook) {
     <div class="pellet-summary">
       <div class="pellet-title-line"><strong>${escapeHtml(item.vendor)}</strong><span>${escapeHtml(item.product_name)}</span>${badge}</div>
       <div class="ld pellet-details"><span>${formatMoney(item.price_per_pound)}/lb</span><i></i><span>${formatDate(item.purchased_on)}</span></div>
+      ${itemPhotoMarkup(item)}
       <div class="row-actions"><button class="cc edit-pellet" type="button">Edit</button><button class="cc delete-pellet" type="button">Delete</button></div>
       <div class="delete-confirm" hidden></div>
     </div>
@@ -90,6 +92,7 @@ export function mountPelletsView(container) {
     const id = Number(row.dataset.id);
     const summary = row.querySelector(".pellet-summary");
     const editForm = row.querySelector(".edit-form");
+    bindItemPhoto(row.querySelector("[data-photo]"), "pellets", id);
     row.querySelector(".edit-pellet").addEventListener("click", () => {
       summary.hidden = true;
       editForm.hidden = false;

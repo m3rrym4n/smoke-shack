@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Pick multiple Spice Rack rubs on cook orders and show them across cook details, logs, and exports.
+- Add the grouped, filterable Spice Rack with custom blend markers and rub create, edit, and delete controls.
+- Add reusable photo upload, resize, thumbnail, lightbox, replace, and removal controls to every Pantry tab.
+- Add secure photo uploads for pellet, meat, and spice pantry items.
+- Consolidate Pellets and Meat under a responsive Pantry navigation shell.
+- Add a seeded Meat Church spice rack catalog and CRUD API.
+- Attach selected spice-rack entries to cooks and include them in cook exports.
 - Mark Butcher Case purchases cooked or uncooked and filter the case by that status.
 - Export a past cook as a fixed 1080×1350 Instagram-style share card with cook details, notes, results, a correctly styled chart, and a remembered gallery photo choice.
 - Edit any planned, live, or closed cook and its photos from the Cook Log detail view.

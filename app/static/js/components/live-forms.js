@@ -1,5 +1,7 @@
-import { createCookEvent, createPlannedCook, deleteCook, deleteCookEvent, deletePhoto, updateCook, updateCookEvent, uploadCookPhoto } from "../api.js";
+import { createCookEvent, createPlannedCook, createSpice, deleteCook, deleteCookEvent, deleteCookPhoto, updateCook, updateCookEvent, uploadCookPhoto } from "../api.js";
 import { availableMeat, meatOptionLabel, pelletOptionLabel, validatePelletsUsed } from "../order-pad-logic.js";
+import { addSpice, filterSpiceChoices, removeSpice, spiceBrand, spiceLabel, withSpiceIds } from "../spice-picker-logic.js";
+import { formatSpiceSize, groupSpices } from "../spices-logic.js";
 import { PHOTO_MAX_BYTES, closedCookReadOnlyFields, downscaleSize, orderPadSavedMessage, orderPhotos, orderPlannedCooks, photoErrorMessage, validatePhotoFile } from "../live-logic.js";
 import { confirmDelete } from "./ui.js";
 
@@ -81,7 +83,7 @@ export function bindPhotoGallery(container, { cookId } = {}) {
     if (!button) return;
     button.addEventListener("click", () => confirmDelete(card.querySelector(".photo-confirm"), async () => {
       try {
-        await deletePhoto(Number(card.dataset.photoId));
+        await deleteCookPhoto(Number(card.dataset.photoId));
         card.remove();
         if (!gallery.querySelector(".cook-photo")) gallery.innerHTML = "<p>No photos yet.</p>";
       } catch (error) {
@@ -123,7 +125,7 @@ export function bindPhotoGallery(container, { cookId } = {}) {
 }
 
 export function orderPadMarkup(cook, meat, pellets, cooks = [], config = {}) {
-  const { mode = "live", banner = "Cook in progress", planned = [], photos = [] } = config;
+  const { mode = "live", banner = "Cook in progress", planned = [], photos = [], spices = [] } = config;
   const model = cook || { id: null, meat_id: null, pellet_id: null, rotisserie: false };
   const choices = availableMeat(meat, cooks, model.id);
   const meatEmpty = choices.length === 0;
@@ -143,6 +145,7 @@ export function orderPadMarkup(cook, meat, pellets, cooks = [], config = {}) {
       <label class="paper-field"><span>Meat</span><select name="meat_id"${disabled("meat_id")}><option value="">Not selected</option>${options(choices, model.meat_id, meatOptionLabel)}<option value="add">${meatEmpty ? "Nothing in the case yet, add some" : "+ Add new..."}</option></select></label>
       <label class="paper-field"><span>Weight</span><input name="weight" readonly value="${escapeHtml(model.meat?.pounds ? `${model.meat.pounds} lb` : "—")}"></label>
       <div class="paper-field"><span>Meat cost</span><output name="meat_cost">${money(model.cost?.meat_cost)}</output></div>
+      <fieldset class="paper-field rub-picker"${disabled("seasonings")}><legend>Rubs</legend><div class="rub-chips"></div><button class="paper-button rub-toggle" type="button" aria-expanded="false">Choose rubs</button><div class="rub-choices" hidden><input class="rub-search" type="search" placeholder="Search brand or rub"><div class="rub-choice-groups"></div></div><button class="add-rub-link" type="button">add a rub</button><div class="quick-rub" hidden><label>Brand<input name="quick_rub_brand" required></label><label>Rub name<input name="quick_rub_name" required></label><label>Price<input name="quick_rub_price" type="number" min="0" step="0.01"></label><label>Size in oz<input name="quick_rub_size" type="number" min="0.1" step="0.1"></label><label class="quick-rub-notes">Notes<textarea name="quick_rub_notes" rows="2"></textarea></label><div><button class="paper-button save-quick-rub" type="button">Add to rack</button><button class="paper-button cancel-quick-rub" type="button">Cancel</button></div><p class="quick-rub-message" role="status"></p></div></fieldset>
       <label class="paper-field"><span>Seasonings</span><input name="seasonings"${disabled("seasonings")} value="${escapeHtml(model.seasonings)}"></label>
       <label class="paper-field"><span>Sauces</span><input name="sauces"${disabled("sauces")} value="${escapeHtml(model.sauces)}"></label>
       <label class="paper-field"><span>Prep time</span><span class="input-suffix"><input name="prep_time_minutes" type="number" min="0" step="1"${disabled("prep_time_minutes")} value="${model.prep_time_minutes ?? ""}"><b>minutes</b></span></label>
@@ -170,7 +173,7 @@ function apiMessage(error) {
   return typeof error.message === "string" ? error.message : "Something went wrong. Please try again.";
 }
 
-export function bindLiveForms(container, { cook, orderCook = cook, events, meat, pellets, refresh, setBusy, mode = "live", afterSave = null }) {
+export function bindLiveForms(container, { cook, orderCook = cook, events, meat, pellets, spices = [], refresh, setBusy, mode = "live", afterSave = null }) {
   const eventForm = container.querySelector("#event-form");
   const orderForm = container.querySelector("#order-form");
   if (eventForm) {
@@ -253,6 +256,67 @@ export function bindLiveForms(container, { cook, orderCook = cook, events, meat,
   }));
   }
 
+  let selectedSpiceIds = (orderCook?.spices || []).map((spice) => spice.id);
+  const picker = orderForm.querySelector(".rub-picker");
+  const renderPicker = () => {
+    if (!picker) return;
+    const selected = spices.filter((spice) => selectedSpiceIds.includes(spice.id));
+    picker.querySelector(".rub-chips").innerHTML = selected.map((spice) => `<button class="rub-chip" type="button" data-remove-spice="${spice.id}" aria-label="Remove ${escapeHtml(spiceLabel(spice))}">${escapeHtml(spiceLabel(spice))}<span aria-hidden="true">×</span></button>`).join("") || '<span class="rub-empty">No rubs chosen</span>';
+    const visible = filterSpiceChoices(spices, picker.querySelector(".rub-search").value);
+    picker.querySelector(".rub-choice-groups").innerHTML = groupSpices(visible).map((group) => `<section><h4>${escapeHtml(group.brand)}</h4>${group.items.map((spice) => `<button class="rub-choice${selectedSpiceIds.includes(spice.id) ? " selected" : ""}" type="button" data-spice-id="${spice.id}" aria-pressed="${selectedSpiceIds.includes(spice.id)}">${spice.photo_url ? `<img src="${escapeHtml(spice.photo_url)}" alt="">` : '<span class="rub-thumb" aria-hidden="true"></span>'}<span><b>${escapeHtml(spice.name)}</b><small>${escapeHtml([spiceBrand(spice), formatSpiceSize(spice.size_oz)].filter(Boolean).join(" · "))}</small></span></button>`).join("")}</section>`).join("") || '<p class="rub-empty">No rubs match.</p>';
+  };
+  if (picker) {
+    renderPicker();
+    picker.querySelector(".rub-toggle").addEventListener("click", (event) => {
+      const choices = picker.querySelector(".rub-choices");
+      choices.hidden = !choices.hidden;
+      event.currentTarget.setAttribute("aria-expanded", String(!choices.hidden));
+      if (!choices.hidden) picker.querySelector(".rub-search").focus();
+    });
+    picker.querySelector(".rub-search").addEventListener("input", renderPicker);
+    const quickForm = picker.querySelector(".quick-rub");
+    picker.querySelector(".add-rub-link").addEventListener("click", () => {
+      quickForm.hidden = false;
+      orderForm.elements.quick_rub_brand.focus();
+    });
+    picker.querySelector(".cancel-quick-rub").addEventListener("click", () => { quickForm.hidden = true; });
+    picker.querySelector(".save-quick-rub").addEventListener("click", async (event) => {
+      const brand = orderForm.elements.quick_rub_brand.value.trim();
+      const name = orderForm.elements.quick_rub_name.value.trim();
+      const message = picker.querySelector(".quick-rub-message");
+      if (!brand || !name) { message.textContent = "Enter a brand and rub name."; return; }
+      event.currentTarget.disabled = true;
+      try {
+        const created = await createSpice({
+          brand, name,
+          price: orderForm.elements.quick_rub_price.value === "" ? null : Number(orderForm.elements.quick_rub_price.value),
+          size_oz: orderForm.elements.quick_rub_size.value === "" ? null : Number(orderForm.elements.quick_rub_size.value),
+          notes: orderForm.elements.quick_rub_notes.value.trim() || null,
+        });
+        spices.push(created);
+        selectedSpiceIds = addSpice(selectedSpiceIds, created.id);
+        quickForm.querySelectorAll("input, textarea").forEach((field) => { field.value = ""; });
+        quickForm.hidden = true;
+        renderPicker();
+        setBusy(true);
+      } catch (error) { message.textContent = apiMessage(error); }
+      finally { event.currentTarget.disabled = false; }
+    });
+    picker.addEventListener("click", (event) => {
+      const remove = event.target.closest("[data-remove-spice]");
+      const choice = event.target.closest("[data-spice-id]");
+      if (!remove && !choice) return;
+      const id = Number((remove || choice).dataset[remove ? "removeSpice" : "spiceId"]);
+      selectedSpiceIds = remove ? removeSpice(selectedSpiceIds, id) : addSpice(selectedSpiceIds, id);
+      const selected = spices.find((spice) => spice.id === id);
+      renderPicker();
+      setBusy(true);
+      if (choice && selected?.is_custom) {
+        orderForm.elements.seasonings.placeholder = "Describe your custom mix here";
+        orderForm.elements.seasonings.focus();
+      }
+    });
+  }
   orderForm.addEventListener("input", () => setBusy(true));
   orderForm.elements.meat_id?.addEventListener("change", () => {
     if (orderForm.elements.meat_id.value === "add") { window.location.hash = "meat"; return; }
@@ -269,7 +333,7 @@ export function bindLiveForms(container, { cook, orderCook = cook, events, meat,
     const pelletsUsed = orderForm.elements.pellets_used_lb.value;
     const pelletsUsedError = validatePelletsUsed(pelletsUsed);
     if (pelletsUsedError) return showMessage(orderForm, pelletsUsedError, true);
-    const body = {
+    const body = withSpiceIds({
       meat_id: orderForm.elements.meat_id.value ? Number(orderForm.elements.meat_id.value) : null,
       pellet_id: orderForm.elements.pellet_id.value ? Number(orderForm.elements.pellet_id.value) : null,
       seasonings: orderForm.elements.seasonings.value.trim() || null,
@@ -278,7 +342,7 @@ export function bindLiveForms(container, { cook, orderCook = cook, events, meat,
       pellets_used_lb: pelletsUsed === "" ? null : Number(pelletsUsed),
       rotisserie: orderForm.elements.rotisserie.value === "true",
       results_text: orderForm.elements.results_text.value.trim() || null,
-    };
+    }, selectedSpiceIds);
     if (mode === "closed") closedCookReadOnlyFields().forEach((field) => delete body[field]);
     const submit = orderForm.querySelector(".order-save");
     submit.disabled = true;

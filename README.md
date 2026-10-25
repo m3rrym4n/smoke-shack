@@ -40,7 +40,8 @@ authenticates to `/api/websocket`, loads an initial state snapshot, subscribes t
 Never commit `HA_TOKEN`. `GET /health` reports only application health and does not depend on
 Home Assistant. `GET /status` reports HA connection state, the latest event and sample times,
 the active cook, the sampling interval, and the application version. Cook data is available at
-`/api/cooks` and the per-cook detail, `samples`, and `events` routes.
+`/api/cooks` and the per-cook detail, `samples`, and `events` routes. The spice rack at
+`/api/spices` provides a seeded catalog of premade rubs plus custom entries.
 
 ## Data export
 

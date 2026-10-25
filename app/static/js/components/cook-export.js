@@ -1,6 +1,7 @@
 import { buildExportFilename, exportPhotoSelection, NO_PHOTO, pelletLine, shownPapers, weightText } from "../cook-export-logic.js";
 import { phaseDurations, showcaseNameLines } from "../live-logic.js";
 import { chartMarkup } from "./chart.js";
+import { seasoningText } from "../spice-picker-logic.js";
 
 const EXPORT_WIDTH = 1080;
 const EXPORT_HEIGHT = 1350;
@@ -48,13 +49,14 @@ function makeCard(cook, content) {
   const meat = cook.meat?.type || "Mystery smoke";
   const weight = weightText(cook.meat?.pounds);
   const pellet = pelletLine(cook.pellet);
+  const rubs = seasoningText(cook);
   const card = document.createElement("div");
   card.className = "cook-share-card";
   card.innerHTML = `
     <header class="share-header"><div class="share-sign">SMOKE-STACK</div><div class="share-date"><strong>${escapeHtml(cookDate(cook))}</strong><span>COOK OF THE DAY</span></div></header>
     <section class="share-hero">
       <div class="share-photo-column"><div class="share-cook-photo">${photo}</div><div class="share-grill-row"><div><strong>${escapeHtml(identity.title)}</strong>${identity.maker ? `<span>by ${escapeHtml(identity.maker)}</span>` : ""}</div>${grillPhoto}</div></div>
-      <div class="share-special board"><h2>Today's Special</h2><div class="share-meat-line"><strong>${escapeHtml(meat)}</strong>${weight ? `<span>${escapeHtml(weight)}</span>` : ""}</div>${pellet ? `<div class="share-pellet">${escapeHtml(pellet)}</div>` : ""}<div class="share-phases">${leader("Startup", duration(times.startup))}${leader("Cook", duration(times.cook), true)}${leader("Cool down", duration(times.cooldown))}${leader("Total grill time", duration(times.total), false, true)}</div></div>
+      <div class="share-special board"><h2>Today's Special</h2><div class="share-meat-line"><strong>${escapeHtml(meat)}</strong>${weight ? `<span>${escapeHtml(weight)}</span>` : ""}</div>${pellet ? `<div class="share-pellet">${escapeHtml(pellet)}</div>` : ""}${rubs ? `<div class="share-rubs">${escapeHtml(rubs)}</div>` : ""}<div class="share-phases">${leader("Startup", duration(times.startup))}${leader("Cook", duration(times.cook), true)}${leader("Cool down", duration(times.cooldown))}${leader("Total grill time", duration(times.total), false, true)}</div></div>
     </section>
     <section class="share-papers${papers.notes && papers.results ? "" : " single"}">${paperMarkup}</section>
     <div class="share-chart-slot"></div>`;

@@ -4,7 +4,32 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
+
+
+def test_migration_chain_has_exactly_one_head() -> None:
+    script = ScriptDirectory.from_config(Config("alembic.ini"))
+
+    assert len(script.get_heads()) == 1
+
+
+def test_empty_database_upgrades_to_complete_head(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    database = tmp_path / "empty-to-head.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))  # type: ignore[attr-defined]
+    config = Config("alembic.ini")
+
+    command.upgrade(config, "head")
+
+    schema = inspect(create_engine(f"sqlite:///{database}"))
+    assert "spices" in schema.get_table_names()
+    assert "cook_spices" in schema.get_table_names()
+    assert "cooked" in {column["name"] for column in schema.get_columns("meat")}
+    assert "photo_path" in {column["name"] for column in schema.get_columns("meat")}
+    assert "photo_path" in {column["name"] for column in schema.get_columns("pellets")}
+    assert "photo_path" in {column["name"] for column in schema.get_columns("spices")}
 
 
 def test_upgrade_from_previous_head_preserves_existing_cooks(

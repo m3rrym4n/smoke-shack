@@ -49,6 +49,8 @@ class MeatResponse(BaseModel):
     price_per_pound: float
     store: str | None
     purchased_on: date
+    has_photo: bool
+    photo_url: str | None
     cooked: bool
 
 
@@ -74,6 +76,47 @@ class PelletResponse(BaseModel):
     product_name: str
     price_per_pound: float
     purchased_on: date
+    has_photo: bool
+    photo_url: str | None
+
+
+class SpiceCreate(BaseModel):
+    brand: NonEmptyStr
+    name: NonEmptyStr
+    price: float | None = Field(default=None, ge=0)
+    size_oz: float | None = Field(default=None, gt=0)
+    notes: str | None = None
+
+
+class SpiceUpdate(BaseModel):
+    brand: NonEmptyStr | None = None
+    name: NonEmptyStr | None = None
+    price: float | None = Field(default=None, ge=0)
+    size_oz: float | None = Field(default=None, gt=0)
+    notes: str | None = None
+
+    @field_validator("brand", "name", mode="before")
+    @classmethod
+    def required_fields_cannot_be_null(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("field cannot be null")
+        return value
+
+
+class SpiceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    brand: str
+    name: str
+    price: float | None
+    size_oz: float | None
+    notes: str | None
+    is_custom: bool
+    created_at: datetime
+    updated_at: datetime
+    has_photo: bool
+    photo_url: str | None
 
 
 class CookUpdate(BaseModel):
@@ -87,6 +130,7 @@ class CookUpdate(BaseModel):
     results_text: str | None = None
     setpoint_override: float | None = None
     pellets_used_lb: float | None = Field(default=None, ge=0)
+    spice_ids: list[int] = Field(default_factory=list)
 
     @field_validator("rotisserie", mode="before")
     @classmethod
@@ -108,6 +152,7 @@ class PlannedCookCreate(BaseModel):
     results_text: str | None = None
     setpoint_override: float | None = None
     pellets_used_lb: float | None = Field(default=None, ge=0)
+    spice_ids: list[int] = Field(default_factory=list)
 
 
 NoteScope = Literal["this_cook", "pellets", "gear"]

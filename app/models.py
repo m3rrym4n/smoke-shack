@@ -2,22 +2,33 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    Column,
     Date,
     ForeignKey,
     Index,
     Numeric,
     String,
+    Table,
     Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 from app.database import Base
+
+cook_spices = Table(
+    "cook_spices",
+    Base.metadata,
+    Column("cook_id", ForeignKey("cooks.id", ondelete="CASCADE"), primary_key=True),
+    Column("spice_id", ForeignKey("spices.id"), primary_key=True),
+)
 
 
 def utc_now() -> datetime:
@@ -72,6 +83,10 @@ class Cook(Base):
         back_populates="cook", cascade="all, delete-orphan"
     )
     events: Mapped[list[Event]] = relationship(back_populates="cook", cascade="all, delete-orphan")
+    spices: Mapped[list[Spice]] = relationship(
+        secondary=cook_spices,
+        order_by="Spice.name",
+    )
 
     @property
     def startup_duration_seconds(self) -> int | None:
@@ -150,7 +165,16 @@ class Meat(Base):
     price_per_pound: Mapped[Decimal] = mapped_column(Numeric(8, 2))
     store: Mapped[str | None]
     purchased_on: Mapped[date] = mapped_column(Date)
+    photo_path: Mapped[str | None]
     cooked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    @property
+    def has_photo(self) -> bool:
+        return self.photo_path is not None
+
+    @property
+    def photo_url(self) -> str | None:
+        return _pantry_photo_url("meat", self.id, self.photo_path)
 
 
 class Pellet(Base):
@@ -160,6 +184,55 @@ class Pellet(Base):
     product_name: Mapped[str]
     price_per_pound: Mapped[Decimal] = mapped_column(Numeric(8, 2))
     purchased_on: Mapped[date] = mapped_column(Date)
+    photo_path: Mapped[str | None]
+
+    @property
+    def has_photo(self) -> bool:
+        return self.photo_path is not None
+
+    @property
+    def photo_url(self) -> str | None:
+        return _pantry_photo_url("pellets", self.id, self.photo_path)
+
+
+class Spice(Base):
+    __tablename__ = "spices"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    brand: Mapped[str]
+    name: Mapped[str]
+    price: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    size_oz: Mapped[Decimal | None] = mapped_column(Numeric(6, 1))
+    notes: Mapped[str | None] = mapped_column(Text)
+    is_custom: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)
+    photo_path: Mapped[str | None]
+
+    @property
+    def has_photo(self) -> bool:
+        return self.photo_path is not None
+
+    @property
+    def photo_url(self) -> str | None:
+        return _pantry_photo_url("spices", self.id, self.photo_path)
+
+
+def _pantry_photo_url(kind: str, item_id: int, photo_path: str | None) -> str | None:
+    if photo_path is None:
+        return None
+    try:
+        version = Path(photo_path).stat().st_mtime_ns
+    except OSError:
+        version = 0
+    return f"/api/{kind}/{item_id}/photo?v={version}"
+
+
+Index(
+    "uq_spices_brand_name_ci",
+    func.lower(Spice.brand),
+    func.lower(Spice.name),
+    unique=True,
+)
 
 
 class Profile(Base):

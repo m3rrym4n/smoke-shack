@@ -1,0 +1,18 @@
+[
+  {"brand": "Custom", "name": "Custom blend", "is_custom": true},
+  {"brand": "Meat Church", "name": "The Holy Gospel BBQ Rub", "price": 9.95, "size_oz": 12.5, "notes": "Blend of Holy Cow and The Gospel All Purpose. Ribs, chicken, beef. Gluten free, no MSG.", "is_custom": false},
+  {"brand": "Meat Church", "name": "The Gospel All Purpose BBQ Rub", "price": 9.95, "size_oz": 12.5, "is_custom": false},
+  {"brand": "Meat Church", "name": "Holy Voodoo Seasoning", "price": 9.95, "size_oz": 13, "is_custom": false},
+  {"brand": "Meat Church", "name": "Holy Cow BBQ Rub", "price": 9.95, "is_custom": false},
+  {"brand": "Meat Church", "name": "Honey Hog BBQ Rub", "price": 9.95, "is_custom": false},
+  {"brand": "Meat Church", "name": "Honey Hog HOT BBQ Rub", "price": 9.95, "is_custom": false},
+  {"brand": "Meat Church", "name": "Texas Sugar BBQ Rub", "price": 9.95, "is_custom": false},
+  {"brand": "Meat Church", "name": "Honey Bacon BBQ Rub", "price": 9.95, "is_custom": false},
+  {"brand": "Meat Church", "name": "Deez Nuts Honey Pecan BBQ Rub", "price": 9.95, "is_custom": false},
+  {"brand": "Meat Church", "name": "Hickory All-Purpose", "price": 9.95, "is_custom": false},
+  {"brand": "Meat Church", "name": "Hail Mary - Dallas Cowboys x Meat Church BBQ Rub", "price": 9.95, "is_custom": false},
+  {"brand": "Meat Church", "name": "Garlic & Jalapeño BLANCO", "price": 9.95, "is_custom": false},
+  {"brand": "Meat Church", "name": "Blanco - Steak and Everything Else Seasoning", "price": 9.95, "is_custom": false},
+  {"brand": "Meat Church", "name": "Fajita Seasoning", "price": 9.95, "is_custom": false},
+  {"brand": "Meat Church", "name": "Texas Chili Seasoning", "price": 9.95, "is_custom": false}
+]

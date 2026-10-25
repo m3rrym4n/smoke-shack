@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api import create_app
 from app.config import Settings
-from app.models import Cook, Event, Meat, Note, Pellet, Photo, Profile, Sample
+from app.models import Cook, Event, Meat, Note, Pellet, Photo, Profile, Sample, Spice, cook_spices
 
 
 def _cook(started_at: datetime, **values: object) -> Cook:
@@ -274,3 +274,71 @@ def test_next_planned_cook_returns_404_when_empty(sessions: sessionmaker[Session
 
     assert response.status_code == 404
     assert response.json() == {"detail": "No planned cook"}
+
+
+def test_cook_spices_create_replace_preserve_validate_and_delete(
+    sessions: sessionmaker[Session],
+) -> None:
+    with sessions() as session:
+        salt = Spice(brand="Brand B", name="Salt", is_custom=False)
+        pepper = Spice(brand="Brand A", name="Pepper", is_custom=False)
+        session.add_all([salt, pepper])
+        session.commit()
+        salt_id, pepper_id = salt.id, pepper.id
+
+    with TestClient(create_app(Settings(), sessions)) as client:
+        created = client.post(
+            "/api/cooks",
+            json={"state": "planned", "spice_ids": [salt_id, pepper_id, salt_id]},
+        )
+        cook_id = created.json()["id"]
+        replaced = client.patch(f"/api/cooks/{cook_id}", json={"spice_ids": [salt_id]})
+        preserved = client.patch(f"/api/cooks/{cook_id}", json={"seasonings": "extra heavy"})
+        unknown_create = client.post(
+            "/api/cooks", json={"state": "planned", "spice_ids": [9999]}
+        )
+        unknown_update = client.patch(f"/api/cooks/{cook_id}", json={"spice_ids": [9999]})
+        blocked = client.delete(f"/api/spices/{salt_id}")
+        deleted = client.delete(f"/api/cooks/{cook_id}")
+        allowed = client.delete(f"/api/spices/{salt_id}")
+
+    assert created.status_code == 201
+    assert created.json()["spices"] == [
+        {
+            "id": pepper_id,
+            "name": "Pepper",
+            "brand": "Brand A",
+            "category": "Brand A",
+            "is_custom": False,
+            "photo_url": None,
+        },
+        {
+            "id": salt_id,
+            "name": "Salt",
+            "brand": "Brand B",
+            "category": "Brand B",
+            "is_custom": False,
+            "photo_url": None,
+        },
+    ]
+    assert replaced.json()["spices"] == [
+        {
+            "id": salt_id,
+            "name": "Salt",
+            "brand": "Brand B",
+            "category": "Brand B",
+            "is_custom": False,
+            "photo_url": None,
+        }
+    ]
+    assert preserved.json()["spices"] == replaced.json()["spices"]
+    assert preserved.json()["seasonings"] == "extra heavy"
+    assert unknown_create.status_code == 422
+    assert unknown_create.json() == {"detail": "Spice not found"}
+    assert unknown_update.status_code == 422
+    assert blocked.status_code == 409
+    assert blocked.json() == {"detail": "Spice is referenced by a cook"}
+    assert deleted.status_code == 204
+    assert allowed.status_code == 204
+    with sessions() as session:
+        assert session.execute(select(cook_spices)).all() == []
