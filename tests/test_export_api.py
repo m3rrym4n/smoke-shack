@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api import create_app
 from app.config import Settings
-from app.models import Cook, Event, Meat, Note, Pellet, Photo, Profile, ProfileStep, Sample
+from app.models import Cook, Event, Meat, Note, Pellet, Photo, Profile, ProfileStep, Sample, Spice
 from app.routes.export import COOK_HEADERS
 
 
@@ -37,7 +37,8 @@ def test_cooks_csv_headers_values_durations_filters_and_formula_escaping(
             purchased_on=date(2026, 10, 1),
         )
         profile = Profile(name="=Profile", keep_warm=False)
-        session.add_all([meat, pellet, profile])
+        spice = Spice(brand="Meat Church", name="Holy Cow", is_custom=False)
+        session.add_all([meat, pellet, profile, spice])
         session.flush()
         cook = Cook(
             started_at=started,
@@ -62,6 +63,7 @@ def test_cooks_csv_headers_values_durations_filters_and_formula_escaping(
             incomplete=False,
         )
         session.add(cook)
+        cook.spices = [spice]
         session.commit()
         meat_id = meat.id
 
@@ -79,6 +81,7 @@ def test_cooks_csv_headers_values_durations_filters_and_formula_escaping(
     assert row["cooldown_duration_seconds"] == "600"
     assert row["grill_duration_seconds"] == "4500"
     assert row["effective_setpoint"] == "275.0"
+    assert row["spices"] == "Holy Cow"
     assert row["seasonings"] == "'=SUM(A1)"
     assert row["sauces"] == "'+Sauce"
     assert row["results_text"] == "'@great"

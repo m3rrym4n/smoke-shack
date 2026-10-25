@@ -7,11 +7,13 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    Column,
     Date,
     ForeignKey,
     Index,
     Numeric,
     String,
+    Table,
     Text,
     func,
 )
@@ -19,6 +21,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 from app.database import Base
+
+cook_spices = Table(
+    "cook_spices",
+    Base.metadata,
+    Column("cook_id", ForeignKey("cooks.id", ondelete="CASCADE"), primary_key=True),
+    Column("spice_id", ForeignKey("spices.id"), primary_key=True),
+)
 
 
 def utc_now() -> datetime:
@@ -73,6 +82,10 @@ class Cook(Base):
         back_populates="cook", cascade="all, delete-orphan"
     )
     events: Mapped[list[Event]] = relationship(back_populates="cook", cascade="all, delete-orphan")
+    spices: Mapped[list[Spice]] = relationship(
+        secondary=cook_spices,
+        order_by="Spice.name",
+    )
 
     @property
     def startup_duration_seconds(self) -> int | None:

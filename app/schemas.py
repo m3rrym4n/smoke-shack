@@ -114,6 +114,7 @@ class CookUpdate(BaseModel):
     results_text: str | None = None
     setpoint_override: float | None = None
     pellets_used_lb: float | None = Field(default=None, ge=0)
+    spice_ids: list[int] = Field(default_factory=list)
 
     @field_validator("rotisserie", mode="before")
     @classmethod
@@ -135,6 +136,7 @@ class PlannedCookCreate(BaseModel):
     results_text: str | None = None
     setpoint_override: float | None = None
     pellets_used_lb: float | None = Field(default=None, ge=0)
+    spice_ids: list[int] = Field(default_factory=list)
 
 
 NoteScope = Literal["this_cook", "pellets", "gear"]

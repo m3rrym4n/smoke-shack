@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.deps import get_session
-from app.models import Spice
+from app.models import Spice, cook_spices
 from app.schemas import SpiceCreate, SpiceResponse, SpiceUpdate
 
 router = APIRouter(prefix="/api/spices", tags=["spices"])
@@ -79,7 +79,10 @@ def delete_spice(spice_id: int, session: SessionDep) -> Response:
     item = _get_spice(spice_id, session)
     if _is_custom_blend(item):
         raise HTTPException(status.HTTP_409_CONFLICT, "Custom blend cannot be deleted")
-    # Issue 2 adds the cook reference lookup immediately before this delete.
+    if session.scalar(
+        select(cook_spices.c.cook_id).where(cook_spices.c.spice_id == spice_id).limit(1)
+    ) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Spice is referenced by a cook")
     session.delete(item)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
