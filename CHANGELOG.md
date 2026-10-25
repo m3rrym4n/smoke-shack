@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add a seeded Meat Church spice rack catalog and CRUD API.
 - Export a past cook as a fixed 1080×1350 Instagram-style share card with cook details, notes, results, a correctly styled chart, and a remembered gallery photo choice.
 - Edit any planned, live, or closed cook and its photos from the Cook Log detail view.
 - Show cook-linked notes on Cook Log detail views.

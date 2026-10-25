@@ -13,6 +13,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
@@ -159,6 +160,27 @@ class Pellet(Base):
     product_name: Mapped[str]
     price_per_pound: Mapped[Decimal] = mapped_column(Numeric(8, 2))
     purchased_on: Mapped[date] = mapped_column(Date)
+
+
+class Spice(Base):
+    __tablename__ = "spices"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    brand: Mapped[str]
+    name: Mapped[str]
+    price: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    size_oz: Mapped[Decimal | None] = mapped_column(Numeric(6, 1))
+    notes: Mapped[str | None] = mapped_column(Text)
+    is_custom: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)
+
+
+Index(
+    "uq_spices_brand_name_ci",
+    func.lower(Spice.brand),
+    func.lower(Spice.name),
+    unique=True,
+)
 
 
 class Profile(Base):

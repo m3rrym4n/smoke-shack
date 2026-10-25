@@ -31,7 +31,9 @@ from app.routes.pellets import router as pellets_router
 from app.routes.photos import router as photos_router
 from app.routes.profiles import router as profiles_router
 from app.routes.showcase import router as showcase_router
+from app.routes.spices import router as spices_router
 from app.routes.stats import router as stats_router
+from app.seed import seed_spices
 from app.service import CookService, as_utc
 
 logger = logging.getLogger(__name__)
@@ -80,6 +82,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         Path(config.photo_dir).mkdir(parents=True, exist_ok=True)
+        seed_spices(factory)
         if not config.ha_url or not config.ha_token:
             logger.warning("HA_URL/HA_TOKEN not set; Home Assistant ingest disabled")
         task = (
@@ -142,6 +145,7 @@ def create_app(
     app.state.cook_service = service
     app.include_router(meat_router)
     app.include_router(pellets_router)
+    app.include_router(spices_router)
     app.include_router(notes_router)
     app.include_router(events_router)
     app.include_router(profiles_router)

@@ -66,6 +66,43 @@ class PelletResponse(BaseModel):
     purchased_on: date
 
 
+class SpiceCreate(BaseModel):
+    brand: NonEmptyStr
+    name: NonEmptyStr
+    price: float | None = Field(default=None, ge=0)
+    size_oz: float | None = Field(default=None, gt=0)
+    notes: str | None = None
+
+
+class SpiceUpdate(BaseModel):
+    brand: NonEmptyStr | None = None
+    name: NonEmptyStr | None = None
+    price: float | None = Field(default=None, ge=0)
+    size_oz: float | None = Field(default=None, gt=0)
+    notes: str | None = None
+
+    @field_validator("brand", "name", mode="before")
+    @classmethod
+    def required_fields_cannot_be_null(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("field cannot be null")
+        return value
+
+
+class SpiceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    brand: str
+    name: str
+    price: float | None
+    size_oz: float | None
+    notes: str | None
+    is_custom: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class CookUpdate(BaseModel):
     meat_id: int | None = None
     pellet_id: int | None = None
