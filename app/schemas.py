@@ -40,6 +40,8 @@ class MeatResponse(BaseModel):
     price_per_pound: float
     store: str | None
     purchased_on: date
+    has_photo: bool
+    photo_url: str | None
 
 
 class PelletCreate(BaseModel):
@@ -64,6 +66,8 @@ class PelletResponse(BaseModel):
     product_name: str
     price_per_pound: float
     purchased_on: date
+    has_photo: bool
+    photo_url: str | None
 
 
 class SpiceCreate(BaseModel):
@@ -101,6 +105,8 @@ class SpiceResponse(BaseModel):
     is_custom: bool
     created_at: datetime
     updated_at: datetime
+    has_photo: bool
+    photo_url: str | None
 
 
 class CookUpdate(BaseModel):

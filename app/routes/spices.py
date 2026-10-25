@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.deps import get_session
 from app.models import Spice, cook_spices
+from app.pantry_photos import delete_photo, photo_response, save_photo
 from app.schemas import SpiceCreate, SpiceResponse, SpiceUpdate
 
 router = APIRouter(prefix="/api/spices", tags=["spices"])
@@ -74,6 +76,37 @@ def update_spice(spice_id: int, payload: SpiceUpdate, session: SessionDep) -> Sp
     return item
 
 
+@router.post("/{spice_id}/photo", response_model=SpiceResponse)
+async def upload_spice_photo(
+    spice_id: int,
+    request: Request,
+    session: SessionDep,
+    file: Annotated[UploadFile, File()],
+) -> Spice:
+    item = _get_spice(spice_id, session)
+    item.photo_path = await save_photo(
+        file, request.app.state.photo_dir, "spices", item.id, item.photo_path
+    )
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+@router.get("/{spice_id}/photo", response_class=FileResponse)
+def get_spice_photo(spice_id: int, session: SessionDep) -> FileResponse:
+    return photo_response(_get_spice(spice_id, session).photo_path)
+
+
+@router.delete("/{spice_id}/photo", status_code=status.HTTP_204_NO_CONTENT)
+def delete_spice_photo(spice_id: int, session: SessionDep) -> Response:
+    item = _get_spice(spice_id, session)
+    old_path = item.photo_path
+    item.photo_path = None
+    session.commit()
+    delete_photo(old_path)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.delete("/{spice_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_spice(spice_id: int, session: SessionDep) -> Response:
     item = _get_spice(spice_id, session)
@@ -83,6 +116,8 @@ def delete_spice(spice_id: int, session: SessionDep) -> Response:
         select(cook_spices.c.cook_id).where(cook_spices.c.spice_id == spice_id).limit(1)
     ) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Spice is referenced by a cook")
+    photo_path = item.photo_path
     session.delete(item)
     session.commit()
+    delete_photo(photo_path)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

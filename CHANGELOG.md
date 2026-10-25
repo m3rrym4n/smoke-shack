@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add secure photo uploads for pellet, meat, and spice pantry items.
 - Consolidate Pellets and Meat under a responsive Pantry navigation shell.
 - Add a seeded Meat Church spice rack catalog and CRUD API.
 - Attach selected spice-rack entries to cooks and include them in cook exports.

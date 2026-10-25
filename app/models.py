@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import (
@@ -164,6 +165,15 @@ class Meat(Base):
     price_per_pound: Mapped[Decimal] = mapped_column(Numeric(8, 2))
     store: Mapped[str | None]
     purchased_on: Mapped[date] = mapped_column(Date)
+    photo_path: Mapped[str | None]
+
+    @property
+    def has_photo(self) -> bool:
+        return self.photo_path is not None
+
+    @property
+    def photo_url(self) -> str | None:
+        return _pantry_photo_url("meat", self.id, self.photo_path)
 
 
 class Pellet(Base):
@@ -173,6 +183,15 @@ class Pellet(Base):
     product_name: Mapped[str]
     price_per_pound: Mapped[Decimal] = mapped_column(Numeric(8, 2))
     purchased_on: Mapped[date] = mapped_column(Date)
+    photo_path: Mapped[str | None]
+
+    @property
+    def has_photo(self) -> bool:
+        return self.photo_path is not None
+
+    @property
+    def photo_url(self) -> str | None:
+        return _pantry_photo_url("pellets", self.id, self.photo_path)
 
 
 class Spice(Base):
@@ -186,6 +205,25 @@ class Spice(Base):
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)
+    photo_path: Mapped[str | None]
+
+    @property
+    def has_photo(self) -> bool:
+        return self.photo_path is not None
+
+    @property
+    def photo_url(self) -> str | None:
+        return _pantry_photo_url("spices", self.id, self.photo_path)
+
+
+def _pantry_photo_url(kind: str, item_id: int, photo_path: str | None) -> str | None:
+    if photo_path is None:
+        return None
+    try:
+        version = Path(photo_path).stat().st_mtime_ns
+    except OSError:
+        version = 0
+    return f"/api/{kind}/{item_id}/photo?v={version}"
 
 
 Index(
