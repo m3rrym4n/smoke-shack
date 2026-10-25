@@ -1,5 +1,6 @@
 import { createMeat, deleteMeat, getCooksForMeat, getMeat, updateMeat } from "../api.js";
 import { confirmDelete, formatDate, formatMoney, renderApiError } from "../components/ui.js";
+import { bindItemPhoto, itemPhotoMarkup } from "../components/item-photo.js";
 import { totalCost, validateMeat } from "../meat-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -53,6 +54,7 @@ function purchaseRow(item, cook) {
     <div class="meat-summary">
       <div class="meat-title-line"><strong>${escapeHtml(item.type)}</strong>${badge}</div>
       <div class="ld meat-details"><span>${item.pounds} lb · ${formatMoney(item.price_per_pound)}/lb · ${escapeHtml(item.store || "Store not noted")} · ${formatDate(item.purchased_on)}</span><i></i><b>${formatMoney(totalCost(item.pounds, item.price_per_pound))}</b></div>
+      ${itemPhotoMarkup(item)}
       <div class="row-actions"><button class="cc edit-meat" type="button">Edit</button><button class="cc delete-meat" type="button">Delete</button></div>
       <div class="delete-confirm" hidden></div>
     </div>
@@ -90,6 +92,7 @@ export function mountMeatView(container) {
     const id = Number(row.dataset.id);
     const summary = row.querySelector(".meat-summary");
     const editForm = row.querySelector(".edit-form");
+    bindItemPhoto(row.querySelector("[data-photo]"), "meat", id);
     row.querySelector(".edit-meat").addEventListener("click", () => {
       summary.hidden = true;
       editForm.hidden = false;

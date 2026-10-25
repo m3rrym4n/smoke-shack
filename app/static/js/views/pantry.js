@@ -1,5 +1,6 @@
 import { mountMeatView } from "./meat.js";
 import { mountPelletsView } from "./pellets.js";
+import { mountSpicesView } from "./spices.js";
 
 export function mountPantryView(container, tab) {
   container.innerHTML = `<section class="pantry-shell">
@@ -16,9 +17,5 @@ export function mountPantryView(container, tab) {
   const pantryView = container.querySelector(".pantry-view");
   if (tab === "pellets") return mountPelletsView(pantryView);
   if (tab === "meat") return mountMeatView(pantryView);
-  pantryView.innerHTML = `<section class="board coming-soon">
-    <h1 class="hd">Spices</h1>
-    <p>Spice rack coming next</p>
-  </section>`;
-  return () => {};
+  return mountSpicesView(pantryView);
 }

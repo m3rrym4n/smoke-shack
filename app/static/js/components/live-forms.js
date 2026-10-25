@@ -1,4 +1,4 @@
-import { createCookEvent, createPlannedCook, deleteCook, deleteCookEvent, deletePhoto, updateCook, updateCookEvent, uploadCookPhoto } from "../api.js";
+import { createCookEvent, createPlannedCook, deleteCook, deleteCookEvent, deleteCookPhoto, updateCook, updateCookEvent, uploadCookPhoto } from "../api.js";
 import { availableMeat, meatOptionLabel, pelletOptionLabel, validatePelletsUsed } from "../order-pad-logic.js";
 import { PHOTO_MAX_BYTES, closedCookReadOnlyFields, downscaleSize, orderPadSavedMessage, orderPhotos, orderPlannedCooks, photoErrorMessage, validatePhotoFile } from "../live-logic.js";
 import { confirmDelete } from "./ui.js";
@@ -81,7 +81,7 @@ export function bindPhotoGallery(container, { cookId } = {}) {
     if (!button) return;
     button.addEventListener("click", () => confirmDelete(card.querySelector(".photo-confirm"), async () => {
       try {
-        await deletePhoto(Number(card.dataset.photoId));
+        await deleteCookPhoto(Number(card.dataset.photoId));
         card.remove();
         if (!gallery.querySelector(".cook-photo")) gallery.innerHTML = "<p>No photos yet.</p>";
       } catch (error) {

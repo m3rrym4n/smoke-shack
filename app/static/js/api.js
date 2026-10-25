@@ -12,7 +12,9 @@ async function requestJson(path, options = {}) {
     } catch {
       // The response was not JSON; retain the HTTP status description.
     }
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 204) return null;
   return response.json();
@@ -100,7 +102,7 @@ export function uploadCookPhoto(cookId, file) {
   return requestJson(`/api/cooks/${cookId}/photos`, { method: "POST", body });
 }
 
-export function deletePhoto(photoId) {
+export function deleteCookPhoto(photoId) {
   return sendJson("DELETE", `/api/photos/${photoId}`);
 }
 
@@ -153,6 +155,20 @@ export function updatePellet(pelletId, body) {
 
 export function deletePellet(pelletId) {
   return sendJson("DELETE", `/api/pellets/${pelletId}`);
+}
+
+export function getSpices() {
+  return getJson("/api/spices");
+}
+
+export function uploadPhoto(kind, id, blob) {
+  const body = new FormData();
+  body.append("file", blob, "photo.jpg");
+  return requestJson(`/api/${kind}/${id}/photo`, { method: "POST", body });
+}
+
+export function deletePhoto(kind, id) {
+  return requestJson(`/api/${kind}/${id}/photo`, { method: "DELETE" });
 }
 
 export function getNotes(scope = "all", cookId = null) {

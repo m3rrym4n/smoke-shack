@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add reusable photo upload, resize, thumbnail, lightbox, replace, and removal controls to every Pantry tab.
 - Add secure photo uploads for pellet, meat, and spice pantry items.
 - Consolidate Pellets and Meat under a responsive Pantry navigation shell.
 - Add a seeded Meat Church spice rack catalog and CRUD API.
