@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Pick multiple Spice Rack rubs on cook orders and show them across cook details, logs, and exports.
 - Add the grouped, filterable Spice Rack with custom blend markers and rub create, edit, and delete controls.
 - Add reusable photo upload, resize, thumbnail, lightbox, replace, and removal controls to every Pantry tab.
 - Add secure photo uploads for pellet, meat, and spice pantry items.

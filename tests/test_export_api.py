@@ -81,7 +81,7 @@ def test_cooks_csv_headers_values_durations_filters_and_formula_escaping(
     assert row["cooldown_duration_seconds"] == "600"
     assert row["grill_duration_seconds"] == "4500"
     assert row["effective_setpoint"] == "275.0"
-    assert row["spices"] == "Holy Cow"
+    assert row["spices"] == "Meat Church Holy Cow"
     assert row["seasonings"] == "'=SUM(A1)"
     assert row["sauces"] == "'+Sauce"
     assert row["results_text"] == "'@great"

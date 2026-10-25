@@ -139,7 +139,7 @@ def cooks_csv(
                     cook.time_to_done_seconds,
                     cook.effective_setpoint,
                     cook.rotisserie,
-                    ", ".join(spice.name for spice in cook.spices),
+                    ", ".join(f"{spice.brand} {spice.name}" for spice in cook.spices),
                     cook.seasonings,
                     cook.sauces,
                     cook.prep_time_minutes,

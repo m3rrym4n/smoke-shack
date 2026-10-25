@@ -13,6 +13,7 @@ def render_history_editor() -> str:
         "meat_id": 1,
         "pellet_id": 2,
         "seasonings": "Salt",
+        "spices": [{"id": 7, "brand": "Meat Church", "name": "Holy Cow", "size_oz": 12}],
         "sauces": "Vinegar",
         "prep_time_minutes": 20,
         "pellets_used_lb": 1.5,
@@ -22,11 +23,13 @@ def render_history_editor() -> str:
     meat = [{"id": 1, "type": "Pork butt", "pounds": 8}]
     pellets = [{"id": 2, "vendor": "Bear Mountain", "product_name": "Hickory"}]
     photos = [{"id": 41, "url": "/api/photos/41/file"}]
+    spices = json.dumps(cook["spices"])
     script = (
         f"import {{ orderPadMarkup }} from {json.dumps(module)}; "
         f"console.log(orderPadMarkup({json.dumps(cook)}, {json.dumps(meat)}, "
         f"{json.dumps(pellets)}, [{json.dumps(cook)}], "
-        f'{{mode:"history", banner:"Editing cook #12", photos:{json.dumps(photos)}}}));'
+        f'{{mode:"history", banner:"Editing cook #12", photos:{json.dumps(photos)}, '
+        f"spices:{spices}}}));"
     )
     result = subprocess.run(
         ["node", "--input-type=module", "--eval", script],
@@ -44,6 +47,7 @@ def test_history_editor_reuses_full_order_pad_and_existing_photos() -> None:
     assert "Editing cook #12" in markup
     assert 'href="#cooks/12"' in markup
     assert 'name="seasonings" value="Salt"' in markup
+    assert "Choose rubs" in markup
     assert 'name="results_text"' in markup
     assert 'name="pellets_used_lb"' in markup
     assert 'name="photos" type="file"' in markup

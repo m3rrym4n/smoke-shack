@@ -1,5 +1,6 @@
 import { getCookLogCooks } from "../api.js";
 import { cookTag, elapsedSeconds, formatDuration, isLiveCook, orderCookLogRows } from "../cooks-logic.js";
+import { seasoningText } from "../spice-picker-logic.js";
 
 const PAGE_SIZE = 20;
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -19,7 +20,8 @@ function row(cook, now) {
   const tag = cookTag(cook);
   const tagMarkup = tag ? `<span class="cook-tag ${planned ? "planned-tag" : tag === "Incomplete" ? "incomplete" : "progress-tag"}">${tag}</span>` : "";
   const seconds = isLiveCook(cook) ? elapsedSeconds(cook, now) : cook.grill_duration_seconds;
-  return `<a class="cook-row${planned ? " planned" : ""}" href="#cooks/${cook.id}"><div><span class="cook-date">${cookDate(cook.started_at)}</span><strong>${escapeHtml(meat)}</strong>${tagMarkup}</div><span>${planned ? "—" : setpoint}</span><span>${planned ? "—" : formatDuration(seconds)}</span><span class="cook-arrow" aria-hidden="true">›</span></a>`;
+  const rubs = seasoningText(cook);
+  return `<a class="cook-row${planned ? " planned" : ""}" href="#cooks/${cook.id}"><div><span class="cook-date">${cookDate(cook.started_at)}</span><strong>${escapeHtml(meat)}</strong>${rubs ? `<small class="cook-row-rubs">${escapeHtml(rubs)}</small>` : ""}${tagMarkup}</div><span>${planned ? "—" : setpoint}</span><span>${planned ? "—" : formatDuration(seconds)}</span><span class="cook-arrow" aria-hidden="true">›</span></a>`;
 }
 
 export function mountCookList(container) {

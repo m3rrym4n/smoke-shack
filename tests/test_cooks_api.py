@@ -304,11 +304,32 @@ def test_cook_spices_create_replace_preserve_validate_and_delete(
 
     assert created.status_code == 201
     assert created.json()["spices"] == [
-        {"id": pepper_id, "name": "Pepper", "category": "Brand A", "is_custom": False},
-        {"id": salt_id, "name": "Salt", "category": "Brand B", "is_custom": False},
+        {
+            "id": pepper_id,
+            "name": "Pepper",
+            "brand": "Brand A",
+            "category": "Brand A",
+            "is_custom": False,
+            "photo_url": None,
+        },
+        {
+            "id": salt_id,
+            "name": "Salt",
+            "brand": "Brand B",
+            "category": "Brand B",
+            "is_custom": False,
+            "photo_url": None,
+        },
     ]
     assert replaced.json()["spices"] == [
-        {"id": salt_id, "name": "Salt", "category": "Brand B", "is_custom": False}
+        {
+            "id": salt_id,
+            "name": "Salt",
+            "brand": "Brand B",
+            "category": "Brand B",
+            "is_custom": False,
+            "photo_url": None,
+        }
     ]
     assert preserved.json()["spices"] == replaced.json()["spices"]
     assert preserved.json()["seasonings"] == "extra heavy"

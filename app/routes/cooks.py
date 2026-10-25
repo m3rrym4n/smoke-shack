@@ -61,8 +61,10 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
             {
                 "id": spice.id,
                 "name": spice.name,
+                "brand": spice.brand,
                 "category": spice.brand,
                 "is_custom": spice.is_custom,
+                "photo_url": spice.photo_url,
             }
             for spice in cook.spices
         ],
