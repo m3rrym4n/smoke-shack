@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add real clock-hour markers and cook start time to cook temperature charts.
+- Add real clock-hour ticks on the x axis and cook start time to cook temperature charts.
 
 - Pick multiple Spice Rack rubs on cook orders and show them across cook details, logs, and exports.
 - Add the grouped, filterable Spice Rack with custom blend markers and rub create, edit, and delete controls.

@@ -3,6 +3,7 @@ import { hourTicks } from "../chart-logic.js";
 const WIDTH = 1100;
 const HEIGHT = 316;
 const PLOT = { left: 62, right: 28, top: 28, bottom: 42 };
+const HOUR_TICK_HALF_HEIGHT = 4;
 const MAX_POINTS = 500;
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -78,7 +79,8 @@ export function chartMarkup(samples, events, cook) {
   }).join("");
   const grid = ticks.map((tick) => `<line class="chart-grid" x1="${PLOT.left}" x2="${WIDTH - PLOT.right}" y1="${y(tick)}" y2="${y(tick)}"/><text class="chart-axis" x="${PLOT.left - 10}" y="${y(tick) + 5}">${Math.round(tick)}°</text>`).join("");
   const hours = hourTicks(cook.started_at, lastElapsed).map((tick) => ({ ...tick, x: x(tick.elapsed) })).filter((tick) => tick.x - PLOT.left >= 36 && WIDTH - PLOT.right - tick.x >= 36);
-  const hourGrid = hours.map((tick) => `<line class="chart-hour" x1="${tick.x}" x2="${tick.x}" y1="${PLOT.top}" y2="${HEIGHT - PLOT.bottom}"/><text class="chart-hour-label" x="${tick.x}" y="${HEIGHT - 12}">${escapeHtml(tick.label)}</text>`).join("");
+  const plotBottom = HEIGHT - PLOT.bottom;
+  const hourGrid = hours.map((tick) => `<line class="chart-hour-tick" x1="${tick.x}" x2="${tick.x}" y1="${plotBottom - HOUR_TICK_HALF_HEIGHT}" y2="${plotBottom + HOUR_TICK_HALF_HEIGHT}"/><text class="chart-hour-label" x="${tick.x}" y="${HEIGHT - 12}">${escapeHtml(tick.label)}</text>`).join("");
   return `<section class="board chart-board">
     <div class="chart-heading"><h2 class="hd">Chalked up: this cook</h2><div class="chart-legend"><span class="pit-key">Pit</span><span class="probe-key">Probe 1</span><span class="probe-key probe-two-key">Probe 2</span>${target == null ? "" : '<span class="target-key">Target</span>'}</div></div>
     <div class="chart-scroll" tabindex="0" aria-label="Temperature chart; scroll horizontally on small screens">
