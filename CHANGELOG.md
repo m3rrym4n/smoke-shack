@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep the final positive probe target on finished-cook charts and mark when it was reached.
 - Add real clock-hour ticks on the x axis and cook start time to cook temperature charts.
 
 - Pick multiple Spice Rack rubs on cook orders and show them across cook details, logs, and exports.

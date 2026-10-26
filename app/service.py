@@ -389,6 +389,7 @@ class CookService:
                 and connected
                 and reading is not None
                 and target is not None
+                and target > 0
                 and reading >= target
             ):
                 if cook.time_to_done_seconds is None:

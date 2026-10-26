@@ -361,6 +361,26 @@ def test_probe_done_uses_connected_probe_target(
     assert kinds(sessions, cook.id).count("probe_done") == 1
 
 
+def test_probe_done_ignores_zero_target(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(snap(setpoint=275, fire="Running"))
+    assert cook is not None
+    clock.advance(minutes=45)
+    cook = service.process(
+        snap(
+            setpoint=275,
+            fire="Running",
+            probe1=203,
+            probe1_connected=True,
+            probe1_target=0,
+        )
+    )
+    assert cook is not None and cook.time_to_done_seconds is None
+    assert "probe_done" not in kinds(sessions, cook.id)
+
+
 def test_warning_sensor_change_records_warning(
     sessions: sessionmaker[Session], clock: FakeClock
 ) -> None:

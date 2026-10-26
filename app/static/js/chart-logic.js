@@ -2,6 +2,35 @@ function formatter(timeZone, options) {
   return new Intl.DateTimeFormat(undefined, { ...options, ...(timeZone ? { timeZone } : {}) });
 }
 
+function finiteNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+export function finalTarget(samples) {
+  for (let index = samples.length - 1; index >= 0; index -= 1) {
+    const targets = [1, 2].map((probe) => ({
+      probe,
+      value: finiteNumber(samples[index][`probe${probe}_target`]),
+    })).filter((target) => target.value !== null && target.value > 0);
+    if (targets.length) return targets.reduce((largest, target) => target.value > largest.value ? target : largest);
+  }
+  return null;
+}
+
+export function reachedTarget(samples, target) {
+  if (!target || ![1, 2].includes(target.probe)) return null;
+  const targetValue = finiteNumber(target.value);
+  if (targetValue === null || targetValue <= 0) return null;
+  for (const sample of samples) {
+    const temp = finiteNumber(sample[`probe${target.probe}`]);
+    const elapsed = finiteNumber(sample.elapsed_seconds);
+    if (temp !== null && elapsed !== null && temp >= targetValue) return { elapsed, temp };
+  }
+  return null;
+}
+
 export function hourTicks(startedAtIso, lastElapsedSeconds, timeZone = undefined) {
   if (!startedAtIso) return [];
   const startedAt = new Date(startedAtIso);
