@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Show the cook's startup, cooking, or complete status on share cards and cook details.
 - Keep the final positive probe target on finished-cook charts and mark when it was reached.
 - Add real clock-hour ticks on the x axis and cook start time to cook temperature charts.
 

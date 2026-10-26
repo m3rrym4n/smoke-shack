@@ -3,6 +3,7 @@ import { chartMarkup } from "../components/chart.js";
 import { cookLogMarkup } from "../components/cook-log.js";
 import { cookNotesMarkup } from "../components/cook-notes.js";
 import { bindCookExport } from "../components/cook-export.js";
+import { cookStatusBadgeMarkup } from "../cook-export-logic.js";
 import { gaugeLogoMarkup, gaugeSvg } from "../components/gauge.js";
 import { bindLiveForms, bindPhotoGallery, orderPadMarkup, photoGalleryMarkup, pinBoardMarkup } from "../components/live-forms.js";
 import { clampPercent, orderPlannedCooks, phaseDurations, phasePercentages, selectOrderPadMode } from "../live-logic.js";
@@ -60,7 +61,7 @@ function heroMarkup(cook, sample, active, historical, showcase, grillIdentity) {
   return `<div class="live-hero">
     <section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">${active ? escapeHtml(cook.status) : "fire's out"}</span></div>${gaugeSvg(sample?.pit_temp, setpoint, showcase?.logo_url)}${showcaseMarkup(showcase, grillIdentity, window.innerWidth, !historical)}</section>
     <div class="live-details">
-      <section class="board special-board"><div class="board-title"><h2 class="hd">${historical ? "Cook Special" : "Today's Special"}</h2>${active ? "" : `<span class="cook-label">${historical ? "cook #" + cook.id : "last cook"}</span>`}</div>
+      <section class="board special-board"><div class="board-title"><h2 class="hd">${historical ? "Cook Special" : "Today's Special"}</h2><div class="cook-heading-badges">${historical ? cookStatusBadgeMarkup(cook) : ""}${active ? "" : `<span class="cook-label">${historical ? "cook #" + cook.id : "last cook"}</span>`}</div></div>
         <div class="meat-name">${escapeHtml(meat)} ${weight}</div><p class="mut special-meta">${details || "Cook details not set"}</p>
         <div class="phase-bar" aria-label="Cook phase progress"><span class="startup" style="width:${widths.startup}%"></span><span class="cooking" style="width:${widths.cook}%"></span><span class="cooldown" style="width:${widths.cooldown}%"></span></div>
         <div class="phase-list">${leader("Startup", duration(times.startup), active && cook.status === "startup")}${leader("Cook", duration(times.cook), active && cook.status === "cook")}${leader("Cool down", duration(times.cooldown), active && cook.status === "cooldown")}${leader("Total grill time", duration(times.total), false, true)}</div>
