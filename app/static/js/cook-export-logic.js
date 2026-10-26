@@ -2,6 +2,17 @@ function clean(value) {
   return String(value ?? "").trim();
 }
 
+export function cookStatusBadge(cook) {
+  if (cook?.status === "startup") return { key: "startup", label: "STARTUP" };
+  if (cook?.status === "cook") return { key: "cooking", label: "COOKING" };
+  return { key: "complete", label: "COMPLETE" };
+}
+
+export function cookStatusBadgeMarkup(cook) {
+  const badge = cookStatusBadge(cook);
+  return `<span class="cook-status-badge ${badge.key}">${badge.label}</span>`;
+}
+
 export function pelletLine(pellet) {
   const name = [clean(pellet?.vendor), clean(pellet?.product_name)].filter(Boolean).join(" ");
   return name ? `${name} Pellets` : "";

@@ -4,6 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 MODULE = Path("app/static/js/cook-export-logic.js").resolve().as_uri()
 
 
@@ -26,6 +28,30 @@ def test_export_filename_uses_cook_date_and_meat_slug() -> None:
     assert run(f"logic.buildExportFilename({json.dumps(cook)})") == (
         "smoke-stack-2026-10-16-pork-picnic-shoulder.png"
     )
+
+
+@pytest.mark.parametrize(
+    ("cook", "expected"),
+    [
+        ({"status": "startup"}, {"key": "startup", "label": "STARTUP"}),
+        ({"status": "cook"}, {"key": "cooking", "label": "COOKING"}),
+        ({"status": "cooldown"}, {"key": "complete", "label": "COMPLETE"}),
+        ({"status": "closed"}, {"key": "complete", "label": "COMPLETE"}),
+        (
+            {"status": "closed", "incomplete": True},
+            {"key": "complete", "label": "COMPLETE"},
+        ),
+        ({}, {"key": "complete", "label": "COMPLETE"}),
+    ],
+)
+def test_cook_status_badge(cook: dict[str, object], expected: dict[str, str]) -> None:
+    assert run(f"logic.cookStatusBadge({json.dumps(cook)})") == expected
+
+
+def test_share_card_status_badge_markup_has_label_without_data_gap_text() -> None:
+    markup = run('logic.cookStatusBadgeMarkup({status: "cook", has_gap: true})')
+    assert "COOKING" in markup
+    assert "DATA GAP" not in markup
 
 
 def test_pellet_line_includes_vendor_product_and_suffix() -> None:
