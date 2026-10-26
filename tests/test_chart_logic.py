@@ -62,6 +62,34 @@ def chart_markup(started_at: str, elapsed: int) -> str:
     return result.stdout
 
 
+def target_label_positions(reached_elapsed: int, total_elapsed: int) -> tuple[float, float]:
+    module = Path("app/static/js/components/chart.js").resolve().as_uri()
+    samples = [
+        {"elapsed_seconds": 0, "pit_temp": 225, "probe1": 180, "probe1_target": 205},
+        {
+            "elapsed_seconds": reached_elapsed - 1,
+            "pit_temp": 225,
+            "probe1": 204,
+            "probe1_target": 205,
+        },
+        {"elapsed_seconds": reached_elapsed, "pit_temp": 225, "probe1": 205, "probe1_target": 205},
+        {"elapsed_seconds": total_elapsed, "pit_temp": 75, "probe1": 205, "probe1_target": 205},
+    ]
+    arguments = json.dumps([samples, [], {"started_at": "2026-10-25T22:00:00Z"}])
+    script = f'import {{ chartMarkup }} from "{module}"; console.log(chartMarkup(...{arguments}))'
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    done = re.search(r'<text class="target-label"[^>]* y="([\d.]+)"', result.stdout)
+    reached = re.search(r'<text class="target-marker-label"[^>]* y="([\d.]+)"', result.stdout)
+    assert done is not None
+    assert reached is not None
+    return float(done.group(1)), float(reached.group(1))
+
+
 def test_hour_ticks_use_local_clock_hours() -> None:
     assert hour_ticks("2026-10-25T10:01:00-07:00", 2 * 3600 + 34 * 60) == [
         {"elapsed": 3540, "label": "11 AM"},
@@ -164,3 +192,13 @@ def test_chart_keeps_positive_target_after_trailing_zeroes() -> None:
     )
     assert "done at 203°" in result.stdout
     assert "target-marker" in result.stdout
+
+
+def test_target_labels_are_spaced_when_target_is_reached_near_end() -> None:
+    done_y, reached_y = target_label_positions(96, 100)
+    assert abs(done_y - reached_y) >= 20
+
+
+def test_target_labels_are_spaced_when_target_is_reached_mid_cook() -> None:
+    done_y, reached_y = target_label_positions(50, 100)
+    assert abs(done_y - reached_y) >= 20

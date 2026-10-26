@@ -89,15 +89,22 @@ export function chartMarkup(samples, events, cook) {
   const hours = hourTicks(cook.started_at, lastElapsed).map((tick) => ({ ...tick, x: x(tick.elapsed) })).filter((tick) => tick.x - PLOT.left >= 36 && WIDTH - PLOT.right - tick.x >= 36);
   const plotBottom = HEIGHT - PLOT.bottom;
   const hourGrid = hours.map((tick) => `<line class="chart-hour-tick" x1="${tick.x}" x2="${tick.x}" y1="${plotBottom - HOUR_TICK_HALF_HEIGHT}" y2="${plotBottom + HOUR_TICK_HALF_HEIGHT}"/><text class="chart-hour-label" x="${tick.x}" y="${HEIGHT - 12}">${escapeHtml(tick.label)}</text>`).join("");
+  const targetY = target === null ? null : y(target.value);
+  const doneLabelY = targetY === null ? null : targetY - 8;
   const reachedMarker = reached === null ? "" : (() => {
     const markerX = x(reached.elapsed);
     const markerY = y(reached.temp);
+    const inLastFifteenPercent = markerX >= PLOT.left + plotWidth * 0.85;
     const nearRight = markerX > WIDTH - PLOT.right - 190;
-    const labelX = markerX + (nearRight ? -10 : 10);
-    const labelY = Math.max(PLOT.top + 16, markerY - 12);
+    const sharedLabelX = Math.min(WIDTH - PLOT.right - 8, markerX - 16);
+    const labelX = inLastFifteenPercent ? sharedLabelX : markerX + (nearRight ? -10 : 10);
+    const labelY = doneLabelY - 22 < PLOT.top ? targetY + 26 : doneLabelY - 22;
     const label = `reached ${Math.round(target.value)}° at ${clockLabel(cook.started_at, reached.elapsed)}`;
-    return `<g class="target-reached" aria-label="${escapeHtml(label)}"><circle class="target-marker target-marker-probe-${target.probe}" cx="${markerX}" cy="${markerY}" r="6"/><text class="target-marker-label" x="${labelX}" y="${labelY}" text-anchor="${nearRight ? "end" : "start"}">${escapeHtml(label)}</text></g>`;
+    return `<g class="target-reached" aria-label="${escapeHtml(label)}"><circle class="target-marker target-marker-probe-${target.probe}" cx="${markerX}" cy="${markerY}" r="6"/><text class="target-marker-label" x="${labelX}" y="${labelY}" text-anchor="${inLastFifteenPercent || nearRight ? "end" : "start"}">${escapeHtml(label)}</text></g>`;
   })();
+  const targetLabelX = reached !== null && x(reached.elapsed) >= PLOT.left + plotWidth * 0.85
+    ? Math.min(WIDTH - PLOT.right - 8, x(reached.elapsed) - 16)
+    : WIDTH - PLOT.right - 8;
   return `<section class="board chart-board">
     <div class="chart-heading"><h2 class="hd">Chalked up: this cook</h2><div class="chart-legend"><span class="pit-key">Pit</span><span class="probe-key">Probe 1</span><span class="probe-key probe-two-key">Probe 2</span>${target === null ? "" : '<span class="target-key">Target</span>'}</div></div>
     <div class="chart-scroll" tabindex="0" aria-label="Temperature chart; scroll horizontally on small screens">
@@ -106,7 +113,7 @@ export function chartMarkup(samples, events, cook) {
         <rect class="startup-band" x="${PLOT.left}" y="${PLOT.top}" width="${Math.max(0, x(Math.min(startupSeconds, lastElapsed)) - PLOT.left)}" height="${plotHeight}"/>
         ${grid}
         ${hourGrid}
-        ${target === null ? "" : `<line class="target-line" x1="${PLOT.left}" x2="${WIDTH - PLOT.right}" y1="${y(target.value)}" y2="${y(target.value)}"/><text class="target-label" x="${WIDTH - PLOT.right - 8}" y="${y(target.value) - 8}">done at ${Math.round(target.value)}°${reached === null ? " (not reached)" : ""}</text>`}
+        ${target === null ? "" : `<line class="target-line" x1="${PLOT.left}" x2="${WIDTH - PLOT.right}" y1="${targetY}" y2="${targetY}"/><text class="target-label" x="${targetLabelX}" y="${doneLabelY}">done at ${Math.round(target.value)}°${reached === null ? " (not reached)" : ""}</text>`}
         <g class="chalk-lines" filter="url(#chalk-displacement)"><path class="pit-line" d="${linePath(points, "pit_temp", x, y)}"/><path class="probe-line" d="${linePath(points, "probe1", x, y)}"/><path class="probe-line probe-two" d="${linePath(points, "probe2", x, y)}"/></g>
         ${reachedMarker}
         ${pins}
