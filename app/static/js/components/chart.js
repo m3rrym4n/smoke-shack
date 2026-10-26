@@ -1,6 +1,9 @@
+import { hourTicks } from "../chart-logic.js";
+
 const WIDTH = 1100;
 const HEIGHT = 316;
 const PLOT = { left: 62, right: 28, top: 28, bottom: 42 };
+const HOUR_TICK_HALF_HEIGHT = 4;
 const MAX_POINTS = 500;
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -47,6 +50,13 @@ function elapsedLabel(seconds) {
   return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
+function startLabel(startedAtIso) {
+  if (!startedAtIso) return "0m";
+  const startedAt = new Date(startedAtIso);
+  if (!Number.isFinite(startedAt.getTime())) return "0m";
+  return `0m · ${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(startedAt)}`;
+}
+
 export function chartMarkup(samples, events, cook) {
   if (!samples.length) return `<section class="board chart-board"><h2 class="hd">Chalked up: this cook</h2><p class="mut">No temperature samples yet.</p></section>`;
   const points = downsample(samples);
@@ -68,6 +78,9 @@ export function chartMarkup(samples, events, cook) {
     return `<g aria-label="${escapeHtml(event.title)}"><line class="event-stem" x1="${pinX}" x2="${pinX}" y1="${PLOT.top}" y2="${HEIGHT - PLOT.bottom}"/><circle class="event-pin" cx="${pinX}" cy="${PLOT.top + 17}" r="15"/><text class="event-pin-label" x="${pinX}" y="${PLOT.top + 23}">${pinNumber.get(event.id)}</text></g>`;
   }).join("");
   const grid = ticks.map((tick) => `<line class="chart-grid" x1="${PLOT.left}" x2="${WIDTH - PLOT.right}" y1="${y(tick)}" y2="${y(tick)}"/><text class="chart-axis" x="${PLOT.left - 10}" y="${y(tick) + 5}">${Math.round(tick)}°</text>`).join("");
+  const hours = hourTicks(cook.started_at, lastElapsed).map((tick) => ({ ...tick, x: x(tick.elapsed) })).filter((tick) => tick.x - PLOT.left >= 36 && WIDTH - PLOT.right - tick.x >= 36);
+  const plotBottom = HEIGHT - PLOT.bottom;
+  const hourGrid = hours.map((tick) => `<line class="chart-hour-tick" x1="${tick.x}" x2="${tick.x}" y1="${plotBottom - HOUR_TICK_HALF_HEIGHT}" y2="${plotBottom + HOUR_TICK_HALF_HEIGHT}"/><text class="chart-hour-label" x="${tick.x}" y="${HEIGHT - 12}">${escapeHtml(tick.label)}</text>`).join("");
   return `<section class="board chart-board">
     <div class="chart-heading"><h2 class="hd">Chalked up: this cook</h2><div class="chart-legend"><span class="pit-key">Pit</span><span class="probe-key">Probe 1</span><span class="probe-key probe-two-key">Probe 2</span>${target == null ? "" : '<span class="target-key">Target</span>'}</div></div>
     <div class="chart-scroll" tabindex="0" aria-label="Temperature chart; scroll horizontally on small screens">
@@ -75,10 +88,11 @@ export function chartMarkup(samples, events, cook) {
         <defs><filter id="chalk-displacement"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="7" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="2.5"/></filter></defs>
         <rect class="startup-band" x="${PLOT.left}" y="${PLOT.top}" width="${Math.max(0, x(Math.min(startupSeconds, lastElapsed)) - PLOT.left)}" height="${plotHeight}"/>
         ${grid}
+        ${hourGrid}
         ${target == null ? "" : `<line class="target-line" x1="${PLOT.left}" x2="${WIDTH - PLOT.right}" y1="${y(target)}" y2="${y(target)}"/><text class="target-label" x="${WIDTH - PLOT.right - 8}" y="${y(target) - 8}">done at ${Math.round(target)}°</text>`}
         <g class="chalk-lines" filter="url(#chalk-displacement)"><path class="pit-line" d="${linePath(points, "pit_temp", x, y)}"/><path class="probe-line" d="${linePath(points, "probe1", x, y)}"/><path class="probe-line probe-two" d="${linePath(points, "probe2", x, y)}"/></g>
         ${pins}
-        <text class="chart-axis" x="${PLOT.left}" y="${HEIGHT - 12}">0m</text><text class="chart-axis chart-axis-end" x="${WIDTH - PLOT.right}" y="${HEIGHT - 12}">${elapsedLabel(lastElapsed)}</text>
+        <text class="chart-axis chart-axis-start" x="${PLOT.left}" y="${HEIGHT - 12}">${escapeHtml(startLabel(cook.started_at))}</text><text class="chart-axis chart-axis-end" x="${WIDTH - PLOT.right}" y="${HEIGHT - 12}">${elapsedLabel(lastElapsed)}</text>
       </svg>
     </div>
   </section>`;
