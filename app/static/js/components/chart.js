@@ -1,4 +1,5 @@
 import { finalTarget, hourTicks, localClockTime, reachedTarget } from "../chart-logic.js";
+import { phaseDurations } from "../live-logic.js";
 
 const WIDTH = 1100;
 const HEIGHT = 316;
@@ -52,10 +53,10 @@ function elapsedLabel(seconds) {
 }
 
 function startLabel(startedAtIso) {
-  if (!startedAtIso) return "0m";
+  if (!startedAtIso) return "";
   const startedAt = new Date(startedAtIso);
-  if (!Number.isFinite(startedAt.getTime())) return "0m";
-  return `0m · ${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(startedAt)}`;
+  if (!Number.isFinite(startedAt.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(startedAt);
 }
 
 export function chartMarkup(samples, events, cook) {
@@ -80,9 +81,21 @@ export function chartMarkup(samples, events, cook) {
     return `<g aria-label="${escapeHtml(event.title)}"><line class="event-stem" x1="${pinX}" x2="${pinX}" y1="${PLOT.top}" y2="${HEIGHT - PLOT.bottom}"/><circle class="event-pin" cx="${pinX}" cy="${PLOT.top + 17}" r="15"/><text class="event-pin-label" x="${pinX}" y="${PLOT.top + 23}">${pinNumber.get(event.id)}</text></g>`;
   }).join("");
   const grid = ticks.map((tick) => `<line class="chart-grid" x1="${PLOT.left}" x2="${WIDTH - PLOT.right}" y1="${y(tick)}" y2="${y(tick)}"/><text class="chart-axis" x="${PLOT.left - 10}" y="${y(tick) + 5}">${Math.round(tick)}°</text>`).join("");
-  const hours = hourTicks(cook.started_at, lastElapsed).map((tick) => ({ ...tick, x: x(tick.elapsed) })).filter((tick) => tick.x - PLOT.left >= 36 && WIDTH - PLOT.right - tick.x >= 36);
+  const durations = phaseDurations(cook);
+  const cooldownStart = cook.cook_ended_at ? durations.startup + durations.cook : null;
+  const finalTick = cooldownStart === null ? null : {
+    elapsed: cooldownStart,
+    label: localClockTime(cook.started_at, cooldownStart),
+    x: x(cooldownStart),
+  };
+  const hours = hourTicks(cook.started_at, lastElapsed)
+    .map((tick) => ({ ...tick, x: x(tick.elapsed) }))
+    .filter((tick) => tick.x - PLOT.left >= 70
+      && WIDTH - PLOT.right - tick.x >= 36
+      && (finalTick === null || (tick.elapsed < finalTick.elapsed && finalTick.x - tick.x >= 36)));
   const plotBottom = HEIGHT - PLOT.bottom;
   const hourGrid = hours.map((tick) => `<line class="chart-hour-tick" x1="${tick.x}" x2="${tick.x}" y1="${plotBottom - HOUR_TICK_HALF_HEIGHT}" y2="${plotBottom + HOUR_TICK_HALF_HEIGHT}"/><text class="chart-hour-label" x="${tick.x}" y="${HEIGHT - 12}">${escapeHtml(tick.label)}</text>`).join("");
+  const finalTickMarkup = finalTick === null ? "" : `<line class="chart-hour-tick chart-cooldown-tick" x1="${finalTick.x}" x2="${finalTick.x}" y1="${plotBottom - HOUR_TICK_HALF_HEIGHT}" y2="${plotBottom + HOUR_TICK_HALF_HEIGHT}"/><text class="chart-hour-label chart-cooldown-label${WIDTH - finalTick.x < 70 ? " chart-hour-label-end" : ""}" x="${finalTick.x}" y="${HEIGHT - 12}">${escapeHtml(finalTick.label)}</text>`;
   const targetY = target === null ? null : y(target.value);
   const doneLabelY = targetY === null ? null : targetY - 8;
   const reachedMarker = reached === null ? "" : (() => {
@@ -107,11 +120,12 @@ export function chartMarkup(samples, events, cook) {
         <rect class="startup-band" x="${PLOT.left}" y="${PLOT.top}" width="${Math.max(0, x(Math.min(startupSeconds, lastElapsed)) - PLOT.left)}" height="${plotHeight}"/>
         ${grid}
         ${hourGrid}
+        ${finalTickMarkup}
         ${target === null ? "" : `<line class="target-line" x1="${PLOT.left}" x2="${WIDTH - PLOT.right}" y1="${targetY}" y2="${targetY}"/><text class="target-label" x="${targetLabelX}" y="${doneLabelY}">done at ${Math.round(target.value)}°${reached === null ? " (not reached)" : ""}</text>`}
         <g class="chalk-lines" filter="url(#chalk-displacement)"><path class="pit-line" d="${linePath(points, "pit_temp", x, y)}"/><path class="probe-line" d="${linePath(points, "probe1", x, y)}"/><path class="probe-line probe-two" d="${linePath(points, "probe2", x, y)}"/></g>
         ${reachedMarker}
         ${pins}
-        <text class="chart-axis chart-axis-start" x="${PLOT.left}" y="${HEIGHT - 12}">${escapeHtml(startLabel(cook.started_at))}</text><text class="chart-axis chart-axis-end" x="${WIDTH - PLOT.right}" y="${HEIGHT - 12}">${elapsedLabel(lastElapsed)}</text>
+        <text class="chart-axis chart-axis-start" x="${PLOT.left}" y="${HEIGHT - 12}">${escapeHtml(startLabel(cook.started_at))}</text>
       </svg>
     </div>
   </section>`;

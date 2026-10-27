@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- End finished-cook chart ticks at cool-down and remove clipped start and total-time labels.
 - Space finished-cook target labels apart and keep late target labels clear of the chart edge.
 - Show zero on the Pit gauge and unplugged probe cards after a cook finishes.
 - Show the cook's startup, cooking, or complete status on share cards and cook details.
