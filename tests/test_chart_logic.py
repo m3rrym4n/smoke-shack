@@ -37,7 +37,7 @@ def hour_ticks(started_at: str, elapsed: int) -> object:
     return json.loads(result.stdout)
 
 
-def chart_markup(started_at: str, elapsed: int) -> str:
+def chart_markup(started_at: str, elapsed: int, cook: dict[str, object] | None = None) -> str:
     module = Path("app/static/js/components/chart.js").resolve().as_uri()
     arguments = json.dumps(
         [
@@ -46,7 +46,7 @@ def chart_markup(started_at: str, elapsed: int) -> str:
                 {"elapsed_seconds": elapsed, "pit_temp": 225},
             ],
             [],
-            {"started_at": started_at},
+            {"started_at": started_at, **(cook or {})},
         ]
     )
     script = (
@@ -144,6 +144,77 @@ def test_hour_markers_render_as_short_bottom_axis_ticks() -> None:
     assert all('y1="270" y2="278"' in tick for tick in ticks)
     assert 'class="chart-hour"' not in markup
     assert markup.count('class="chart-hour-label"') == len(ticks)
+
+
+def test_finished_chart_ends_ticks_at_cooldown_start_without_total_label() -> None:
+    markup = chart_markup(
+        "2026-10-25T10:08:00Z",
+        4200,
+        {
+            "status": "closed",
+            "cook_ended_at": "2026-10-25T11:08:00Z",
+            "startup_duration_seconds": 600,
+            "cook_duration_seconds": 3000,
+            "cooldown_duration_seconds": 600,
+        },
+    )
+
+    assert 'class="chart-axis-end"' not in markup
+    assert "chart-cooldown-label" in markup
+    assert ">11:08 AM</text>" in markup
+    assert ">12 PM</text>" not in markup
+
+
+def test_hour_tick_too_close_to_cooldown_tick_is_dropped() -> None:
+    markup = chart_markup(
+        "2026-10-25T10:00:00Z",
+        7200,
+        {
+            "status": "closed",
+            "cook_ended_at": "2026-10-25T11:04:00Z",
+            "startup_duration_seconds": 600,
+            "cook_duration_seconds": 3240,
+            "cooldown_duration_seconds": 3360,
+        },
+    )
+
+    assert ">11 AM</text>" not in markup
+    assert ">11:04 AM</text>" in markup
+
+
+def test_chart_start_label_is_left_aligned_clock_time_only() -> None:
+    markup = chart_markup("2026-10-25T10:08:00Z", 3600)
+
+    assert 'class="chart-axis chart-axis-start"' in markup
+    assert ">10:08 AM</text>" in markup
+    assert "0m ·" not in markup
+
+
+def test_active_chart_has_hour_ticks_and_no_cooldown_tick() -> None:
+    markup = chart_markup(
+        "2026-10-25T10:08:00-07:00",
+        3 * 3600,
+        {"status": "cook", "startup_duration_seconds": 600},
+    )
+
+    assert 'class="chart-cooldown-tick"' not in markup
+    assert 'class="chart-hour-tick"' in markup
+
+
+def test_cooldown_label_near_right_edge_is_end_aligned() -> None:
+    markup = chart_markup(
+        "2026-10-25T10:00:00Z",
+        3660,
+        {
+            "status": "closed",
+            "cook_ended_at": "2026-10-25T11:00:00Z",
+            "startup_duration_seconds": 600,
+            "cook_duration_seconds": 3000,
+            "cooldown_duration_seconds": 60,
+        },
+    )
+
+    assert "chart-cooldown-label chart-hour-label-end" in markup
 
 
 def test_final_target_ignores_trailing_zeroes() -> None:

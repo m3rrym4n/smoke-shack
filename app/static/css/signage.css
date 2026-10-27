@@ -1,5 +1,5 @@
 body{margin:0}
-.chart-hour-tick{stroke:#b9c3b5;stroke-width:2}.chart-hour-label{fill:#b9c3b5;font-family:'Patrick Hand',cursive;font-size:16px;text-anchor:middle}.chart-axis-start{text-anchor:start}
+.chart-hour-tick{stroke:#b9c3b5;stroke-width:2}.chart-hour-label{fill:#b9c3b5;font-family:'Patrick Hand',cursive;font-size:16px;text-anchor:middle}.chart-hour-label.chart-hour-label-end{text-anchor:end}.chart-axis.chart-axis-start{text-anchor:start}
 button{font-family:inherit;cursor:pointer}
 input,textarea,select{font-family:inherit}
 @keyframes flick{0%,18%,22%,60%,100%{opacity:1}20%,62%{opacity:.78}}

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- End finished-cook chart ticks at cool-down and remove clipped start and total-time labels.
 - Space finished-cook target labels apart and keep late target labels clear of the chart edge.
 - Keep each finished-cook probe card's final target and peak reading after shutdown.
 - Show the cook's startup, cooking, or complete status on share cards and cook details.
