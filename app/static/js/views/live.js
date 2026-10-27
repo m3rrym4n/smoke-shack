@@ -12,7 +12,6 @@ import { bindShowcase, showcaseMarkup } from "../components/showcase.js";
 import { mountSmoke } from "../components/smoke.js";
 import { smokeDemoMode } from "../smoke-logic.js";
 import { spiceLabel } from "../spice-picker-logic.js";
-import { finalProbeTarget, localClockTime, peakProbeReading, reachedTarget } from "../chart-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -34,22 +33,20 @@ function leader(label, value, active = false, total = false) {
 }
 
 export function probeBoard(name, probe, samples, cook, active) {
+  if (!active) return `<section class="board probe-board unplugged"><h2 class="hd">${name}</h2><div class="sold-out"><b>×</b><span>sold out<br>(unplugged)</span></div></section>`;
   const latest = samples.at(-1);
-  const reading = active ? latest?.[`probe${probe}`] : peakProbeReading(samples, probe);
+  const reading = latest?.[`probe${probe}`];
   const currentTarget = Number(latest?.[`probe${probe}_target`]);
-  const target = active
-    ? (Number.isFinite(currentTarget) && currentTarget > 0 ? currentTarget : null)
-    : finalProbeTarget(samples, probe);
+  const target = Number.isFinite(currentTarget) && currentTarget > 0 ? currentTarget : null;
   const connected = reading !== null && reading !== undefined;
   if (!connected) return `<section class="board probe-board unplugged"><h2 class="hd">${name}</h2><div class="sold-out"><b>×</b><span>sold out<br>(unplugged)</span></div></section>`;
-  const reached = active || target === null ? null : reachedTarget(samples, { probe, value: target });
   const percent = clampPercent(reading, target);
-  const progress = target === null ? "" : `<div class="probe-progress" role="progressbar" aria-valuenow="${reached ? 100 : Math.round(percent)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${reached ? 100 : percent}%"></span></div>
-    <div class="mut">${active ? `${Math.round(percent)}% of the way to done` : reached ? `reached at ${localClockTime(cook.started_at, reached.elapsed)}` : `peak ${temp(reading)} of ${temp(target)} · ${Math.round(percent)}%`}</div>`;
+  const progress = target === null ? "" : `<div class="probe-progress" role="progressbar" aria-valuenow="${Math.round(percent)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>
+    <div class="mut">${Math.round(percent)}% of the way to done</div>`;
   return `<section class="board probe-board">
     <div class="probe-heading"><h2 class="hd">${name}</h2><span class="connected">plugged in</span></div>
-    <div class="probe-temp">${temp(reading)}${active ? "" : '<span class="peak-label">peak</span>'}</div>
-    <div class="probe-target">${target == null ? "no target set" : active ? `aiming for ${temp(target)}` : `target ${temp(target)}`}</div>
+    <div class="probe-temp">${temp(reading)}</div>
+    <div class="probe-target">${target == null ? "no target set" : `aiming for ${temp(target)}`}</div>
     ${progress}
   </section>`;
 }
@@ -60,7 +57,7 @@ function rubDetailMarkup(cook) {
   return `<div class="cook-rubs"><b>Rubs:</b><div>${rubs.map((spice) => `<span>${spice.photo_url ? `<img src="${escapeHtml(spice.photo_url)}" alt="">` : ""}${escapeHtml(spiceLabel(spice))}</span>`).join("")}${cook.seasonings ? `<span class="seasoning-note">${escapeHtml(cook.seasonings)}</span>` : ""}</div></div>`;
 }
 
-function heroMarkup(cook, samples, active, historical, showcase, grillIdentity) {
+export function heroMarkup(cook, samples, active, historical, showcase, grillIdentity) {
   const sample = samples.at(-1);
   const times = phaseDurations(cook);
   const widths = phasePercentages(times);
@@ -69,7 +66,7 @@ function heroMarkup(cook, samples, active, historical, showcase, grillIdentity) 
   const weight = cook.meat?.pounds ? `<span>${escapeHtml(cook.meat.pounds)} lb</span>` : "";
   const details = [setpoint ? `${temp(setpoint)} setpoint` : null, cook.pellet ? `${cook.pellet.vendor} ${cook.pellet.product_name}` : null, cook.profile_name].filter(Boolean).map(escapeHtml).join(" · ");
   return `<div class="live-hero">
-    <section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">${active ? escapeHtml(cook.status) : "fire's out"}</span></div>${gaugeSvg(sample?.pit_temp, setpoint, showcase?.logo_url)}${showcaseMarkup(showcase, grillIdentity, window.innerWidth, !historical)}</section>
+    <section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">${active ? escapeHtml(cook.status) : "fire's out"}</span></div>${gaugeSvg(active ? sample?.pit_temp : 0, setpoint, showcase?.logo_url)}${showcaseMarkup(showcase, grillIdentity, window.innerWidth, !historical)}</section>
     <div class="live-details">
       <section class="board special-board"><div class="board-title"><h2 class="hd">${historical ? "Cook Special" : "Today's Special"}</h2><div class="cook-heading-badges">${historical ? cookStatusBadgeMarkup(cook) : ""}${active ? "" : `<span class="cook-label">${historical ? "cook #" + cook.id : "last cook"}</span>`}</div></div>
         <div class="meat-name">${escapeHtml(meat)} ${weight}</div><p class="mut special-meta">${details || "Cook details not set"}</p>

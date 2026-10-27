@@ -90,12 +90,40 @@ def target_label_positions(reached_elapsed: int, total_elapsed: int) -> tuple[fl
     return float(done.group(1)), float(reached.group(1))
 
 
-def probe_markup(samples: list[dict[str, object]], active: bool = False) -> str:
+def probe_markup(
+    samples: list[dict[str, object]], active: bool = False, probe: int = 1
+) -> str:
     module = Path("app/static/js/views/live.js").resolve().as_uri()
     arguments = json.dumps(
-        ["Probe 1", 1, samples, {"started_at": "2026-10-25T22:00:00Z"}, active]
+        [f"Probe {probe}", probe, samples, {"started_at": "2026-10-25T22:00:00Z"}, active]
     )
     script = f'import {{ probeBoard }} from "{module}"; console.log(probeBoard(...{arguments}))'
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
+
+
+def hero_markup(samples: list[dict[str, object]], active: bool) -> str:
+    module = Path("app/static/js/views/live.js").resolve().as_uri()
+    cook = {
+        "id": 6,
+        "started_at": "2026-10-25T22:00:00Z",
+        "ended_at": None if active else "2026-10-26T02:00:00Z",
+        "status": "cook" if active else "complete",
+        "startup_duration_seconds": 60,
+        "cook_duration_seconds": 120,
+        "cooldown_duration_seconds": 60,
+    }
+    arguments = json.dumps([cook, samples, active, True, None, {}])
+    script = (
+        "globalThis.window = {innerWidth: 1024, localStorage: {getItem() { return null; }}}; "
+        f'const {{ heroMarkup }} = await import("{module}"); '
+        f"console.log(heroMarkup(...{arguments}))"
+    )
     result = subprocess.run(
         ["node", "--input-type=module", "--eval", script],
         check=True,
@@ -168,20 +196,6 @@ def test_final_target_uses_larger_target_in_last_matching_sample() -> None:
     assert chart_logic("finalTarget", [samples]) == {"probe": 2, "value": 205}
 
 
-def test_final_probe_target_ignores_trailing_zeroes() -> None:
-    samples = [
-        {"probe1_target": 203, "probe2_target": 190},
-        {"probe1_target": 0, "probe2_target": 195},
-    ]
-    assert chart_logic("finalProbeTarget", [samples, 1]) == 203
-    assert chart_logic("finalProbeTarget", [samples, 2]) == 195
-
-
-def test_peak_probe_reading_uses_highest_finite_reading() -> None:
-    samples = [{"probe1": 180}, {"probe1": 204}, {"probe1": 75}, {"probe1": None}]
-    assert chart_logic("peakProbeReading", [samples, 1]) == 204
-
-
 def test_reached_target_finds_first_crossing_and_ignores_nulls() -> None:
     samples = [
         {"elapsed_seconds": 10, "probe1": None},
@@ -233,38 +247,25 @@ def test_target_labels_are_spaced_when_target_is_reached_mid_cook() -> None:
     assert abs(done_y - reached_y) >= 20
 
 
-def test_finished_probe_card_shows_target_peak_and_reached_time() -> None:
-    markup = probe_markup(
-        [
-            {"elapsed_seconds": 0, "probe1": 180, "probe1_target": 203},
-            {"elapsed_seconds": 60, "probe1": 204, "probe1_target": 203},
-            {"elapsed_seconds": 120, "probe1": 75, "probe1_target": 0},
-        ]
-    )
-    assert "target 203°" in markup
-    assert "204°<span class=\"peak-label\">peak" in markup
-    assert "reached at" in markup
-    assert 'aria-valuenow="100"' in markup
-    assert "aiming for 0" not in markup
-
-
-def test_finished_probe_card_shows_peak_progress_when_target_not_reached() -> None:
-    markup = probe_markup(
-        [
-            {"elapsed_seconds": 0, "probe1": 180, "probe1_target": 203},
-            {"elapsed_seconds": 60, "probe1": 187, "probe1_target": 203},
-            {"elapsed_seconds": 120, "probe1": 75, "probe1_target": 0},
-        ]
-    )
-    assert "peak 187° of 203° · 92%" in markup
+def test_finished_cook_renders_both_probe_cards_as_unplugged() -> None:
+    samples = [
+        {"elapsed_seconds": 0, "probe1": 180, "probe1_target": 203, "probe2": 170},
+        {"elapsed_seconds": 60, "probe1": 204, "probe1_target": 203, "probe2": 190},
+    ]
+    markup = probe_markup(samples, probe=1) + probe_markup(samples, probe=2)
+    assert markup.count("sold out") == 2
+    assert "probe-temp" not in markup
+    assert "target" not in markup
+    assert "peak" not in markup
     assert "reached at" not in markup
-
-
-def test_probe_card_with_only_zero_targets_hides_progress() -> None:
-    markup = probe_markup([{"probe1": 180, "probe1_target": 0}])
-    assert "no target set" in markup
     assert "probe-progress" not in markup
-    assert "%" not in markup
+
+
+def test_finished_cook_pit_gauge_reads_zero_and_keeps_setpoint() -> None:
+    markup = hero_markup([{"pit_temp": 124, "setpoint": 225}], active=False)
+    assert '<text class="gauge-temp" x="200" y="205">0°</text>' in markup
+    assert ">124°</text>" not in markup
+    assert "SETPOINT 225" in markup
 
 
 def test_active_probe_card_with_zero_target_hides_progress() -> None:
@@ -273,3 +274,10 @@ def test_active_probe_card_with_zero_target_hides_progress() -> None:
     assert "probe-progress" not in markup
     assert "%" not in markup
     assert "aiming for 0" not in markup
+
+
+def test_active_probe_card_shows_live_temperature_and_target() -> None:
+    markup = probe_markup([{"probe1": 180, "probe1_target": 203}], active=True)
+    assert '<div class="probe-temp">180°</div>' in markup
+    assert "aiming for 203°" in markup
+    assert "probe-progress" in markup
