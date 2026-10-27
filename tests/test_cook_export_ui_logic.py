@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 MODULE = Path("app/static/js/cook-export-logic.js").resolve().as_uri()
+EXPORT_MODULE = Path("app/static/js/components/cook-export.js").resolve().as_uri()
 
 
 def run(expression: str) -> object:
@@ -21,6 +22,26 @@ def run(expression: str) -> object:
         text=True,
     )
     return json.loads(result.stdout)
+
+
+def share_card_chart_markup(events: list[dict[str, object]]) -> str:
+    samples = [
+        {"elapsed_seconds": 0, "pit_temp": 150},
+        {"elapsed_seconds": 120, "pit_temp": 225},
+    ]
+    cook = {"started_at": "2026-10-25T22:00:00Z"}
+    script = (
+        f'import {{ shareCardChartMarkup }} from {json.dumps(EXPORT_MODULE)}; '
+        f"console.log(shareCardChartMarkup({json.dumps(samples)}, "
+        f"{json.dumps(events)}, {json.dumps(cook)}));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
 
 
 def test_export_filename_uses_cook_date_and_meat_slug() -> None:
@@ -52,6 +73,19 @@ def test_share_card_status_badge_markup_has_label_without_data_gap_text() -> Non
     markup = run('logic.cookStatusBadgeMarkup({status: "cook", has_gap: true})')
     assert "COOKING" in markup
     assert "DATA GAP" not in markup
+
+
+def test_share_card_chart_includes_pin_legend() -> None:
+    markup = share_card_chart_markup([
+        {"id": 7, "source": "user", "elapsed_seconds": 30, "title": "Wrapped"},
+    ])
+
+    assert 'class="event-pin-legend"' in markup
+    assert 'event-pin-legend-number">1</span><span>Wrapped</span>' in markup
+
+
+def test_share_card_chart_omits_empty_pin_legend() -> None:
+    assert "event-pin-legend" not in share_card_chart_markup([])
 
 
 def test_pellet_line_includes_vendor_product_and_suffix() -> None:

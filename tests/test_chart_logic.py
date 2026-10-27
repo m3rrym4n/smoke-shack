@@ -62,15 +62,20 @@ def chart_markup(started_at: str, elapsed: int, cook: dict[str, object] | None =
     return result.stdout
 
 
-def chart_markup_with_events(events: list[dict[str, object]], elapsed: int = 120) -> str:
+def chart_markup_with_events(
+    events: list[dict[str, object]], elapsed: int = 120, *, legend: bool = False
+) -> str:
     module = Path("app/static/js/components/chart.js").resolve().as_uri()
     samples = [
         {"elapsed_seconds": 0, "pit_temp": 150},
         {"elapsed_seconds": elapsed, "pit_temp": 225},
     ]
-    arguments = json.dumps(
-        [samples, events, {"started_at": "2026-10-25T22:00:00Z"}]
-    )
+    arguments = json.dumps([
+        samples,
+        events,
+        {"started_at": "2026-10-25T22:00:00Z"},
+        {"legend": legend},
+    ])
     script = f'import {{ chartMarkup }} from "{module}"; console.log(chartMarkup(...{arguments}))'
     result = subprocess.run(
         ["node", "--input-type=module", "--eval", script],
@@ -253,7 +258,7 @@ def test_event_pin_legend_lists_user_events_in_pin_order() -> None:
         {"id": 10, "source": "user", "elapsed_seconds": 10, "title": "Spritzed"},
         {"id": 11, "source": "user", "elapsed_seconds": 20, "title": "Wrapped"},
         {"id": 12, "source": "user", "elapsed_seconds": 30, "title": "Sauced"},
-    ])
+    ], legend=True)
 
     legend = re.search(r'<div class="event-pin-legend">(.*?)</div>\s*</section>', markup, re.S)
     assert legend is not None
@@ -273,7 +278,7 @@ def test_event_pin_legend_excludes_non_user_and_out_of_range_events() -> None:
         {"id": 11, "source": "user", "elapsed_seconds": -1, "title": "Too early"},
         {"id": 12, "source": "user", "elapsed_seconds": 121, "title": "Too late"},
         {"id": 13, "source": "user", "elapsed_seconds": 30, "title": "Wrapped"},
-    ])
+    ], legend=True)
 
     assert markup.count('class="event-pin-label"') == 1
     assert markup.count('class="event-pin-legend-entry"') == 1
@@ -288,15 +293,24 @@ def test_event_pin_legend_excludes_non_user_and_out_of_range_events() -> None:
 def test_event_pin_legend_escapes_event_title() -> None:
     markup = chart_markup_with_events([
         {"id": 10, "source": "user", "elapsed_seconds": 10, "title": "Wrap < rest & eat"},
-    ])
+    ], legend=True)
 
     assert "Wrap &lt; rest &amp; eat" in markup
     assert "Wrap < rest & eat" not in markup
 
 
 def test_event_pin_legend_is_omitted_without_pinned_events() -> None:
-    markup = chart_markup_with_events([])
+    markup = chart_markup_with_events([], legend=True)
 
+    assert "event-pin-legend" not in markup
+
+
+def test_event_pin_legend_is_opt_in() -> None:
+    markup = chart_markup_with_events([
+        {"id": 10, "source": "user", "elapsed_seconds": 10, "title": "Wrapped"},
+    ])
+
+    assert 'class="event-pin-label"' in markup
     assert "event-pin-legend" not in markup
 
 

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add a numbered event legend below cook charts and share-card charts.
+- Add a numbered event legend below share-card charts.
 - End finished-cook chart ticks at cool-down and remove clipped start and total-time labels.
 - Space finished-cook target labels apart and keep late target labels clear of the chart edge.
 - Show zero on the Pit gauge and unplugged probe cards after a cook finishes.
