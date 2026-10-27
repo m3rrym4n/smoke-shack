@@ -62,6 +62,25 @@ def chart_markup(started_at: str, elapsed: int, cook: dict[str, object] | None =
     return result.stdout
 
 
+def chart_markup_with_events(events: list[dict[str, object]], elapsed: int = 120) -> str:
+    module = Path("app/static/js/components/chart.js").resolve().as_uri()
+    samples = [
+        {"elapsed_seconds": 0, "pit_temp": 150},
+        {"elapsed_seconds": elapsed, "pit_temp": 225},
+    ]
+    arguments = json.dumps(
+        [samples, events, {"started_at": "2026-10-25T22:00:00Z"}]
+    )
+    script = f'import {{ chartMarkup }} from "{module}"; console.log(chartMarkup(...{arguments}))'
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
+
+
 def target_label_positions(reached_elapsed: int, total_elapsed: int) -> tuple[float, float]:
     module = Path("app/static/js/components/chart.js").resolve().as_uri()
     samples = [
@@ -227,6 +246,58 @@ def test_active_chart_has_hour_ticks_and_no_cooldown_tick() -> None:
 
     assert 'class="chart-cooldown-tick"' not in markup
     assert 'class="chart-hour-tick"' in markup
+
+
+def test_event_pin_legend_lists_user_events_in_pin_order() -> None:
+    markup = chart_markup_with_events([
+        {"id": 10, "source": "user", "elapsed_seconds": 10, "title": "Spritzed"},
+        {"id": 11, "source": "user", "elapsed_seconds": 20, "title": "Wrapped"},
+        {"id": 12, "source": "user", "elapsed_seconds": 30, "title": "Sauced"},
+    ])
+
+    legend = re.search(r'<div class="event-pin-legend">(.*?)</div>\s*</section>', markup, re.S)
+    assert legend is not None
+    entries = re.findall(
+        r'event-pin-legend-number">(\d+)</span><span>(.*?)</span>', legend.group(1)
+    )
+    assert entries == [
+        ("1", "Spritzed"),
+        ("2", "Wrapped"),
+        ("3", "Sauced"),
+    ]
+
+
+def test_event_pin_legend_excludes_non_user_and_out_of_range_events() -> None:
+    markup = chart_markup_with_events([
+        {"id": 10, "source": "auto", "elapsed_seconds": 10, "title": "Fire lit"},
+        {"id": 11, "source": "user", "elapsed_seconds": -1, "title": "Too early"},
+        {"id": 12, "source": "user", "elapsed_seconds": 121, "title": "Too late"},
+        {"id": 13, "source": "user", "elapsed_seconds": 30, "title": "Wrapped"},
+    ])
+
+    assert markup.count('class="event-pin-label"') == 1
+    assert markup.count('class="event-pin-legend-entry"') == 1
+    assert 'event-pin-label" x="' in markup
+    assert '>1</text>' in markup
+    assert 'event-pin-legend-number">1</span><span>Wrapped</span>' in markup
+    assert "Fire lit" not in markup
+    assert "Too early" not in markup
+    assert "Too late" not in markup
+
+
+def test_event_pin_legend_escapes_event_title() -> None:
+    markup = chart_markup_with_events([
+        {"id": 10, "source": "user", "elapsed_seconds": 10, "title": "Wrap < rest & eat"},
+    ])
+
+    assert "Wrap &lt; rest &amp; eat" in markup
+    assert "Wrap < rest & eat" not in markup
+
+
+def test_event_pin_legend_is_omitted_without_pinned_events() -> None:
+    markup = chart_markup_with_events([])
+
+    assert "event-pin-legend" not in markup
 
 
 def test_cooldown_label_near_right_edge_is_end_aligned() -> None:
