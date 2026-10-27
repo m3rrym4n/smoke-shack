@@ -90,6 +90,21 @@ def target_label_positions(reached_elapsed: int, total_elapsed: int) -> tuple[fl
     return float(done.group(1)), float(reached.group(1))
 
 
+def probe_markup(samples: list[dict[str, object]], active: bool = False) -> str:
+    module = Path("app/static/js/views/live.js").resolve().as_uri()
+    arguments = json.dumps(
+        ["Probe 1", 1, samples, {"started_at": "2026-10-25T22:00:00Z"}, active]
+    )
+    script = f'import {{ probeBoard }} from "{module}"; console.log(probeBoard(...{arguments}))'
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
+
+
 def test_hour_ticks_use_local_clock_hours() -> None:
     assert hour_ticks("2026-10-25T10:01:00-07:00", 2 * 3600 + 34 * 60) == [
         {"elapsed": 3540, "label": "11 AM"},
@@ -153,6 +168,20 @@ def test_final_target_uses_larger_target_in_last_matching_sample() -> None:
     assert chart_logic("finalTarget", [samples]) == {"probe": 2, "value": 205}
 
 
+def test_final_probe_target_ignores_trailing_zeroes() -> None:
+    samples = [
+        {"probe1_target": 203, "probe2_target": 190},
+        {"probe1_target": 0, "probe2_target": 195},
+    ]
+    assert chart_logic("finalProbeTarget", [samples, 1]) == 203
+    assert chart_logic("finalProbeTarget", [samples, 2]) == 195
+
+
+def test_peak_probe_reading_uses_highest_finite_reading() -> None:
+    samples = [{"probe1": 180}, {"probe1": 204}, {"probe1": 75}, {"probe1": None}]
+    assert chart_logic("peakProbeReading", [samples, 1]) == 204
+
+
 def test_reached_target_finds_first_crossing_and_ignores_nulls() -> None:
     samples = [
         {"elapsed_seconds": 10, "probe1": None},
@@ -202,3 +231,45 @@ def test_target_labels_are_spaced_when_target_is_reached_near_end() -> None:
 def test_target_labels_are_spaced_when_target_is_reached_mid_cook() -> None:
     done_y, reached_y = target_label_positions(50, 100)
     assert abs(done_y - reached_y) >= 20
+
+
+def test_finished_probe_card_shows_target_peak_and_reached_time() -> None:
+    markup = probe_markup(
+        [
+            {"elapsed_seconds": 0, "probe1": 180, "probe1_target": 203},
+            {"elapsed_seconds": 60, "probe1": 204, "probe1_target": 203},
+            {"elapsed_seconds": 120, "probe1": 75, "probe1_target": 0},
+        ]
+    )
+    assert "target 203°" in markup
+    assert "204°<span class=\"peak-label\">peak" in markup
+    assert "reached at" in markup
+    assert 'aria-valuenow="100"' in markup
+    assert "aiming for 0" not in markup
+
+
+def test_finished_probe_card_shows_peak_progress_when_target_not_reached() -> None:
+    markup = probe_markup(
+        [
+            {"elapsed_seconds": 0, "probe1": 180, "probe1_target": 203},
+            {"elapsed_seconds": 60, "probe1": 187, "probe1_target": 203},
+            {"elapsed_seconds": 120, "probe1": 75, "probe1_target": 0},
+        ]
+    )
+    assert "peak 187° of 203° · 92%" in markup
+    assert "reached at" not in markup
+
+
+def test_probe_card_with_only_zero_targets_hides_progress() -> None:
+    markup = probe_markup([{"probe1": 180, "probe1_target": 0}])
+    assert "no target set" in markup
+    assert "probe-progress" not in markup
+    assert "%" not in markup
+
+
+def test_active_probe_card_with_zero_target_hides_progress() -> None:
+    markup = probe_markup([{"probe1": 180, "probe1_target": 0}], active=True)
+    assert "no target set" in markup
+    assert "probe-progress" not in markup
+    assert "%" not in markup
+    assert "aiming for 0" not in markup

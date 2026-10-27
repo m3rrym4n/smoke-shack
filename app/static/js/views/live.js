@@ -12,6 +12,7 @@ import { bindShowcase, showcaseMarkup } from "../components/showcase.js";
 import { mountSmoke } from "../components/smoke.js";
 import { smokeDemoMode } from "../smoke-logic.js";
 import { spiceLabel } from "../spice-picker-logic.js";
+import { finalProbeTarget, localClockTime, peakProbeReading, reachedTarget } from "../chart-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -32,16 +33,24 @@ function leader(label, value, active = false, total = false) {
   return `<div class="ld phase-row ${active ? "active" : ""} ${total ? "total" : ""}"><span>${label}</span><i></i><strong>${value}</strong></div>`;
 }
 
-function probeBoard(name, reading, target) {
+export function probeBoard(name, probe, samples, cook, active) {
+  const latest = samples.at(-1);
+  const reading = active ? latest?.[`probe${probe}`] : peakProbeReading(samples, probe);
+  const currentTarget = Number(latest?.[`probe${probe}_target`]);
+  const target = active
+    ? (Number.isFinite(currentTarget) && currentTarget > 0 ? currentTarget : null)
+    : finalProbeTarget(samples, probe);
   const connected = reading !== null && reading !== undefined;
   if (!connected) return `<section class="board probe-board unplugged"><h2 class="hd">${name}</h2><div class="sold-out"><b>×</b><span>sold out<br>(unplugged)</span></div></section>`;
+  const reached = active || target === null ? null : reachedTarget(samples, { probe, value: target });
   const percent = clampPercent(reading, target);
+  const progress = target === null ? "" : `<div class="probe-progress" role="progressbar" aria-valuenow="${reached ? 100 : Math.round(percent)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${reached ? 100 : percent}%"></span></div>
+    <div class="mut">${active ? `${Math.round(percent)}% of the way to done` : reached ? `reached at ${localClockTime(cook.started_at, reached.elapsed)}` : `peak ${temp(reading)} of ${temp(target)} · ${Math.round(percent)}%`}</div>`;
   return `<section class="board probe-board">
     <div class="probe-heading"><h2 class="hd">${name}</h2><span class="connected">plugged in</span></div>
-    <div class="probe-temp">${temp(reading)}</div>
-    <div class="probe-target">${target == null ? "no target set" : `aiming for ${temp(target)}`}</div>
-    <div class="probe-progress" role="progressbar" aria-valuenow="${Math.round(percent)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>
-    <div class="mut">${target == null ? "Set a probe target on the grill" : `${Math.round(percent)}% of the way to done`}</div>
+    <div class="probe-temp">${temp(reading)}${active ? "" : '<span class="peak-label">peak</span>'}</div>
+    <div class="probe-target">${target == null ? "no target set" : active ? `aiming for ${temp(target)}` : `target ${temp(target)}`}</div>
+    ${progress}
   </section>`;
 }
 
@@ -51,7 +60,8 @@ function rubDetailMarkup(cook) {
   return `<div class="cook-rubs"><b>Rubs:</b><div>${rubs.map((spice) => `<span>${spice.photo_url ? `<img src="${escapeHtml(spice.photo_url)}" alt="">` : ""}${escapeHtml(spiceLabel(spice))}</span>`).join("")}${cook.seasonings ? `<span class="seasoning-note">${escapeHtml(cook.seasonings)}</span>` : ""}</div></div>`;
 }
 
-function heroMarkup(cook, sample, active, historical, showcase, grillIdentity) {
+function heroMarkup(cook, samples, active, historical, showcase, grillIdentity) {
+  const sample = samples.at(-1);
   const times = phaseDurations(cook);
   const widths = phasePercentages(times);
   const setpoint = sample?.setpoint ?? cook.effective_setpoint ?? 0;
@@ -66,7 +76,7 @@ function heroMarkup(cook, sample, active, historical, showcase, grillIdentity) {
         <div class="phase-bar" aria-label="Cook phase progress"><span class="startup" style="width:${widths.startup}%"></span><span class="cooking" style="width:${widths.cook}%"></span><span class="cooldown" style="width:${widths.cooldown}%"></span></div>
         <div class="phase-list">${leader("Startup", duration(times.startup), active && cook.status === "startup")}${leader("Cook", duration(times.cook), active && cook.status === "cook")}${leader("Cool down", duration(times.cooldown), active && cook.status === "cooldown")}${leader("Total grill time", duration(times.total), false, true)}</div>
       </section>
-      <div class="probe-grid">${probeBoard("Probe 1", sample?.probe1, sample?.probe1_target)}${probeBoard("Probe 2", sample?.probe2, sample?.probe2_target)}</div>
+      <div class="probe-grid">${probeBoard("Probe 1", 1, samples, cook, active)}${probeBoard("Probe 2", 2, samples, cook, active)}</div>
     </div>
   </div>`;
 }
@@ -152,7 +162,8 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
   const resultPhotos = !liveForms && cook ? `<section class="order-pad cook-results"><span class="tape" aria-hidden="true"></span>${rubDetailMarkup(cook)}<h2>How it turned out</h2><p>${escapeHtml(cook.results_text || "No write-up yet.")}</p>${photoGalleryMarkup(detailPhotos)}</section>` : "";
   const demo = requestedCookId == null && smokeDemoMode(window.location.hash);
   const demoPit = `<section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">smoke demo</span></div>${gaugeSvg(null, 0, showcase?.logo_url)}${showcaseMarkup(showcase, status, window.innerWidth)}</section>`;
-  const cookContent = cook ? `${heroMarkup(cook, samples.at(-1), active, requestedCookId != null, showcase, status)}${cookNotesMarkup(notes)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : demo ? demoPit : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
+  const cookIsActive = cook?.ended_at == null;
+  const cookContent = cook ? `${heroMarkup(cook, samples, cookIsActive, requestedCookId != null, showcase, status)}${cookNotesMarkup(notes)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : demo ? demoPit : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
   const liveDetail = requestedCookId != null && cook && cook.ended_at == null;
   const backLink = liveDetail
     ? '<a class="back-link cc" href="#live">← Back to live cook</a>'

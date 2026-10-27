@@ -1,4 +1,4 @@
-import { finalTarget, hourTicks, reachedTarget } from "../chart-logic.js";
+import { finalTarget, hourTicks, localClockTime, reachedTarget } from "../chart-logic.js";
 
 const WIDTH = 1100;
 const HEIGHT = 316;
@@ -58,12 +58,6 @@ function startLabel(startedAtIso) {
   return `0m · ${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(startedAt)}`;
 }
 
-function clockLabel(startedAtIso, elapsed) {
-  const reachedAt = new Date(new Date(startedAtIso).getTime() + elapsed * 1000);
-  if (!Number.isFinite(reachedAt.getTime())) return "";
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(reachedAt);
-}
-
 export function chartMarkup(samples, events, cook) {
   if (!samples.length) return `<section class="board chart-board"><h2 class="hd">Chalked up: this cook</h2><p class="mut">No temperature samples yet.</p></section>`;
   const points = downsample(samples);
@@ -99,7 +93,7 @@ export function chartMarkup(samples, events, cook) {
     const sharedLabelX = Math.min(WIDTH - PLOT.right - 8, markerX - 16);
     const labelX = inLastFifteenPercent ? sharedLabelX : markerX + (nearRight ? -10 : 10);
     const labelY = doneLabelY - 22 < PLOT.top ? targetY + 26 : doneLabelY - 22;
-    const label = `reached ${Math.round(target.value)}° at ${clockLabel(cook.started_at, reached.elapsed)}`;
+    const label = `reached ${Math.round(target.value)}° at ${localClockTime(cook.started_at, reached.elapsed)}`;
     return `<g class="target-reached" aria-label="${escapeHtml(label)}"><circle class="target-marker target-marker-probe-${target.probe}" cx="${markerX}" cy="${markerY}" r="6"/><text class="target-marker-label" x="${labelX}" y="${labelY}" text-anchor="${inLastFifteenPercent || nearRight ? "end" : "start"}">${escapeHtml(label)}</text></g>`;
   })();
   const targetLabelX = reached !== null && x(reached.elapsed) >= PLOT.left + plotWidth * 0.85

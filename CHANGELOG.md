@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Space finished-cook target labels apart and keep late target labels clear of the chart edge.
+- Keep each finished-cook probe card's final target and peak reading after shutdown.
 - Show the cook's startup, cooking, or complete status on share cards and cook details.
 - Keep the final positive probe target on finished-cook charts and mark when it was reached.
 - Add real clock-hour ticks on the x axis and cook start time to cook temperature charts.
