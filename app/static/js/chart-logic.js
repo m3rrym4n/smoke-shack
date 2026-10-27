@@ -19,6 +19,21 @@ export function finalTarget(samples) {
   return null;
 }
 
+export function finalProbeTarget(samples, probe) {
+  if (![1, 2].includes(probe)) return null;
+  for (let index = samples.length - 1; index >= 0; index -= 1) {
+    const value = finiteNumber(samples[index][`probe${probe}_target`]);
+    if (value !== null && value > 0) return value;
+  }
+  return null;
+}
+
+export function peakProbeReading(samples, probe) {
+  if (![1, 2].includes(probe)) return null;
+  const readings = samples.map((sample) => finiteNumber(sample[`probe${probe}`])).filter((value) => value !== null);
+  return readings.length ? Math.max(...readings) : null;
+}
+
 export function reachedTarget(samples, target) {
   if (!target || ![1, 2].includes(target.probe)) return null;
   const targetValue = finiteNumber(target.value);
@@ -29,6 +44,12 @@ export function reachedTarget(samples, target) {
     if (temp !== null && elapsed !== null && temp >= targetValue) return { elapsed, temp };
   }
   return null;
+}
+
+export function localClockTime(startedAtIso, elapsed) {
+  const reachedAt = new Date(new Date(startedAtIso).getTime() + Number(elapsed) * 1000);
+  if (!Number.isFinite(reachedAt.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(reachedAt);
 }
 
 export function hourTicks(startedAtIso, lastElapsedSeconds, timeZone = undefined) {
