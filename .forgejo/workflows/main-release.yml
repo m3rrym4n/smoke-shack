@@ -44,3 +44,61 @@ jobs:
           GIT_COMMITTER_NAME: smoke-stack-ci
           GIT_COMMITTER_EMAIL: ci@smoke-stack.local
         run: npm run release
+      - name: Create Forgejo release
+        env:
+          FORGEJO_TOKEN: ${{ github.token }}
+          FORGEJO_SERVER_URL: ${{ github.server_url }}
+          FORGEJO_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*')"
+          release_url="${FORGEJO_SERVER_URL}/api/v1/repos/${FORGEJO_REPOSITORY}/releases/tags/${tag}"
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            --header "Authorization: token ${FORGEJO_TOKEN}" \
+            --header 'Accept: application/json' \
+            "$release_url")"
+
+          if [ "$status" = "200" ]; then
+            echo "Forgejo release ${tag} already exists; nothing to do."
+            exit 0
+          fi
+          if [ "$status" != "404" ]; then
+            echo "Failed to check for Forgejo release ${tag}: HTTP ${status}" >&2
+            cat "$response_file" >&2
+            exit 1
+          fi
+
+          version="${tag#v}"
+          body="$(awk -v version="$version" '
+            /^# / {
+              if (found) exit
+              heading = substr($0, 3)
+              if (heading == version || index(heading, version " ") == 1) found = 1
+            }
+            found { print }
+          ' CHANGELOG.md)"
+          if [ -z "$body" ]; then
+            body="Release ${tag}."
+          fi
+
+          payload="$(jq --null-input \
+            --arg tag "$tag" \
+            --arg body "$body" \
+            '{tag_name: $tag, name: $tag, prerelease: false, body: $body}')"
+          status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: token ${FORGEJO_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data "$payload" \
+            "${FORGEJO_SERVER_URL}/api/v1/repos/${FORGEJO_REPOSITORY}/releases")"
+
+          if [ "$status" != "201" ]; then
+            echo "Failed to create Forgejo release ${tag}: HTTP ${status}" >&2
+            cat "$response_file" >&2
+            exit 1
+          fi
+          echo "Created Forgejo release ${tag}."
