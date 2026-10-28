@@ -112,6 +112,7 @@ def test_patch_cook_and_reject_unknown_reference(sessions: sessionmaker[Session]
                 "seasonings": "Pepper",
                 "prep_time_minutes": 15,
                 "setpoint_override": 250,
+                "exclude_from_stats": True,
             },
         )
         unknown = client.patch(f"/api/cooks/{cook_id}", json={"meat_id": 9999})
@@ -119,8 +120,12 @@ def test_patch_cook_and_reject_unknown_reference(sessions: sessionmaker[Session]
     assert response.status_code == 200
     assert response.json()["meat_id"] == meat_id
     assert response.json()["seasonings"] == "Pepper"
+    assert response.json()["exclude_from_stats"] is True
     assert unknown.status_code == 422
     assert unknown.json() == {"detail": "Meat not found"}
+
+    with sessions() as session:
+        assert session.get(Cook, cook_id).exclude_from_stats is True
 
 
 def test_list_cooks_filters_and_paginates(sessions: sessionmaker[Session]) -> None:

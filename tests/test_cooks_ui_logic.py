@@ -39,6 +39,7 @@ def test_tags_and_elapsed_time_formatting() -> None:
         {id:2,state:"startup",started_at:"2026-10-17T12:00:00Z",ended_at:null},
         {id:3,state:"closed",incomplete:true},
         {id:4,state:"closed",incomplete:false},
+        {id:5,state:"closed",exclude_from_stats:true},
       ];
       console.log(JSON.stringify({
         tags: rows.map(logic.cookTag),
@@ -48,7 +49,7 @@ def test_tags_and_elapsed_time_formatting() -> None:
       }));
     """
     assert run_logic(expression) == {
-        "tags": ["Planned", "In progress", "Incomplete", None],
+        "tags": ["Planned", "In progress", "Incomplete", None, "Test"],
         "elapsed": 5460,
         "formatted": "1h 31m",
         "short": "0m",

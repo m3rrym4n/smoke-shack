@@ -76,6 +76,7 @@ class Cook(Base):
     time_to_done_seconds: Mapped[int | None]
     has_gap: Mapped[bool] = mapped_column(Boolean, default=False)
     incomplete: Mapped[bool] = mapped_column(Boolean, default=False)
+    exclude_from_stats: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     pellets_used_lb: Mapped[float | None]
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)

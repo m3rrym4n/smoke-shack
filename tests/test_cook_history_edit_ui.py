@@ -19,6 +19,7 @@ def render_history_editor() -> str:
         "pellets_used_lb": 1.5,
         "rotisserie": True,
         "results_text": "Tender",
+        "exclude_from_stats": True,
     }
     meat = [{"id": 1, "type": "Pork butt", "pounds": 8}]
     pellets = [{"id": 2, "vendor": "Bear Mountain", "product_name": "Hickory"}]
@@ -55,6 +56,8 @@ def test_history_editor_reuses_full_order_pad_and_existing_photos() -> None:
     assert 'name="meat_id" disabled' not in markup
     assert 'name="seasonings" disabled' not in markup
     assert 'name="rotisserie" value="true" checked disabled' not in markup
+    assert 'name="exclude_from_stats" type="checkbox" checked' in markup
+    assert "Exclude from stats (dry run / test)" in markup
 
 
 def test_cook_detail_routes_to_history_editor_and_returns_after_save() -> None:
@@ -67,3 +70,4 @@ def test_cook_detail_routes_to_history_editor_and_returns_after_save() -> None:
     assert "window.location.hash = `cooks/${updated.id}`" in view_source
     assert "getCookLogCooks(10000)" in view_source
     assert "getCookPhotos(requestedCook.id)" in view_source
+    assert "{ exclude_from_stats: statsToggle.checked }" in view_source

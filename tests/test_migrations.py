@@ -88,3 +88,34 @@ def test_cooked_migration_defaults_existing_meat_to_false(
         cooked = connection.execute(text("SELECT cooked FROM meat")).scalar_one()
     assert cooked_column["nullable"] is False
     assert cooked == 0
+
+
+def test_exclude_from_stats_migration_defaults_existing_cooks_to_false(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    database = tmp_path / "exclude-stats-migration.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))  # type: ignore[attr-defined]
+    config = Config("alembic.ini")
+    command.upgrade(config, "d7f392bc6a10")
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO cooks "
+                "(started_at, status, rotisserie, has_gap, incomplete, created_at, updated_at) "
+                "VALUES ('2026-10-16T16:57:03Z', 'closed', 0, 0, 0, "
+                "'2026-10-16T16:57:03Z', '2026-10-16T16:57:03Z')"
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    column = next(
+        item
+        for item in inspect(engine).get_columns("cooks")
+        if item["name"] == "exclude_from_stats"
+    )
+    with engine.connect() as connection:
+        value = connection.execute(text("SELECT exclude_from_stats FROM cooks")).scalar_one()
+    assert column["nullable"] is False
+    assert value == 0

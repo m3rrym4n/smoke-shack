@@ -54,7 +54,9 @@ def cook_stats(
     exclude_gaps: bool = False,
 ) -> dict[str, Any]:
     query = select(Cook, Meat).join(Meat, Cook.meat_id == Meat.id).where(
-        Cook.ended_at.is_not(None), Cook.status != "planned"
+        Cook.ended_at.is_not(None),
+        Cook.status != "planned",
+        Cook.exclude_from_stats.is_(False),
     )
     if meat_type is not None:
         query = query.where(func.lower(Meat.type).contains(meat_type.lower(), autoescape=True))
@@ -122,7 +124,11 @@ def meat_types(session: SessionDep) -> list[dict[str, Any]]:
     rows = session.execute(
         select(Meat.type, func.count(Cook.id))
         .join(Cook, Cook.meat_id == Meat.id)
-        .where(Cook.ended_at.is_not(None), Cook.status != "planned")
+        .where(
+            Cook.ended_at.is_not(None),
+            Cook.status != "planned",
+            Cook.exclude_from_stats.is_(False),
+        )
         .group_by(Meat.type)
         .order_by(Meat.type)
     )

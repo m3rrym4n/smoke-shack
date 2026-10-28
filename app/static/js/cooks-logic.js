@@ -5,6 +5,7 @@ export function isLiveCook(cook) {
 }
 
 export function cookTag(cook) {
+  if (cook.exclude_from_stats) return "Test";
   if (cook.state === "planned") return "Planned";
   if (isLiveCook(cook)) return "In progress";
   if (cook.incomplete) return "Incomplete";
