@@ -1,0 +1,133 @@
+name: Dev Build and Deploy
+
+on:
+  push:
+    branches: [dev]
+    paths-ignore: [compose.yml]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-stack-dev-deploy
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install quality tooling (uv-managed Python 3.12)
+        run: |
+          curl -LsSf https://astral.sh/uv/0.8.15/install.sh | sh
+          "$HOME/.local/bin/uv" venv --python 3.12 .quality-venv
+          "$HOME/.local/bin/uv" pip install --python .quality-venv/bin/python -e '.[dev]'
+      - name: Ruff
+        run: .quality-venv/bin/ruff check .
+      - name: Mypy
+        run: .quality-venv/bin/mypy app
+      - name: Pytest
+        run: .quality-venv/bin/pytest
+
+  build:
+    needs: quality
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install release tooling
+        run: npm ci
+      - name: Compute and tag dev prerelease
+        env:
+          GIT_AUTHOR_NAME: smoke-stack-ci
+          GIT_AUTHOR_EMAIL: ci@smoke-stack.local
+          GIT_COMMITTER_NAME: smoke-stack-ci
+          GIT_COMMITTER_EMAIL: ci@smoke-stack.local
+        run: npm run release
+      - name: Skip image build when no release was computed
+        if: env.IMAGE_TAG == ''
+        run: echo "No release computed, skipping build"
+      - name: Install Docker CLI
+        if: env.IMAGE_TAG != ''
+        run: apt-get update && apt-get install -y docker.io
+      - name: Build image
+        if: env.IMAGE_TAG != ''
+        run: docker build -t 192.168.1.73:5050/smoke-stack/smoke-stack:${{ env.IMAGE_TAG }} .
+      - name: Trivy container scan
+        if: env.IMAGE_TAG != ''
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.69.3 image \
+            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            192.168.1.73:5050/smoke-stack/smoke-stack:${{ env.IMAGE_TAG }}
+      - name: Push image
+        if: env.IMAGE_TAG != ''
+        run: docker push 192.168.1.73:5050/smoke-stack/smoke-stack:${{ env.IMAGE_TAG }}
+      - name: Update deployed image tag
+        if: env.IMAGE_TAG != ''
+        run: |
+          BUILT_COMMIT="$(git rev-parse HEAD)"
+
+          newer_dev_commit_exists() {
+            git fetch origin dev
+            newer_commits="$(
+              git log --format='%s' "${BUILT_COMMIT}..origin/dev" |
+                grep -v '^chore: update smoke-stack-dev deployed image to ' || true
+            )"
+            [ -n "${newer_commits}" ]
+          }
+
+          if newer_dev_commit_exists; then
+            echo "newer commit on dev, its run will write the tag"
+            exit 0
+          fi
+
+          sed -i "s|image: 192.168.1.73:5050/smoke-stack/smoke-stack:.*|image: 192.168.1.73:5050/smoke-stack/smoke-stack:${{ env.IMAGE_TAG }}|" compose.yml
+          git config user.email "ci@smoke-stack.local"
+          git config user.name "smoke-stack-ci"
+          git add compose.yml
+          git commit -m "chore: update smoke-stack-dev deployed image to ${{ env.IMAGE_TAG }}"
+
+          if newer_dev_commit_exists; then
+            echo "newer commit on dev, its run will write the tag"
+            exit 0
+          fi
+          git pull --rebase origin dev
+          if newer_dev_commit_exists; then
+            echo "newer commit on dev, its run will write the tag"
+            exit 0
+          fi
+
+          if git push origin HEAD:dev; then
+            exit 0
+          fi
+
+          retries=0
+          while [ "${retries}" -lt 5 ]; do
+            retries=$((retries + 1))
+            echo "push rejected; retry ${retries} of 5 in 3 seconds"
+            sleep 3
+
+            if newer_dev_commit_exists; then
+              echo "newer commit on dev, its run will write the tag"
+              exit 0
+            fi
+
+            git pull --rebase origin dev
+            if newer_dev_commit_exists; then
+              echo "newer commit on dev, its run will write the tag"
+              exit 0
+            fi
+            if git push origin HEAD:dev; then
+              exit 0
+            fi
+          done
+
+          echo "failed to push deployed image tag after 5 retries"
+          exit 1

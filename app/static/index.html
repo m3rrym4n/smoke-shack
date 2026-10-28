@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Smoke-Stack</title>
+    <link rel="stylesheet" href="/vendor/fonts/fonts.css">
+    <link rel="stylesheet" href="/css/signage.css">
+    <script src="/vendor/html-to-image/html-to-image.js"></script>
+    <script type="module" src="/js/app.js"></script>
+  </head>
+  <body>
+    <div class="page">
+      <header class="signs">
+        <div class="brand-sign">
+          <div>SMOKE-STACK</div>
+          <small>PELLET-FIRED · LOW &amp; SLOW</small>
+        </div>
+        <div id="now-smoking" class="neon neon-sign" hidden>NOW SMOKING</div>
+      </header>
+      <nav class="nav" aria-label="Main navigation">
+        <a class="pbtn" href="#live">Today's special</a>
+        <a class="pbtn" href="#cooks">Cook log</a>
+        <a class="pbtn" href="#profiles">Profiles</a>
+        <a class="pbtn" href="#pantry">Pantry</a>
+        <a class="pbtn" href="#notes">Notes</a>
+        <a class="pbtn" href="#pitmaster">Ask the pitmaster</a>
+      </nav>
+      <main id="view" tabindex="-1"></main>
+      <footer class="build-footer">Build <span id="build-version">unknown</span></footer>
+    </div>
+  </body>
+</html>
