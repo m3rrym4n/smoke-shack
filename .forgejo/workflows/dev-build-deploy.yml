@@ -31,22 +31,46 @@ jobs:
 
   build:
     needs: quality
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install release tooling
+        run: npm ci
+      - name: Compute and tag dev prerelease
+        env:
+          GIT_AUTHOR_NAME: smoke-stack-ci
+          GIT_AUTHOR_EMAIL: ci@smoke-stack.local
+          GIT_COMMITTER_NAME: smoke-stack-ci
+          GIT_COMMITTER_EMAIL: ci@smoke-stack.local
+        run: npm run release
+      - name: Skip image build when no release was computed
+        if: env.IMAGE_TAG == ''
+        run: echo "No release computed, skipping build"
       - name: Install Docker CLI
+        if: env.IMAGE_TAG != ''
         run: apt-get update && apt-get install -y docker.io
-      - name: Compute image tag
-        run: echo "IMAGE_TAG=dev-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_ENV"
       - name: Build image
+        if: env.IMAGE_TAG != ''
         run: docker build -t 192.168.1.73:5050/smoke-stack/smoke-stack:${{ env.IMAGE_TAG }} .
+      - name: Trivy container scan
+        if: env.IMAGE_TAG != ''
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.69.3 image \
+            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            192.168.1.73:5050/smoke-stack/smoke-stack:${{ env.IMAGE_TAG }}
       - name: Push image
-        if: github.event_name == 'push'
+        if: env.IMAGE_TAG != ''
         run: docker push 192.168.1.73:5050/smoke-stack/smoke-stack:${{ env.IMAGE_TAG }}
       - name: Update deployed image tag
-        if: github.event_name == 'push'
+        if: env.IMAGE_TAG != ''
         run: |
           BUILT_COMMIT="$(git rev-parse HEAD)"
 

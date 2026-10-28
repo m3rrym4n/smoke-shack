@@ -5,6 +5,8 @@ Read `docs/SPEC.md` and `docs/SPEC-addendum.md` before any work. The issue you w
 ## Branches and merging
 - Work on a branch and open a PR. Never push directly to `main` and never merge into `main` yourself. Promotion to `main` is a human action.
 - Use Conventional Commit prefixes (`feat:`, `fix:`, `docs:`, `chore:`).
+- Any new cross-cook aggregate must exclude cooks with `exclude_from_stats`.
+- Codex never pushes to or merges into `main`.
 - Add a `CHANGELOG.md` entry under `## Unreleased` for any functional code change.
 
 ## Deploy conventions (these override the deploy bullets in issues)
