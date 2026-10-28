@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Adopt semantic-release for dev prereleases and main releases, and show the generated build version in the footer.
 - Exclude marked dry-run and test cooks from all statistics while retaining them in logs and exports.
 - Show the numbered pin legend below every cook chart.
 - Add a numbered event legend below share-card charts.

@@ -6,7 +6,6 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +37,7 @@ from app.service import CookService, as_utc
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+BUILD_INFO_PATH = Path(__file__).with_name("build_info.txt")
 
 
 class RevalidatingStaticFiles(StaticFiles):
@@ -168,6 +168,7 @@ def _iso(value: datetime | None) -> str | None:
 
 def _version() -> str:
     try:
-        return version("smoke-stack")
-    except PackageNotFoundError:
-        return "0.1.0"
+        build_version = BUILD_INFO_PATH.read_text(encoding="utf-8").splitlines()[0].strip()
+    except (OSError, IndexError):
+        return "dev"
+    return build_version or "dev"
