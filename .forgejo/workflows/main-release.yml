@@ -74,9 +74,10 @@ jobs:
 
           version="${tag#v}"
           body="$(awk -v version="$version" '
-            /^# / {
+            /^# / || /^## / {
+              heading = $0
+              sub(/^##? /, "", heading)
               if (found) exit
-              heading = substr($0, 3)
               if (heading == version || index(heading, version " ") == 1) found = 1
             }
             found { print }
@@ -85,10 +86,14 @@ jobs:
             body="Release ${tag}."
           fi
 
-          payload="$(jq --null-input \
-            --arg tag "$tag" \
-            --arg body "$body" \
-            '{tag_name: $tag, name: $tag, prerelease: false, body: $body}')"
+          payload="$(TAG="$tag" BODY="$body" node -e '
+            process.stdout.write(JSON.stringify({
+              tag_name: process.env.TAG,
+              name: process.env.TAG,
+              prerelease: false,
+              body: process.env.BODY,
+            }));
+          ')"
           status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
             --request POST \
             --header "Authorization: token ${FORGEJO_TOKEN}" \
