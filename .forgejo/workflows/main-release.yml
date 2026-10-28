@@ -52,58 +52,62 @@ jobs:
         run: |
           set -euo pipefail
 
-          tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*')"
-          release_url="${FORGEJO_SERVER_URL}/api/v1/repos/${FORGEJO_REPOSITORY}/releases/tags/${tag}"
           response_file="$(mktemp)"
           trap 'rm -f "$response_file"' EXIT
 
-          status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
-            --header "Authorization: token ${FORGEJO_TOKEN}" \
-            --header 'Accept: application/json' \
-            "$release_url")"
+          while IFS= read -r tag; do
+            release_url="${FORGEJO_SERVER_URL}/api/v1/repos/${FORGEJO_REPOSITORY}/releases/tags/${tag}"
+            status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+              --header "Authorization: token ${FORGEJO_TOKEN}" \
+              --header 'Accept: application/json' \
+              "$release_url")"
 
-          if [ "$status" = "200" ]; then
-            echo "Forgejo release ${tag} already exists; nothing to do."
-            exit 0
-          fi
-          if [ "$status" != "404" ]; then
-            echo "Failed to check for Forgejo release ${tag}: HTTP ${status}" >&2
-            cat "$response_file" >&2
-            exit 1
-          fi
+            if [ "$status" = "200" ]; then
+              echo "Forgejo release ${tag} already exists; nothing to do."
+              continue
+            fi
+            if [ "$status" != "404" ]; then
+              echo "Failed to check for Forgejo release ${tag}: HTTP ${status}" >&2
+              cat "$response_file" >&2
+              exit 1
+            fi
 
-          version="${tag#v}"
-          body="$(awk -v version="$version" '
-            /^# / || /^## / {
-              heading = $0
-              sub(/^##? /, "", heading)
-              if (found) exit
-              if (heading == version || index(heading, version " ") == 1) found = 1
-            }
-            found { print }
-          ' CHANGELOG.md)"
-          if [ -z "$body" ]; then
-            body="Release ${tag}."
-          fi
+            version="${tag#v}"
+            body="$(awk -v version="$version" '
+              /^# / || /^## / {
+                heading = $0
+                sub(/^##? /, "", heading)
+                sub(/^\[/, "", heading)
+                if (found) exit
+                suffix = substr(heading, length(version) + 1, 1)
+                if (heading == version || (index(heading, version) == 1 && \
+                    (suffix == " " || suffix == "]" || suffix == "("))) found = 1
+              }
+              found { print }
+            ' CHANGELOG.md)"
+            if [ -z "$body" ]; then
+              body="Release ${tag}."
+            fi
 
-          payload="$(TAG="$tag" BODY="$body" node -e '
-            process.stdout.write(JSON.stringify({
-              tag_name: process.env.TAG,
-              name: process.env.TAG,
-              prerelease: false,
-              body: process.env.BODY,
-            }));
-          ')"
-          status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
-            --request POST \
-            --header "Authorization: token ${FORGEJO_TOKEN}" \
-            --header 'Content-Type: application/json' \
-            --data "$payload" \
-            "${FORGEJO_SERVER_URL}/api/v1/repos/${FORGEJO_REPOSITORY}/releases")"
+            payload="$(TAG="$tag" BODY="$body" node -e '
+              process.stdout.write(JSON.stringify({
+                tag_name: process.env.TAG,
+                name: process.env.TAG,
+                prerelease: false,
+                body: process.env.BODY,
+              }));
+            ')"
+            status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+              --request POST \
+              --header "Authorization: token ${FORGEJO_TOKEN}" \
+              --header 'Content-Type: application/json' \
+              --data "$payload" \
+              "${FORGEJO_SERVER_URL}/api/v1/repos/${FORGEJO_REPOSITORY}/releases")"
 
-          if [ "$status" != "201" ]; then
-            echo "Failed to create Forgejo release ${tag}: HTTP ${status}" >&2
-            cat "$response_file" >&2
-            exit 1
-          fi
-          echo "Created Forgejo release ${tag}."
+            if [ "$status" != "201" ]; then
+              echo "Failed to create Forgejo release ${tag}: HTTP ${status}" >&2
+              cat "$response_file" >&2
+              exit 1
+            fi
+            echo "Created Forgejo release ${tag}."
+          done < <(git tag --list 'v[0-9]*' --sort=version:refname | awk 'index($0, "-") == 0')
