@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 MODULE = Path("app/static/js/cook-export-logic.js").resolve().as_uri()
-EXPORT_MODULE = Path("app/static/js/components/cook-export.js").resolve().as_uri()
+CHART_MODULE = Path("app/static/js/components/chart.js").resolve().as_uri()
 
 
 def run(expression: str) -> object:
@@ -31,8 +31,8 @@ def share_card_chart_markup(events: list[dict[str, object]]) -> str:
     ]
     cook = {"started_at": "2026-10-25T22:00:00Z"}
     script = (
-        f'import {{ shareCardChartMarkup }} from {json.dumps(EXPORT_MODULE)}; '
-        f"console.log(shareCardChartMarkup({json.dumps(samples)}, "
+        f'import {{ chartMarkup }} from {json.dumps(CHART_MODULE)}; '
+        f"console.log(chartMarkup({json.dumps(samples)}, "
         f"{json.dumps(events)}, {json.dumps(cook)}));"
     )
     result = subprocess.run(

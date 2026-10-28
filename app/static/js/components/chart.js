@@ -59,7 +59,7 @@ function startLabel(startedAtIso) {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(startedAt);
 }
 
-export function chartMarkup(samples, events, cook, options = {}) {
+export function chartMarkup(samples, events, cook) {
   if (!samples.length) return `<section class="board chart-board"><h2 class="hd">Chalked up: this cook</h2><p class="mut">No temperature samples yet.</p></section>`;
   const points = downsample(samples);
   const target = finalTarget(samples);
@@ -82,7 +82,7 @@ export function chartMarkup(samples, events, cook, options = {}) {
     const pinX = x(event.elapsed_seconds);
     return `<g aria-label="${escapeHtml(event.title)}"><line class="event-stem" x1="${pinX}" x2="${pinX}" y1="${PLOT.top}" y2="${HEIGHT - PLOT.bottom}"/><circle class="event-pin" cx="${pinX}" cy="${PLOT.top + 17}" r="15"/><text class="event-pin-label" x="${pinX}" y="${PLOT.top + 23}">${pinNumber.get(event.id)}</text></g>`;
   }).join("");
-  const pinLegend = options.legend !== true || userEvents.length === 0 ? "" : `<div class="event-pin-legend">${userEvents.map((event) => `<div class="event-pin-legend-entry"><span class="event-pin-legend-number">${pinNumber.get(event.id)}</span><span>${escapeHtml(event.title)}</span></div>`).join("")}</div>`;
+  const pinLegend = userEvents.length === 0 ? "" : `<div class="event-pin-legend">${userEvents.map((event) => `<div class="event-pin-legend-entry"><span class="event-pin-legend-number">${pinNumber.get(event.id)}</span><span>${escapeHtml(event.title)}</span></div>`).join("")}</div>`;
   const grid = ticks.map((tick) => `<line class="chart-grid" x1="${PLOT.left}" x2="${WIDTH - PLOT.right}" y1="${y(tick)}" y2="${y(tick)}"/><text class="chart-axis" x="${PLOT.left - 10}" y="${y(tick) + 5}">${Math.round(tick)}°</text>`).join("");
   const durations = phaseDurations(cook);
   const cooldownStart = cook.cook_ended_at ? durations.startup + durations.cook : null;
