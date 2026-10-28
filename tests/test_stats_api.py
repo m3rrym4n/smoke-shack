@@ -29,6 +29,7 @@ def _cook(
     has_gap: bool = False,
     rotisserie: bool = False,
     time_to_done_seconds: int | None = 8_000,
+    exclude_from_stats: bool = False,
 ) -> Cook:
     return Cook(
         started_at=started_at,
@@ -43,6 +44,7 @@ def _cook(
         has_gap=has_gap,
         rotisserie=rotisserie,
         time_to_done_seconds=time_to_done_seconds,
+        exclude_from_stats=exclude_from_stats,
     )
 
 
@@ -78,6 +80,36 @@ def test_cook_stats_filters_and_summarizes_pork_shoulders(
     assert body["cook_seconds"] == {"avg": 9000, "min": 7200, "max": 10800}
     assert [cook["id"] for cook in body["cooks"]] == [second.id, first.id]
     assert body["cooks"][0]["meat_type"] == "Pork Picnic Shoulder"
+
+
+def test_excluded_cooks_do_not_affect_any_stats_aggregate(
+    sessions: sessionmaker[Session], tmp_path: object
+) -> None:
+    started = datetime(2026, 6, 1, 15, tzinfo=UTC)
+    with sessions() as session:
+        meat = _meat("Pork shoulder", "4.00")
+        session.add(meat)
+        session.flush()
+        included = _cook(started, meat.id)
+        excluded = _cook(started + timedelta(days=1), meat.id, exclude_from_stats=True)
+        excluded.cook_ended_at = excluded.startup_ended_at + timedelta(hours=10)
+        excluded.cooldown_ended_at = excluded.cook_ended_at + timedelta(hours=2)
+        excluded.ended_at = excluded.cooldown_ended_at
+        session.add_all([included, excluded])
+        session.commit()
+
+    with _client(sessions, tmp_path) as client:
+        stats = client.get("/api/stats/cooks").json()
+        meat_types = client.get("/api/stats/meat-types").json()
+
+    assert stats["count"] == 1
+    assert stats["cook_seconds"] == {"avg": 7200, "min": 7200, "max": 7200}
+    assert stats["grill_seconds"] == {"avg": 9600, "min": 9600, "max": 9600}
+    assert stats["startup_seconds"] == {"avg": 600, "min": 600, "max": 600}
+    assert stats["cooldown_seconds"] == {"avg": 1800, "min": 1800, "max": 1800}
+    assert stats["time_to_done_seconds"] == {"avg": 8000, "min": 8000, "max": 8000}
+    assert [cook["id"] for cook in stats["cooks"]] == [included.id]
+    assert meat_types == [{"meat_type": "Pork shoulder", "count": 1}]
 
 
 def test_cook_stats_exclusions_empty_values_and_effective_setpoint(

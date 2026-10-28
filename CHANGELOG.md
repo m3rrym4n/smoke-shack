@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Exclude marked dry-run and test cooks from all statistics while retaining them in logs and exports.
 - Add a numbered event legend below share-card charts.
 - End finished-cook chart ticks at cool-down and remove clipped start and total-time labels.
 - Space finished-cook target labels apart and keep late target labels clear of the chart edge.

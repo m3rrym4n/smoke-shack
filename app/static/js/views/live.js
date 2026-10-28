@@ -1,4 +1,4 @@
-import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getMeat, getNotes, getPellets, getPlannedCooks, getRecentCooks, getShowcase, getStatus, listSpices } from "../api.js";
+import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getMeat, getNotes, getPellets, getPlannedCooks, getRecentCooks, getShowcase, getStatus, listSpices, updateCook } from "../api.js";
 import { chartMarkup } from "../components/chart.js";
 import { cookLogMarkup } from "../components/cook-log.js";
 import { cookNotesMarkup } from "../components/cook-notes.js";
@@ -165,8 +165,22 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
   const backLink = liveDetail
     ? '<a class="back-link cc" href="#live">← Back to live cook</a>'
     : '<a class="back-link cc" href="#cooks">← All cooks</a>';
-  const detailActions = requestedCookId == null ? "" : `<div class="detail-actions">${backLink}<div class="detail-action-buttons"><button class="pbtn export-cook" type="button">Export PNG</button><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><span class="export-message" role="status" aria-live="polite"></span></div>`;
+  const detailActions = requestedCookId == null ? "" : `<div class="detail-actions">${backLink}<div class="detail-action-buttons"><label class="detail-stats-toggle"><input type="checkbox"${cook.exclude_from_stats ? " checked" : ""}> Exclude from stats (dry run / test)</label><span class="detail-stats-message" role="status"></span><button class="pbtn export-cook" type="button">Export PNG</button><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><span class="export-message" role="status" aria-live="polite"></span></div>`;
   container.innerHTML = `<div class="cook-detail">${detailActions}${cookContent}${order}</div>`;
+  const statsToggle = container.querySelector(".detail-stats-toggle input");
+  statsToggle?.addEventListener("change", async () => {
+    const message = container.querySelector(".detail-stats-message");
+    statsToggle.disabled = true;
+    try {
+      await updateCook(cook.id, { exclude_from_stats: statsToggle.checked });
+      message.textContent = "Saved";
+    } catch (error) {
+      statsToggle.checked = !statsToggle.checked;
+      message.textContent = error.message || "Could not save";
+    } finally {
+      statsToggle.disabled = false;
+    }
+  });
   setShowcaseCleanup(bindShowcase(container, {
     grillIdentity: status,
     setBusy,

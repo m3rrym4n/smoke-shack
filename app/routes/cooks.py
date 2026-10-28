@@ -106,6 +106,7 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
         "time_to_done_seconds": cook.time_to_done_seconds,
         "has_gap": cook.has_gap,
         "incomplete": cook.incomplete,
+        "exclude_from_stats": cook.exclude_from_stats,
     }
     if include_cost:
         meat_cost = meat.pounds * meat.price_per_pound if meat is not None else None

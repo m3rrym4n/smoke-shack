@@ -154,6 +154,7 @@ export function orderPadMarkup(cook, meat, pellets, cooks = [], config = {}) {
       <div class="paper-field"><span>Pellet cost</span><output name="pellet_cost">${money(model.cost?.pellet_cost)}</output></div>
       <label class="paper-field"><span>Profile used</span><input readonly value="${escapeHtml(model.profile_name || "None")}"></label>
       <fieldset class="paper-field rotisserie"${disabled("rotisserie")}><legend>Rotisserie</legend><label><input type="radio" name="rotisserie" value="true"${model.rotisserie ? " checked" : ""}${disabled("rotisserie")}> Yes</label><label><input type="radio" name="rotisserie" value="false"${model.rotisserie ? "" : " checked"}${disabled("rotisserie")}> No</label></fieldset>
+      ${mode === "history" ? `<label class="paper-field exclude-from-stats"><span>Statistics</span><span><input name="exclude_from_stats" type="checkbox"${model.exclude_from_stats ? " checked" : ""}> Exclude from stats (dry run / test)</span><small class="exclude-stats-message" role="status"></small></label>` : ""}
       <div class="results-with-photos"><label class="paper-field paper-area"><span>How it turned out</span><textarea name="results_text" rows="4">${escapeHtml(model.results_text)}</textarea></label><label class="paper-button add-photos${model.id ? "" : " disabled"}">Add photos<input class="add-photos-input" name="photos" type="file" accept="image/*" multiple${model.id ? "" : " disabled"}></label></div>
       ${photoGalleryMarkup(photos)}
       <p class="form-message" role="status" aria-live="polite"></p>
@@ -318,6 +319,21 @@ export function bindLiveForms(container, { cook, orderCook = cook, events, meat,
     });
   }
   orderForm.addEventListener("input", () => setBusy(true));
+  orderForm.elements.exclude_from_stats?.addEventListener("change", async (event) => {
+    const checkbox = event.currentTarget;
+    const message = orderForm.querySelector(".exclude-stats-message");
+    checkbox.disabled = true;
+    try {
+      await updateCook(orderCook.id, { exclude_from_stats: checkbox.checked });
+      message.textContent = "Saved";
+      setBusy(false);
+    } catch (error) {
+      checkbox.checked = !checkbox.checked;
+      message.textContent = apiMessage(error);
+    } finally {
+      checkbox.disabled = false;
+    }
+  });
   orderForm.elements.meat_id?.addEventListener("change", () => {
     if (orderForm.elements.meat_id.value === "add") { window.location.hash = "meat"; return; }
     const item = meat.find((row) => row.id === Number(orderForm.elements.meat_id.value));
@@ -342,6 +358,7 @@ export function bindLiveForms(container, { cook, orderCook = cook, events, meat,
       pellets_used_lb: pelletsUsed === "" ? null : Number(pelletsUsed),
       rotisserie: orderForm.elements.rotisserie.value === "true",
       results_text: orderForm.elements.results_text.value.trim() || null,
+      ...(orderForm.elements.exclude_from_stats ? { exclude_from_stats: orderForm.elements.exclude_from_stats.checked } : {}),
     }, selectedSpiceIds);
     if (mode === "closed") closedCookReadOnlyFields().forEach((field) => delete body[field]);
     const submit = orderForm.querySelector(".order-save");

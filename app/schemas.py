@@ -124,6 +124,7 @@ class CookUpdate(BaseModel):
     pellet_id: int | None = None
     profile_id: int | None = None
     rotisserie: bool | None = None
+    exclude_from_stats: bool | None = None
     seasonings: str | None = None
     sauces: str | None = None
     prep_time_minutes: int | None = Field(default=None, ge=0)
@@ -132,9 +133,9 @@ class CookUpdate(BaseModel):
     pellets_used_lb: float | None = Field(default=None, ge=0)
     spice_ids: list[int] = Field(default_factory=list)
 
-    @field_validator("rotisserie", mode="before")
+    @field_validator("rotisserie", "exclude_from_stats", mode="before")
     @classmethod
-    def rotisserie_cannot_be_null(cls, value: object) -> object:
+    def booleans_cannot_be_null(cls, value: object) -> object:
         if value is None:
             raise ValueError("field cannot be null")
         return value

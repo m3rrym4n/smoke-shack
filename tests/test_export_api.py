@@ -61,6 +61,7 @@ def test_cooks_csv_headers_values_durations_filters_and_formula_escaping(
             time_to_done_seconds=3500,
             has_gap=True,
             incomplete=False,
+            exclude_from_stats=True,
         )
         session.add(cook)
         cook.spices = [spice]
@@ -90,6 +91,7 @@ def test_cooks_csv_headers_values_durations_filters_and_formula_escaping(
     assert row["pellet_vendor"] == "'@Vendor"
     assert row["pellet_product_name"] == "'-Blend"
     assert row["profile_name"] == "'=Profile"
+    assert row["exclude_from_stats"] == "True"
     assert len(empty.text.splitlines()) == 1
 
 
@@ -171,6 +173,7 @@ def test_all_json_shape_excludes_samples_and_photo_binaries(
             meat_id=meat.id,
             pellet_id=pellet.id,
             profile_id=profile.id,
+            exclude_from_stats=True,
         )
         session.add(cook)
         session.flush()
@@ -203,6 +206,7 @@ def test_all_json_shape_excludes_samples_and_photo_binaries(
     exported = response.json()
     assert set(exported) == {"cooks", "meat", "pellets", "profiles", "notes"}
     assert "samples" not in exported["cooks"][0]
+    assert exported["cooks"][0]["exclude_from_stats"] is True
     assert exported["cooks"][0]["events"][0]["elapsed_seconds"] == 300
     assert exported["cooks"][0]["photos"][0]["caption"] == "Done"
     assert "path" not in exported["cooks"][0]["photos"][0]
