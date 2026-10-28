@@ -31,10 +31,6 @@ function paper(title, text, className) {
   return `<article class="share-paper ${className}"><span class="tape"></span><h3>${title}</h3><p>${escapeHtml(text)}</p></article>`;
 }
 
-export function shareCardChartMarkup(samples, events, cook) {
-  return chartMarkup(samples, events, cook, { legend: true });
-}
-
 function makeCard(cook, content) {
   const times = phaseDurations(cook);
   const identity = showcaseNameLines(content.grillIdentity);
@@ -65,7 +61,7 @@ function makeCard(cook, content) {
     <section class="share-papers${papers.notes && papers.results ? "" : " single"}">${paperMarkup}</section>
     <div class="share-chart-slot"></div>`;
   const chart = document.createElement("template");
-  chart.innerHTML = shareCardChartMarkup(content.samples || [], content.events || [], cook).trim();
+  chart.innerHTML = chartMarkup(content.samples || [], content.events || [], cook).trim();
   card.querySelector(".share-chart-slot").append(chart.content.firstElementChild);
   return card;
 }
