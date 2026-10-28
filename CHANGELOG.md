@@ -1,3 +1,11 @@
+## [1.0.1](http://192.168.1.73:3001/m3rrym4n/smoke-stack/compare/v1.0.0...v1.0.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* create Forgejo release without jq ([3e58ffa](http://192.168.1.73:3001/m3rrym4n/smoke-stack/commit/3e58ffab9ba980462bc5f2061eb53702682b9ef9))
+* stop release notes at top-level headings ([309019f](http://192.168.1.73:3001/m3rrym4n/smoke-stack/commit/309019f8e99761ba2693e27b1445edd694f0a4dd))
+
 # 1.0.0 (2026-10-28)
 
 
