@@ -141,6 +141,26 @@ export function getCookStatsMeatTypes() {
   return getJson("/api/stats/meat-types");
 }
 
+export function getMeatGroups() {
+  return getJson("/api/meat-groups");
+}
+
+export function createMeatGroup(name) {
+  return sendJson("POST", "/api/meat-groups", { name });
+}
+
+export function renameMeatGroup(groupId, name) {
+  return sendJson("PATCH", `/api/meat-groups/${groupId}`, { name });
+}
+
+export function deleteMeatGroup(groupId) {
+  return sendJson("DELETE", `/api/meat-groups/${groupId}`);
+}
+
+export function replaceMeatGroupTypes(groupId, types) {
+  return sendJson("PUT", `/api/meat-groups/${groupId}/types`, { types });
+}
+
 export function getCooksForPellet(pelletId) {
   const params = new URLSearchParams({ pellet_id: pelletId, limit: 1 });
   return getJson(`/api/cooks?${params}`);
