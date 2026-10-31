@@ -8,6 +8,7 @@
 
 * add meat group CRUD and grouped cook statistics
 * add meat group filtering and management to Ask the Pitmaster
+* accept SMOKE_SHACK_GRILL_NAME with legacy variable fallback
 * show cook-time ranges and low-confidence guidance in Ask the Pitmaster
 
 ## [1.0.2](http://192.168.1.73:3001/m3rrym4n/smoke-stack/compare/v1.0.1...v1.0.2) (2026-10-31)
