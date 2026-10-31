@@ -5,17 +5,19 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.background import BackgroundTask
 from starlette.types import Scope
 
+from app.backup import build_backup
 from app.config import Settings
 from app.database import make_engine, make_session_factory
 from app.deps import get_session
@@ -139,6 +141,23 @@ def create_app(
             ),
             "version": _version(),
         }
+
+    @app.get("/api/backup", response_class=FileResponse)
+    def backup() -> FileResponse:
+        created_at = datetime.now(UTC)
+        archive_path = build_backup(
+            config.database_path,
+            config.photo_dir,
+            _version(),
+            created_at=created_at,
+        )
+        filename = f"smoke-shack-backup-{created_at.strftime('%Y%m%d-%H%M%S')}.zip"
+        return FileResponse(
+            archive_path,
+            media_type="application/zip",
+            filename=filename,
+            background=BackgroundTask(archive_path.unlink, missing_ok=True),
+        )
 
     app.state.sessions = factory
     app.state.photo_dir = Path(config.photo_dir)
