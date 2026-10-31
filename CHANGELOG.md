@@ -7,6 +7,7 @@
 ### Features
 
 * add complete backup archive download API
+* add validated in-place backup restore API with safety copies
 * add meat group CRUD and grouped cook statistics
 * add meat group filtering and management to Ask the Pitmaster
 * show cook-time ranges and low-confidence guidance in Ask the Pitmaster

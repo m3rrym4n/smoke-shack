@@ -53,6 +53,7 @@ class Settings:
     incomplete_timeout_minutes: int = 90
     tz: str = "America/Los_Angeles"
     entities_path: str = "config/entities.yaml"
+    restore_max_bytes: int = 500 * 1024 * 1024
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -68,6 +69,7 @@ class Settings:
             incomplete_timeout_minutes=int(os.getenv("INCOMPLETE_TIMEOUT_MINUTES", "90")),
             tz=os.getenv("TZ", "America/Los_Angeles"),
             entities_path=os.getenv("ENTITIES_CONFIG", "config/entities.yaml"),
+            restore_max_bytes=int(os.getenv("RESTORE_MAX_BYTES", str(500 * 1024 * 1024))),
         )
 
     def load_entities(self) -> EntityConfig:

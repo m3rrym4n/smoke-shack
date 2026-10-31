@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, File, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
@@ -23,6 +23,7 @@ from app.database import make_engine, make_session_factory
 from app.deps import get_session
 from app.ha import HAClient, HAStatus, HomeAssistantClient, ingest
 from app.models import Cook, Sample
+from app.restore import restore_backup
 from app.routes.cooks import router as cooks_router
 from app.routes.events import router as events_router
 from app.routes.export import router as export_router
@@ -157,6 +158,17 @@ def create_app(
             media_type="application/zip",
             filename=filename,
             background=BackgroundTask(archive_path.unlink, missing_ok=True),
+        )
+
+    @app.post("/api/restore")
+    async def restore(file: UploadFile = File(...)) -> dict[str, Any]:
+        return await restore_backup(
+            file,
+            Path(config.database_path),
+            Path(config.photo_dir),
+            factory,
+            _version(),
+            config.restore_max_bytes,
         )
 
     app.state.sessions = factory
