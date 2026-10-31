@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api import create_app
 from app.config import Settings
-from app.models import Cook, Meat, Pellet
+from app.database import make_engine, make_session_factory
+from app.models import Cook, Meat, MeatGroup, MeatGroupType, Pellet
 
 
 def _meat(meat_type: str, pounds: str) -> Meat:
@@ -109,7 +113,7 @@ def test_excluded_cooks_do_not_affect_any_stats_aggregate(
     assert stats["cooldown_seconds"] == {"avg": 1800, "min": 1800, "max": 1800}
     assert stats["time_to_done_seconds"] == {"avg": 8000, "min": 8000, "max": 8000}
     assert [cook["id"] for cook in stats["cooks"]] == [included.id]
-    assert meat_types == [{"meat_type": "Pork shoulder", "count": 1}]
+    assert meat_types == [{"meat_type": "Pork shoulder", "count": 1, "group_id": None}]
 
 
 def test_cook_stats_exclusions_empty_values_and_effective_setpoint(
@@ -228,6 +232,73 @@ def test_meat_types_returns_distinct_types_and_cook_counts(
 
     assert response.status_code == 200
     assert response.json() == [
-        {"meat_type": "Pork ribs", "count": 1},
-        {"meat_type": "Pork shoulder", "count": 2},
+        {"meat_type": "Pork ribs", "count": 1, "group_id": None},
+        {"meat_type": "Pork shoulder", "count": 2, "group_id": None},
     ]
+
+
+def test_migrated_seed_assigns_new_meat_type_to_group(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    database = tmp_path / "seeded-meat-groups.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))  # type: ignore[attr-defined]
+    command.upgrade(Config("alembic.ini"), "head")
+    sessions = make_session_factory(make_engine(str(database)))
+
+    with sessions() as session:
+        ribs = _meat("Pork Spare Ribs", "3.00")
+        session.add(ribs)
+        session.flush()
+        session.add(_cook(datetime(2026, 1, 1, tzinfo=UTC), ribs.id))
+        session.commit()
+        pork_ribs_group_id = session.query(MeatGroup.id).filter_by(name="Pork ribs").scalar()
+
+    with _client(sessions, tmp_path) as client:
+        response = client.get("/api/stats/meat-types")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"meat_type": "Pork Spare Ribs", "count": 1, "group_id": pork_ribs_group_id}
+    ]
+
+
+def test_cook_stats_filters_by_meat_group_case_insensitively_and_excludes_cooks(
+    sessions: sessionmaker[Session], tmp_path: object
+) -> None:
+    with sessions() as session:
+        butt = _meat("  Pork Butt ", "8.00")
+        picnic = _meat("PORK SHOULDER PICNIC", "9.00")
+        brisket = _meat("Beef brisket", "12.00")
+        group = MeatGroup(name="Pork shoulder")
+        session.add_all([butt, picnic, brisket, group])
+        session.flush()
+        session.add_all(
+            [
+                MeatGroupType(group_id=group.id, type_key="pork butt"),
+                MeatGroupType(group_id=group.id, type_key="pork shoulder picnic"),
+                _cook(datetime(2026, 1, 1, tzinfo=UTC), butt.id),
+                _cook(datetime(2026, 1, 2, tzinfo=UTC), picnic.id),
+                _cook(
+                    datetime(2026, 1, 3, tzinfo=UTC),
+                    picnic.id,
+                    exclude_from_stats=True,
+                ),
+                _cook(datetime(2026, 1, 4, tzinfo=UTC), brisket.id),
+            ]
+        )
+        session.commit()
+        group_id = group.id
+
+    with _client(sessions, tmp_path) as client:
+        response = client.get(f"/api/stats/cooks?meat_group={group_id}")
+        combined = client.get(
+            f"/api/stats/cooks?meat_group={group_id}&meat_type=picnic"
+        )
+        meat_types = client.get("/api/stats/meat-types")
+
+    assert response.status_code == 200
+    assert response.json()["count"] == 2
+    assert combined.json()["count"] == 1
+    assert {row["group_id"] for row in meat_types.json() if "Pork" in row["meat_type"]} == {
+        group_id
+    }

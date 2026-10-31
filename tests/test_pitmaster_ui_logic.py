@@ -24,10 +24,23 @@ def test_formats_durations_as_hours_and_minutes() -> None:
 
 def test_builds_plain_language_answer_from_set_filters() -> None:
     filters = '{meat:"Pork butt",poundsMin:"4",poundsMax:"4",setpoint:"275",rotisserie:"false"}'
-    stats = '{count:3,cook_seconds:{avg:19200}}'
+    stats = '{count:3,cook_seconds:{avg:19200,min:12120,max:50040}}'
     expression = f"console.log(JSON.stringify(logic.buildAnswerSentence({filters},{stats})))"
     assert run_logic(expression) == (
-        "Based on 3 cooks: a 4 lb Pork butt at 275°F without the rotisserie averages 5h 20m."
+        "Based on 3 cooks: a 4 lb Pork butt at 275°F without the rotisserie averages "
+        "5h 20m (range 3h 22m to 13h 54m)."
+    )
+    note = f"console.log(JSON.stringify(logic.buildLowConfidenceNote({stats})))"
+    assert run_logic(note) == ""
+
+
+def test_one_cook_omits_range_and_shows_low_confidence_note() -> None:
+    stats = '{count:1,cook_seconds:{avg:19200,min:19200,max:19200}}'
+    answer = f"console.log(JSON.stringify(logic.buildAnswerSentence({{}},{stats})))"
+    assert run_logic(answer) == "Based on 1 cook: a matching cook averages 5h 20m."
+    note = f"console.log(JSON.stringify(logic.buildLowConfidenceNote({stats})))"
+    assert run_logic(note) == (
+        "Only 1 matching cook so far. Treat this as a rough guide."
     )
 
 
@@ -36,6 +49,8 @@ def test_builds_no_match_signage_answer() -> None:
     assert run_logic(expression) == (
         "No cooks match that order yet. Give the pitmaster something to work with."
     )
+    note = 'console.log(JSON.stringify(logic.buildLowConfidenceNote({count:0})))'
+    assert run_logic(note) == ""
 
 
 def test_builds_no_cooks_answer_for_selected_meat() -> None:
@@ -54,6 +69,30 @@ def test_merges_meat_types_from_cooks_and_butcher_case() -> None:
         {"value": "Brisket", "label": "Brisket (2)", "count": 2},
         {"value": "Chicken", "label": "Chicken (no cooks yet)", "count": 0},
         {"value": "pork BUTT", "label": "pork BUTT (3)", "count": 3},
+    ]
+
+
+def test_builds_groups_first_with_combined_counts_and_only_ungrouped_types() -> None:
+    groups = '[{id:7,name:"Pork shoulder",types:["pork butt","pork picnic"]}]'
+    stats = (
+        '[{meat_type:"Pork Butt",count:2,group_id:7},'
+        '{meat_type:"Pork Picnic",count:3,group_id:7},'
+        '{meat_type:"Brisket",count:1,group_id:null}]'
+    )
+    meat = '[{type:"Pork Butt"},{type:"Turkey"}]'
+    expression = (
+        f"console.log(JSON.stringify(logic.buildMeatOptions({groups},{stats},{meat},{{}})))"
+    )
+    assert run_logic(expression) == [
+        {
+            "kind": "group", "value": "7", "label": "Pork shoulder (5)",
+            "name": "Pork shoulder", "count": 5,
+        },
+        {"kind": "type", "value": "Brisket", "label": "Brisket (1)", "count": 1, "name": "Brisket"},
+        {
+            "kind": "type", "value": "Turkey", "label": "Turkey (no cooks yet)",
+            "count": 0, "name": "Turkey",
+        },
     ]
 
 
@@ -106,12 +145,42 @@ def test_hash_round_trip_and_api_query_use_exact_supported_names() -> None:
     )
     assert run_logic(expression) == {
         "meat": "Brisket", "poundsMin": "8", "poundsMax": "12", "setpoint": "250",
-        "tolerance": "15", "rotisserie": "true", "pelletId": "42",
+        "tolerance": "15", "rotisserie": "true", "pelletId": "42", "meatGroup": "",
     }
     query = f"console.log(JSON.stringify(logic.statsQuery({filters}).toString()))"
     assert run_logic(query) == (
         "meat_type=Brisket&pounds_min=8&pounds_max=12&setpoint=250&"
         "setpoint_tolerance=15&rotisserie=true&pellet_id=42"
+    )
+
+
+def test_group_hash_round_trip_and_stats_query_never_send_both_meat_filters() -> None:
+    filters = '{meat:"Brisket",meatGroup:"7",rotisserie:"false"}'
+    expression = (
+        f"console.log(JSON.stringify(logic.filtersFromHash(logic.filtersToHash({filters}))))"
+    )
+    assert run_logic(expression) == {
+        "meat": "", "meatGroup": "7", "poundsMin": "", "poundsMax": "",
+        "setpoint": "", "tolerance": "10", "rotisserie": "false", "pelletId": "",
+    }
+    query = f"console.log(JSON.stringify(logic.statsQuery({filters}).toString()))"
+    assert run_logic(query) == "meat_group=7&rotisserie=false"
+
+
+def test_group_name_is_the_answer_subject() -> None:
+    filters = (
+        '{meatGroup:"7",meatGroupName:"Pork shoulder",poundsMin:"5",'
+        'poundsMax:"8",rotisserie:"false"}'
+    )
+    stats = '{count:2,cook_seconds:{avg:18000,min:14400,max:21600}}'
+    expression = f"console.log(JSON.stringify(logic.buildAnswerSentence({filters},{stats})))"
+    assert run_logic(expression) == (
+        "Based on 2 cooks: a 5–8 lb Pork shoulder without the rotisserie averages "
+        "5h (range 4h to 6h)."
+    )
+    note = f"console.log(JSON.stringify(logic.buildLowConfidenceNote({stats})))"
+    assert run_logic(note) == (
+        "Only 2 matching cooks so far. Treat this as a rough guide."
     )
 
 
