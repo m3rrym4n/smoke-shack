@@ -53,7 +53,7 @@ function makeCard(cook, content) {
   const card = document.createElement("div");
   card.className = "cook-share-card";
   card.innerHTML = `
-    <header class="share-header"><div class="share-sign">SMOKE-STACK</div><div class="share-header-details"><div class="share-date"><strong>${escapeHtml(cookDate(cook))}</strong><span>COOK OF THE DAY</span></div>${cookStatusBadgeMarkup(cook)}</div></header>
+    <header class="share-header"><div class="share-sign">SMOKE-SHACK</div><div class="share-header-details"><div class="share-date"><strong>${escapeHtml(cookDate(cook))}</strong><span>COOK OF THE DAY</span></div>${cookStatusBadgeMarkup(cook)}</div></header>
     <section class="share-hero">
       <div class="share-photo-column"><div class="share-cook-photo">${photo}</div><div class="share-grill-row"><div><strong>${escapeHtml(identity.title)}</strong>${identity.maker ? `<span>by ${escapeHtml(identity.maker)}</span>` : ""}</div>${grillPhoto}</div></div>
       <div class="share-special board"><h2>Today's Special</h2><div class="share-meat-line"><strong>${escapeHtml(meat)}</strong>${weight ? `<span>${escapeHtml(weight)}</span>` : ""}</div>${pellet ? `<div class="share-pellet">${escapeHtml(pellet)}</div>` : ""}${rubs ? `<div class="share-rubs">${escapeHtml(rubs)}</div>` : ""}<div class="share-phases">${leader("Startup", duration(times.startup))}${leader("Cook", duration(times.cook), true)}${leader("Cool down", duration(times.cooldown))}${leader("Total grill time", duration(times.total), false, true)}</div></div>
@@ -97,7 +97,7 @@ async function shareOrDownload(blob, filename) {
   const file = new File([blob], filename, { type: "image/png" });
   if (navigator.share && navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: "Smoke-Stack cook" });
+      await navigator.share({ files: [file], title: "Smoke-Shack cook" });
       return;
     } catch (error) {
       if (error?.name === "AbortError") return;

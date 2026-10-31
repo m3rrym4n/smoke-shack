@@ -27,7 +27,10 @@ def test_static_shell_and_existing_routes(sessions: sessionmaker[Session]) -> No
         home = client.get("/")
         assert home.status_code == 200
         assert "text/html" in home.headers["content-type"]
-        assert "SMOKE-STACK" in home.text
+        assert "<title>Smoke-Shack</title>" in home.text
+        assert "SMOKE-SHACK" in home.text
+        assert "LOW &amp; SLOW" in home.text
+        assert "PELLET-FIRED" not in home.text
         assert client.get("/health").status_code == 200
         assert client.get("/docs").status_code == 200
 
