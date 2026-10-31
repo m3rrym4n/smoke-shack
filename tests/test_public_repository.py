@@ -18,7 +18,11 @@ def test_tracked_files_do_not_contain_private_ipv4_address() -> None:
         if not raw_path:
             continue
         relative_path = Path(raw_path.decode())
-        if relative_path == Path("CHANGELOG.md") or relative_path.parts[0] == ".forgejo":
+        # Keep the dev image registry address until Public Launch, Phase 4.
+        if (
+            relative_path in {Path("CHANGELOG.md"), Path("compose.yml")}
+            or relative_path.parts[0] == ".forgejo"
+        ):
             continue
         if private_address_prefix in (REPOSITORY_ROOT / relative_path).read_bytes():
             matches.append(relative_path.as_posix())

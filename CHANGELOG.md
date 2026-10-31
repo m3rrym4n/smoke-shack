@@ -2,6 +2,7 @@
 
 ### Bug Fixes
 
+* keep the deployable dev image and move Backup & Restore into the main navigation
 * update visible branding to Smoke-Shack
 
 ### Features

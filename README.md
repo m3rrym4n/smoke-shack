@@ -107,10 +107,18 @@ notes, profiles, and photo metadata. Uploaded photo files are stored under `PHOT
 Compose example both paths live in the `smoke-shack-data` volume, so preserve that volume
 when replacing or upgrading the container.
 
-Back up the named volume using your Docker host's normal volume-backup process. Stop
-Smoke-Shack while taking a file-level copy so the SQLite database and its companion files are
-captured consistently. The entity YAML is bind-mounted separately and should be included in
-your host configuration backups.
+Use the **Backup & Restore** link in the top navigation (or open `#backup` directly). **Download
+backup** saves a zip containing the full database, all uploaded photos, and a manifest. Keep
+preserving the data volume as an additional safeguard when replacing or upgrading the
+container.
+
+**Restore** uploads a Smoke-Shack backup zip and replaces all current data. Before replacing
+anything, Smoke-Shack saves a safety copy named `pre-restore-<timestamp>.zip` next to the
+database. Restore is refused while a cook is in progress. Backups from a newer database schema
+are also refused; backups from older schemas are migrated forward after restore.
+
+Home Assistant settings (`HA_URL` and `HA_TOKEN`) and `entities.yaml` are not included in the
+archive, so preserve them separately.
 
 ## Screenshots
 
