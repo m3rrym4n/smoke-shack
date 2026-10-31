@@ -30,6 +30,37 @@ def test_empty_database_upgrades_to_complete_head(
     assert "photo_path" in {column["name"] for column in schema.get_columns("meat")}
     assert "photo_path" in {column["name"] for column in schema.get_columns("pellets")}
     assert "photo_path" in {column["name"] for column in schema.get_columns("spices")}
+    assert "meat_groups" in schema.get_table_names()
+    assert "meat_group_types" in schema.get_table_names()
+
+
+def test_meat_groups_migration_seeds_only_existing_meat_types(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    database = tmp_path / "meat-groups.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))  # type: ignore[attr-defined]
+    config = Config("alembic.ini")
+    command.upgrade(config, "4b825e65bd0a")
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO meat (type, pounds, price_per_pound, purchased_on, cooked) "
+                "VALUES ('Pork Butt', 8, 2, '2026-01-01', 0), "
+                "('PORK SHOULDER PICNIC', 9, 2, '2026-01-01', 0), "
+                "('Chicken', 5, 2, '2026-01-01', 0)"
+            )
+        )
+
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        groups = connection.execute(text("SELECT name FROM meat_groups ORDER BY name")).scalars()
+        types = connection.execute(
+            text("SELECT type_key FROM meat_group_types ORDER BY type_key")
+        ).scalars()
+
+    assert list(groups) == ["Beef ribs", "Leg roasts", "Pork ribs", "Pork shoulder"]
+    assert list(types) == ["pork butt", "pork shoulder picnic"]
 
 
 def test_upgrade_from_previous_head_preserves_existing_cooks(

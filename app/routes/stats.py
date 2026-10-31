@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_session
-from app.models import Cook, Meat, Pellet
+from app.models import Cook, Meat, MeatGroupType, Pellet
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -40,6 +40,7 @@ def _summary(values: list[int | None]) -> dict[str, int | None]:
 def cook_stats(
     session: SessionDep,
     meat_type: str | None = None,
+    meat_group: int | None = None,
     pounds_min: float | None = Query(default=None, ge=0),
     pounds_max: float | None = Query(default=None, ge=0),
     setpoint: float | None = None,
@@ -60,6 +61,11 @@ def cook_stats(
     )
     if meat_type is not None:
         query = query.where(func.lower(Meat.type).contains(meat_type.lower(), autoescape=True))
+    if meat_group is not None:
+        grouped_types = select(MeatGroupType.type_key).where(
+            MeatGroupType.group_id == meat_group
+        )
+        query = query.where(func.lower(func.trim(Meat.type)).in_(grouped_types))
     if pounds_min is not None:
         query = query.where(Meat.pounds >= Decimal(str(pounds_min)))
     if pounds_max is not None:
@@ -122,14 +128,18 @@ def cook_stats(
 @router.get("/meat-types")
 def meat_types(session: SessionDep) -> list[dict[str, Any]]:
     rows = session.execute(
-        select(Meat.type, func.count(Cook.id))
+        select(Meat.type, func.count(Cook.id), MeatGroupType.group_id)
         .join(Cook, Cook.meat_id == Meat.id)
+        .outerjoin(MeatGroupType, func.lower(func.trim(Meat.type)) == MeatGroupType.type_key)
         .where(
             Cook.ended_at.is_not(None),
             Cook.status != "planned",
             Cook.exclude_from_stats.is_(False),
         )
-        .group_by(Meat.type)
+        .group_by(Meat.type, MeatGroupType.group_id)
         .order_by(Meat.type)
     )
-    return [{"meat_type": meat_type, "count": count} for meat_type, count in rows]
+    return [
+        {"meat_type": meat_type, "count": count, "group_id": group_id}
+        for meat_type, count, group_id in rows
+    ]

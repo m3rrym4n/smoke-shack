@@ -1,3 +1,9 @@
+## Unreleased
+
+### Features
+
+* add meat group CRUD and grouped cook statistics
+
 ## [1.0.2](http://192.168.1.73:3001/m3rrym4n/smoke-stack/compare/v1.0.1...v1.0.2) (2026-10-31)
 
 
