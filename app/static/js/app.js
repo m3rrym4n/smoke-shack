@@ -5,8 +5,9 @@ import { mountNotesView } from "./views/notes.js";
 import { legacyPantryRedirect, parsePantryRoute } from "./pantry-logic.js";
 import { mountPantryView } from "./views/pantry.js";
 import { mountPitmasterView } from "./views/pitmaster.js";
+import { mountBackupView } from "./views/backup.js";
 
-const routes = new Set(["live", "cooks", "profiles", "notes", "pitmaster"]);
+const routes = new Set(["live", "cooks", "profiles", "notes", "pitmaster", "backup"]);
 const view = document.querySelector("#view");
 const neon = document.querySelector("#now-smoking");
 const buildVersion = document.querySelector("#build-version");
@@ -61,6 +62,10 @@ function renderRoute() {
   }
   if (route.name === "pitmaster") {
     disposeView = mountPitmasterView(view);
+    return;
+  }
+  if (route.name === "backup") {
+    disposeView = mountBackupView(view);
     return;
   }
   view.innerHTML = `
