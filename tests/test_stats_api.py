@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api import create_app
 from app.config import Settings
+from app.database import make_engine, make_session_factory
 from app.models import Cook, Meat, MeatGroup, MeatGroupType, Pellet
 
 
@@ -230,6 +234,31 @@ def test_meat_types_returns_distinct_types_and_cook_counts(
     assert response.json() == [
         {"meat_type": "Pork ribs", "count": 1, "group_id": None},
         {"meat_type": "Pork shoulder", "count": 2, "group_id": None},
+    ]
+
+
+def test_migrated_seed_assigns_new_meat_type_to_group(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    database = tmp_path / "seeded-meat-groups.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))  # type: ignore[attr-defined]
+    command.upgrade(Config("alembic.ini"), "head")
+    sessions = make_session_factory(make_engine(str(database)))
+
+    with sessions() as session:
+        ribs = _meat("Pork Spare Ribs", "3.00")
+        session.add(ribs)
+        session.flush()
+        session.add(_cook(datetime(2026, 1, 1, tzinfo=UTC), ribs.id))
+        session.commit()
+        pork_ribs_group_id = session.query(MeatGroup.id).filter_by(name="Pork ribs").scalar()
+
+    with _client(sessions, tmp_path) as client:
+        response = client.get("/api/stats/meat-types")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"meat_type": "Pork Spare Ribs", "count": 1, "group_id": pork_ribs_group_id}
     ]
 
 

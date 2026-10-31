@@ -45,10 +45,6 @@ def upgrade() -> None:
     )
 
     connection = op.get_bind()
-    existing = {
-        row[0]
-        for row in connection.execute(sa.text("SELECT DISTINCT lower(trim(type)) FROM meat"))
-    }
     for name, type_keys in SEEDS.items():
         result = connection.execute(
             sa.text("INSERT OR IGNORE INTO meat_groups (name) VALUES (:name)"), {"name": name}
@@ -60,14 +56,13 @@ def upgrade() -> None:
                 {"name": name},
             ).scalar_one()
         for type_key in type_keys:
-            if type_key in existing:
-                connection.execute(
-                    sa.text(
-                        "INSERT OR IGNORE INTO meat_group_types (group_id, type_key) "
-                        "VALUES (:group_id, :type_key)"
-                    ),
-                    {"group_id": group_id, "type_key": type_key},
-                )
+            connection.execute(
+                sa.text(
+                    "INSERT OR IGNORE INTO meat_group_types (group_id, type_key) "
+                    "VALUES (:group_id, :type_key)"
+                ),
+                {"group_id": group_id, "type_key": type_key},
+            )
 
 
 def downgrade() -> None:
