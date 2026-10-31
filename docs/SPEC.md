@@ -8,7 +8,7 @@ Owner: Stan (solo developer, limited coding experience; all coding is done by Co
 
 - Python 3.12, FastAPI, SQLite (WAL mode), SQLAlchemy 2 + Alembic, pytest, ruff, mypy.
 - One Docker image, single container, one volume for the SQLite DB and uploaded photos.
-- Forgejo-native CI/CD copied from CrateSpy's pattern (`.forgejo/workflows/dev-build-deploy.yml`, `main-release.yml`), deployed through Dockhand to the Factory VM (192.168.1.73). Look at `m3rrym4n/cratespy` for the real workflow files and copy the shape exactly.
+- Forgejo-native CI/CD copied from CrateSpy's pattern (`.forgejo/workflows/dev-build-deploy.yml`, `main-release.yml`), deployed through Dockhand to the target host (`your-host`). Look at `m3rrym4n/cratespy` for the real workflow files and copy the shape exactly.
 - Configuration by environment variables only: `HA_URL`, `HA_TOKEN` (long-lived token, secret), `DATABASE_PATH`, `PHOTO_DIR`, `SAMPLE_INTERVAL_SECONDS` (default 10), `TZ`.
 - HA entity IDs are **configuration, not code** (YAML or env): pit climate entity, pit temp, setpoint, probe 1 and 2 temps, fire state, power state, plus an optional list of extra probes (Bluetooth probes via ESP32 will be added later).
 - No auth in v1 (LAN only). Do not add telemetry.
