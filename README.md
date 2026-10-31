@@ -1,6 +1,6 @@
-# Smoke Stack
+# Smoke-Shack
 
-Smoke Stack is a small FastAPI service that records Green Mountain Grills cook data from
+Smoke-Shack is a small FastAPI service that records Green Mountain Grills cook data from
 Home Assistant. Job 1 provides the database, HA ingestion, cook lifecycle, read-only API,
 tests, and container scaffold.
 

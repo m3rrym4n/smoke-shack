@@ -1,13 +1,13 @@
-# smoke-stack: public read-only page (spec addendum)
+# Smoke-Shack: public read-only page (spec addendum)
 
-Addendum to `docs/SPEC.md` and `docs/SPEC-addendum.md`. Describes an external, read-only, live view of smoke-stack hosted on Cloudflare, in the same style as Rinse Index (one Worker with Static Assets, no admin UI, no CMS). If this file conflicts with the SPEC on anything public-page related, this file wins.
+Addendum to `docs/SPEC.md` and `docs/SPEC-addendum.md`. Describes an external, read-only, live view of Smoke-Shack hosted on Cloudflare, in the same style as Rinse Index (one Worker with Static Assets, no admin UI, no CMS). If this file conflicts with the SPEC on anything public-page related, this file wins.
 
 ## 1. Goals and non-goals
 
 - A public page that shows everything the private app shows except controls and editing: live cook, cook log and timeline, charts, Butcher Case (meat), Pellet Pantry, Profiles, Pit Notes, and the "Ask the Pitmaster" stats.
 - The page is **live**: while a cook is active, visitors see the pit temp, probes and timeline update in near real time.
 - No controls, no forms, no write path of any kind from the public side.
-- Nothing on the internet connects into the homelab. smoke-stack (on Factory) only makes **outbound** HTTPS calls.
+- Nothing on the internet connects into the homelab. Smoke-Shack (on Factory) only makes **outbound** HTTPS calls.
 - Runs on the Cloudflare **free** plan. No cost surprises: free-plan overages fail, they do not bill.
 
 Non-goals: authentication for viewers, comments, sending anything to the grill, exposing Home Assistant, photos in the first release (phase 2).
@@ -15,9 +15,9 @@ Non-goals: authentication for viewers, comments, sending anything to the grill, 
 ## 2. Architecture
 
 ```
-smoke-stack (Factory, private)                Cloudflare (public)
+Smoke-Shack (Factory, private)                Cloudflare (public)
   HA ingest -> SQLite                          +-----------------------------------------+
-  publisher (outbound HTTPS only) ----------->  | Worker "smoke-stack-public"             |
+  publisher (outbound HTTPS only) ----------->  | Worker "smoke-shack-public"             |
     live push (every 15 s during a cook)       |  /            static page (Static Assets)|
     snapshot sections (on change)              |  /api/ingest/* signed POST (HMAC)        |
                                                |  /api/live, /api/live/ws  public GET     |
@@ -58,11 +58,11 @@ Rules that keep it inside the budget:
 - Static assets (HTML/CSS/JS) are served by Static Assets and do not count against Worker requests.
 - Viewers get live data over a **hibernating WebSocket** (one request on connect, outgoing messages free). Cap at 100 concurrent sockets; above that the page falls back to polling `/api/live` every 15 s, which the Worker answers from a 10 s cache.
 - Snapshot reads are cached (Cache API, 30 s).
-- When the Worker is over quota the page shows its offline state; smoke-stack keeps recording locally regardless.
+- When the Worker is over quota the page shows its offline state; Smoke-Shack keeps recording locally regardless.
 
 ## 5. Public data contract
 
-Settings in smoke-stack (env, all optional):
+Settings in Smoke-Shack (env, all optional):
 
 | Env | Default | Meaning |
 |---|---|---|
@@ -77,7 +77,7 @@ All timestamps are UTC ISO with `Z` and seconds, as in `SPEC-addendum.md`. Paylo
 
 ```
 {
-  "seq": 1234,                       // strictly increasing per smoke-stack process run, plus "run_id"
+  "seq": 1234,                       // strictly increasing per Smoke-Shack process run, plus "run_id"
   "run_id": "uuid",                  // new value each process start; seq restarts at 1
   "sent_at": "ISO",
   "grill": "off" | "startup" | "cook" | "cooldown",
@@ -93,7 +93,7 @@ All timestamps are UTC ISO with `Z` and seconds, as in `SPEC-addendum.md`. Paylo
 }
 ```
 The Worker appends `sample` to the Durable Object's series for that cook and relays the message to connected viewers.
-If the Worker does not hold the cook's earlier series (new cook, Worker restart, missed seq), it answers `409 {"need": "resync"}` and smoke-stack sends `POST /api/ingest/live/resync` with the cook object, every sample so far, and all events (about 4,400 samples max for a 12 h cook). After a cook ends, one final live message with `grill: "off"` and `cook: null` clears the live view.
+If the Worker does not hold the cook's earlier series (new cook, Worker restart, missed seq), it answers `409 {"need": "resync"}` and Smoke-Shack sends `POST /api/ingest/live/resync` with the cook object, every sample so far, and all events (about 4,400 samples max for a 12 h cook). After a cook ends, one final live message with `grill: "off"` and `cook: null` clears the live view.
 
 ### Snapshot sections: `PUT /api/ingest/snapshot/<section>`
 
@@ -112,14 +112,14 @@ Allowlisted fields: the cook fields in the existing cook JSON (phase times, dura
 
 - The publisher runs in its own task. A failing push never blocks or slows ingest or recording.
 - Failed pushes retry with exponential backoff (5 s up to 5 min). Live messages are dropped, not queued; a resync restores state.
-- `GET /status` on smoke-stack gains `public`: `{"enabled": bool, "last_push_at": ISO|null, "last_error": str|null}`.
+- `GET /status` on Smoke-Shack gains `public`: `{"enabled": bool, "last_push_at": ISO|null, "last_error": str|null}`.
 - The page shows "Grill link offline, last seen <time>" when `online` is false, and still shows history from snapshots.
 
 ## 7. Repos, deploy and build order
 
-- New Forgejo repo `m3rrym4n/smoke-stack-public` (TypeScript Worker + static frontend), registered with Variflex, CI copied from CrateSpy's Forgejo pattern (typecheck, tests). Forgejo only; nothing on GitHub.
+- New Forgejo repo `m3rrym4n/smoke-shack-public` (TypeScript Worker + static frontend), registered with Variflex, CI copied from CrateSpy's Forgejo pattern (typecheck, tests). Forgejo only; nothing on GitHub.
 - Deploy: Forgejo Actions runs `wrangler deploy` with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as repo secrets. `PUSH_SECRET` is set once with `wrangler secret put`. Custom domain: to be decided.
-- Order: (1) public payload builders and preview endpoints in smoke-stack, (2) publisher client and snapshot push, (3) live push loop, (4) Worker scaffold with signed ingest, (5) snapshot storage and read API, (6) live Durable Object and WebSocket, (7) frontend in slices (live board, cook log and timeline, Butcher/Pellets/Profiles/Notes, Ask). The frontend slices need the mockup committed under `docs/mockup/`.
+- Order: (1) public payload builders and preview endpoints in Smoke-Shack, (2) publisher client and snapshot push, (3) live push loop, (4) Worker scaffold with signed ingest, (5) snapshot storage and read API, (6) live Durable Object and WebSocket, (7) frontend in slices (live board, cook log and timeline, Butcher/Pellets/Profiles/Notes, Ask). The frontend slices need the mockup committed under `docs/mockup/`.
 - Issues stay small (one slice per job) to avoid timeouts.
 
 ## 8. Open items

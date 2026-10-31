@@ -1,4 +1,4 @@
-# smoke-stack: product spec
+# Smoke-Shack: product spec
 
 Cook journal for a Green Mountain Grills Daniel Boone Prime WiFi pellet grill, controlled through Home Assistant (HA) using the `gmg-ha` integration (local UDP). It records the **raw samples** of every cook (not chart screenshots) so cooks can be aggregated and queried, e.g. "average cook time for a 4 lb pork picnic shoulder at 275".
 
