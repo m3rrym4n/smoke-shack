@@ -1,3 +1,10 @@
+## [1.0.2](http://192.168.1.73:3001/m3rrym4n/smoke-stack/compare/v1.0.1...v1.0.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* backfill stable Forgejo releases ([5fd5137](http://192.168.1.73:3001/m3rrym4n/smoke-stack/commit/5fd5137afadd0043ea0883d6b337132f00f2eb0c))
+
 ## [1.0.1](http://192.168.1.73:3001/m3rrym4n/smoke-stack/compare/v1.0.0...v1.0.1) (2026-10-28)
 
 
