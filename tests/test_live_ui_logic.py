@@ -163,6 +163,7 @@ def test_gauge_logo_geometry_and_placeholder() -> None:
         wide: gauge.gaugeLogoGeometry(1000, 400),
         placeholder: gauge.gaugeLogoMarkup(null),
         image: gauge.gaugeLogoMarkup("/api/showcase/logo"),
+        svg: gauge.gaugeSvg(225, 250),
       }}));
     """
     result = subprocess.run(
@@ -178,6 +179,7 @@ def test_gauge_logo_geometry_and_placeholder() -> None:
     assert "<image" not in rendered["placeholder"]
     assert "GREEN MOUNTAIN GRILLS" not in rendered["image"]
     assert 'preserveAspectRatio="xMidYMid meet"' in rendered["image"]
+    assert "SMOKE-STACK" not in rendered["svg"]
 
 
 def test_showcase_placeholders_layout_and_stack_clamping() -> None:

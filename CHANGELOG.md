@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Bug Fixes
+
+* update visible branding to Smoke-Shack
+
 ### Features
 
 * add meat group CRUD and grouped cook statistics
