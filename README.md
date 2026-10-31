@@ -77,3 +77,5 @@ and commits that immutable tag back to `compose.yml`; no CI secrets are required
 runs build the image without publishing or changing the branch. `compose.main.yml` is
 intentionally deferred until the first promotion to `main`, per the repository deployment
 conventions.
+
+License: MIT
