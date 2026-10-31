@@ -6,6 +6,9 @@
 
 ### Features
 
+* add complete backup archive download API
+* add validated in-place backup restore API with safety copies
+* add Backup & Restore page for downloading and restoring archives
 * add meat group CRUD and grouped cook statistics
 * add meat group filtering and management to Ask the Pitmaster
 * accept SMOKE_SHACK_GRILL_NAME with legacy variable fallback

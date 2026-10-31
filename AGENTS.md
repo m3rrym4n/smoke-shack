@@ -19,3 +19,5 @@ Read `docs/SPEC.md` and `docs/SPEC-addendum.md` before any work. The issue you w
 
 ## Style
 - Keep it simple and boring. No auth, telemetry, or safety text or confirmations. No secrets in the repo.
+
+CI runs a redacted gitleaks scan against the full Git history on every configured push and pull request. If it finds a credential, rotate the credential first, then remove it from history or add a narrowly scoped allowlist entry with a documented justification for a reviewed false positive.
