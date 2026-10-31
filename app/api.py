@@ -5,22 +5,25 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI
-from fastapi.responses import Response
+from fastapi import Depends, FastAPI, File, UploadFile
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.background import BackgroundTask
 from starlette.types import Scope
 
+from app.backup import build_backup
 from app.config import Settings
 from app.database import make_engine, make_session_factory
 from app.deps import get_session
 from app.ha import HAClient, HAStatus, HomeAssistantClient, ingest
 from app.models import Cook, Sample
+from app.restore import restore_backup
 from app.routes.cooks import router as cooks_router
 from app.routes.events import router as events_router
 from app.routes.export import router as export_router
@@ -139,6 +142,34 @@ def create_app(
             ),
             "version": _version(),
         }
+
+    @app.get("/api/backup", response_class=FileResponse)
+    def backup() -> FileResponse:
+        created_at = datetime.now(UTC)
+        archive_path = build_backup(
+            config.database_path,
+            config.photo_dir,
+            _version(),
+            created_at=created_at,
+        )
+        filename = f"smoke-shack-backup-{created_at.strftime('%Y%m%d-%H%M%S')}.zip"
+        return FileResponse(
+            archive_path,
+            media_type="application/zip",
+            filename=filename,
+            background=BackgroundTask(archive_path.unlink, missing_ok=True),
+        )
+
+    @app.post("/api/restore")
+    async def restore(file: UploadFile = File(...)) -> dict[str, Any]:
+        return await restore_backup(
+            file,
+            Path(config.database_path),
+            Path(config.photo_dir),
+            factory,
+            _version(),
+            config.restore_max_bytes,
+        )
 
     app.state.sessions = factory
     app.state.photo_dir = Path(config.photo_dir)

@@ -12,7 +12,9 @@ from app.database import Base
 config = context.config
 if config.config_file_name:
     fileConfig(config.config_file_name)
-database_path = os.getenv("DATABASE_PATH", "smoke-stack.db")
+database_path = config.attributes.get("database_path") or os.getenv(
+    "DATABASE_PATH", "smoke-stack.db"
+)
 config.set_main_option("sqlalchemy.url", f"sqlite:///{database_path}")
 target_metadata = Base.metadata
 

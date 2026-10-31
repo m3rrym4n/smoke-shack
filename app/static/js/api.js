@@ -36,6 +36,12 @@ export function getStatus() {
   return getJson("/status");
 }
 
+export function restoreBackup(file) {
+  const body = new FormData();
+  body.append("file", file);
+  return requestJson("/api/restore", { method: "POST", body });
+}
+
 export function getShowcase() {
   return getJson("/api/showcase");
 }
