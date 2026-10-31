@@ -151,7 +151,19 @@ export function buildAnswerSentence(filters, stats) {
   if (present(filters.setpoint)) details.push(`at ${filters.setpoint}°F`);
   if (filters.rotisserie === "true") details.push("on the rotisserie");
   if (filters.rotisserie === "false") details.push("without the rotisserie");
-  return `Based on ${count} ${count === 1 ? "cook" : "cooks"}: a ${subject}${details.length ? ` ${details.join(" ")}` : ""} averages ${formatDurationWords(stats.cook_seconds?.avg)}.`;
+  const cookTime = stats.cook_seconds || {};
+  const showRange = count > 1 && present(cookTime.min) && present(cookTime.max)
+    && Number(cookTime.min) !== Number(cookTime.max);
+  const range = showRange
+    ? ` (range ${formatDurationWords(cookTime.min)} to ${formatDurationWords(cookTime.max)})`
+    : "";
+  return `Based on ${count} ${count === 1 ? "cook" : "cooks"}: a ${subject}${details.length ? ` ${details.join(" ")}` : ""} averages ${formatDurationWords(cookTime.avg)}${range}.`;
+}
+
+export function buildLowConfidenceNote(stats) {
+  const count = Number(stats?.count) || 0;
+  if (count < 1 || count > 2) return "";
+  return `Only ${count} matching ${count === 1 ? "cook" : "cooks"} so far. Treat this as a rough guide.`;
 }
 
 export function cookTimePerPound(cooks = []) {

@@ -4,8 +4,8 @@ import {
 } from "../api.js";
 import { renderApiError } from "../components/ui.js";
 import {
-  buildAnswerSentence, buildMeatOptions, cookTimePerPound, filtersFromHash, filtersToHash,
-  formatDuration, statsQuery,
+  buildAnswerSentence, buildLowConfidenceNote, buildMeatOptions, cookTimePerPound,
+  filtersFromHash, filtersToHash, formatDuration, statsQuery,
 } from "../pitmaster-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -34,12 +34,14 @@ function summaryRow(label, summary) {
 
 function renderResult(target, filters, stats) {
   const sentence = escapeHtml(buildAnswerSentence(filters, stats));
+  const confidenceNote = escapeHtml(buildLowConfidenceNote(stats));
   if (!stats.count) {
     target.innerHTML = `<p class="pitmaster-answer">${sentence}</p>`;
     return;
   }
   const perPound = cookTimePerPound(stats.cooks);
   target.innerHTML = `<p class="pitmaster-answer">${sentence}</p>
+    ${confidenceNote ? `<p class="low-confidence-note">${confidenceNote}</p>` : ""}
     <p class="match-count">${stats.count} matching ${stats.count === 1 ? "cook" : "cooks"}</p>
     <div class="pitmaster-stats">
       ${summaryRow("Startup", stats.startup_seconds)}
