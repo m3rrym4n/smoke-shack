@@ -6,6 +6,11 @@ events, ingredients, notes, and results. It was built and tested with a Green Mo
 Daniel Boone Prime WiFi through the `gmg-ha` integration. Smoke-Shack only reads from Home
 Assistant and never controls the grill.
 
+## Status
+
+Smoke-Shack is an early release. The author uses it daily with one grill, but expect rough
+edges.
+
 ## Features
 
 - Cook log with raw temperature history, cook details, photos, and CSV or JSON exports
@@ -17,11 +22,28 @@ Assistant and never controls the grill.
 - Ask the Pitmaster filters for cook-time averages, ranges, and time per pound
 - Downloadable and shareable cook cards with photos, results, notes, phases, and charts
 
+## How it works
+
+The grill connects over Wi-Fi to the `gmg-ha` integration inside Home Assistant. Home
+Assistant then provides the grill data to Smoke-Shack. Smoke-Shack does not talk to the grill:
+it only reads from Home Assistant through its REST API and WebSocket connection, then records
+each cook in its own SQLite database.
+
 ## Requirements
 
-- Home Assistant with the grill entities available and a
-  [long-lived access token](https://www.home-assistant.io/docs/authentication/#your-account-profile)
-- Docker with Docker Compose
+1. **Home Assistant**, running and reachable from the Smoke-Shack container, with a
+   [long-lived access token](https://www.home-assistant.io/docs/authentication/#your-account-profile).
+2. **The [`gmg-ha` integration](https://github.com/y3klab/gmg-ha)**, installed in Home
+   Assistant through [HACS](https://www.hacs.xyz/). The grill must be in Wi-Fi mode and
+   reachable on the local network because `gmg-ha` communicates with it over local UDP, with
+   no cloud service. Smoke-Shack was built and tested with a Green Mountain Grills Daniel
+   Boone Prime WiFi; other grills are untested.
+
+   Credit goes to the `gmg-ha` project and its author for the Home Assistant integration.
+3. **Docker with Docker Compose**.
+
+Other Home Assistant grill integrations may work if you map their entities in
+`entities.yaml`, but only `gmg-ha` is tested.
 
 ## Quick start with Docker Compose
 
@@ -51,6 +73,10 @@ volumes:
   smoke-shack-data:
 ```
 
+The `<image>` placeholder will be replaced with a published image reference once images are
+available. Until then, build the image from this repository with
+`docker build -t smoke-shack .` and use `smoke-shack` as the Compose `image` value.
+
 Copy [`config/entities.yaml`](config/entities.yaml) next to the Compose file, edit it as
 described below, then start the app:
 
@@ -65,7 +91,8 @@ it in the Compose file.
 ## Configure Home Assistant entities
 
 `ENTITIES_CONFIG` tells Smoke-Shack where to find the YAML entity map. The included
-[`config/entities.yaml`](config/entities.yaml) is a working example for `gmg-ha`:
+[`config/entities.yaml`](config/entities.yaml) uses the entity IDs that `gmg-ha` creates in a
+default installation:
 
 ```yaml
 pit_climate: climate.green_mountain_grill
@@ -97,8 +124,9 @@ Each value is a Home Assistant entity ID:
 - `extra_probes`: an optional YAML list of additional temperature sensor entity IDs. Leave it
   as `[]` when there are none.
 
-All keys except `extra_probes` are required. If your integration uses different entity IDs,
-replace the example values rather than changing the keys.
+All keys except `extra_probes` are required. Check your entity IDs in Home Assistant under
+**Developer tools → States**. If they differ from the example, replace the values rather than
+changing the keys.
 
 ## Data and backups
 
@@ -145,6 +173,12 @@ Run the required checks:
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development and pull-request workflow.
+
+## Support
+
+For bugs and questions, open a [GitHub issue](https://github.com/m3rrym4n/smoke-shack/issues).
+For security reports, use the **Report a vulnerability** button on the GitHub **Security** tab;
+see [SECURITY.md](SECURITY.md) for details.
 
 ## License
 
