@@ -45,6 +45,7 @@
 
 ### Features
 
+* add UPC, bag size, and computed bag cost to pellet records
 * support serving the frontend under a Home Assistant ingress path prefix
 * add complete backup archive download API
 * add validated in-place backup restore API with safety copies

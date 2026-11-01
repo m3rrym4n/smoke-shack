@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.deps import get_session
 from app.models import Cook, Pellet
 from app.pantry_photos import delete_photo, photo_response, save_photo
-from app.schemas import PelletCreate, PelletResponse, PelletUpdate
+from app.schemas import PelletCreate, PelletResponse, PelletUpdate, clean_upc
 
 router = APIRouter(prefix="/api/pellets", tags=["pellets"])
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -24,8 +24,14 @@ def _get_pellet(pellet_id: int, session: Session) -> Pellet:
 
 
 @router.get("", response_model=list[PelletResponse])
-def list_pellets(session: SessionDep) -> list[Pellet]:
+def list_pellets(session: SessionDep, upc: str | None = None) -> list[Pellet]:
     query = select(Pellet).order_by(Pellet.vendor, Pellet.product_name, Pellet.id)
+    if upc is not None:
+        try:
+            cleaned_upc = clean_upc(upc)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        query = query.where(Pellet.upc == cleaned_upc)
     return list(session.scalars(query))
 
 

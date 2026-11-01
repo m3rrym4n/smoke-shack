@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -205,7 +205,16 @@ class Pellet(Base):
     product_name: Mapped[str]
     price_per_pound: Mapped[Decimal] = mapped_column(Numeric(8, 2))
     purchased_on: Mapped[date] = mapped_column(Date)
+    upc: Mapped[str | None] = mapped_column(String(14))
+    bag_size_lb: Mapped[float | None]
     photo_path: Mapped[str | None]
+
+    @property
+    def bag_cost(self) -> float | None:
+        if self.bag_size_lb is None or self.price_per_pound is None:
+            return None
+        cost = Decimal(str(self.bag_size_lb)) * self.price_per_pound
+        return float(cost.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
     @property
     def has_photo(self) -> bool:

@@ -354,3 +354,6 @@ def test_restore_migrates_older_revision(tmp_path: Path, monkeypatch) -> None:
     assert response.status_code == 200, response.text
     assert response.json()["schema_revision_before"] == "ef36b629902e"
     assert response.json()["schema_revision_after"] != "ef36b629902e"
+    with sqlite3.connect(live_db) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(pellets)")}
+        assert {"upc", "bag_size_lb"} <= columns

@@ -141,3 +141,57 @@ def test_pellet_crud_sort_validation_and_referenced_delete(
         assert client.patch("/api/pellets/9999", json={"vendor": "X"}).status_code == 404
         assert client.delete("/api/pellets/9999").status_code == 404
         assert client.delete(f"/api/pellets/{alpha.json()['id']}").status_code == 204
+
+
+def test_pellet_upc_bag_size_cost_and_filter(sessions: sessionmaker[Session]) -> None:
+    base = {"vendor": "Bear Mountain", "product_name": "Oak", "price_per_pound": 1.23}
+    with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
+        legacy = client.post("/api/pellets", json=base)
+        assert legacy.status_code == 201
+        assert legacy.json()["upc"] is None
+        assert legacy.json()["bag_size_lb"] is None
+        assert legacy.json()["bag_cost"] is None
+
+        created = client.post(
+            "/api/pellets",
+            json={**base, "product_name": "Hickory", "upc": "0 12345-67890 5", "bag_size_lb": 20},
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["upc"] == "012345678905"
+        assert created.json()["bag_size_lb"] == 20
+        assert created.json()["bag_cost"] == 24.6
+
+        pellet_id = created.json()["id"]
+        patched = client.patch(
+            f"/api/pellets/{pellet_id}",
+            json={"upc": "0000-0000", "bag_size_lb": 2.5},
+        )
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["upc"] == "00000000"
+        assert patched.json()["bag_cost"] == 3.08
+        assert client.get("/api/pellets?upc=0000-0000").json() == [patched.json()]
+        assert client.get("/api/pellets?upc=012345678905").json() == []
+
+        cleared = client.patch(f"/api/pellets/{pellet_id}", json={"upc": "", "bag_size_lb": None})
+        assert cleared.status_code == 200
+        assert cleared.json()["upc"] is None
+        assert cleared.json()["bag_size_lb"] is None
+        assert cleared.json()["bag_cost"] is None
+
+        for upc in ("1234567", "123456789012345", "1234567A"):
+            response = client.post("/api/pellets", json={**base, "upc": upc})
+            assert response.status_code == 422
+            assert "8 to 14 digits" in response.text
+            assert client.patch(f"/api/pellets/{pellet_id}", json={"upc": upc}).status_code == 422
+        for bag_size in (0, -1, 100.01, 101):
+            assert (
+                client.post("/api/pellets", json={**base, "bag_size_lb": bag_size}).status_code
+                == 422
+            )
+            assert (
+                client.patch(
+                    f"/api/pellets/{pellet_id}", json={"bag_size_lb": bag_size}
+                ).status_code
+                == 422
+            )
+        assert client.get("/api/pellets?upc=not-a-upc").status_code == 422
