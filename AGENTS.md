@@ -4,6 +4,7 @@ Read `docs/SPEC.md` and `docs/SPEC-addendum.md` before any work. The issue you w
 
 ## Branches and merging
 - Work on a branch and open a PR. Never push directly to `main` and never merge into `main` yourself. Promotion to `main` is a human action.
+- Open pull requests on this Forgejo repository only, with `dev` as the base branch, using the established Forgejo method. Never run `gh` or call any other GitHub API, and never create GitHub pull requests, issues, releases, or repositories; the GitHub mirror is read-only output. If the Forgejo pull request cannot be opened, stop and report it instead of falling back to GitHub.
 - Use Conventional Commit prefixes (`feat:`, `fix:`, `docs:`, `chore:`).
 - Any new cross-cook aggregate must exclude cooks with `exclude_from_stats`.
 - Codex never pushes to or merges into `main`.
