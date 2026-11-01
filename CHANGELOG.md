@@ -1,3 +1,15 @@
+# [1.3.0](https://github.com/m3rrym4n/smoke-shack/compare/v1.2.0...v1.3.0) (2026-11-01)
+
+
+### Features
+
+* add Home Assistant App wrapper ([1a5f99c](https://github.com/m3rrym4n/smoke-shack/commit/1a5f99c48ffacf915a4a30be7eab11c6e3d99c4a))
+* add pellet pantry UPC and bag details ([e629e56](https://github.com/m3rrym4n/smoke-shack/commit/e629e565afb9a816a70656598f3049c433352754))
+* add pellet UPC and bag size ([2205cf0](https://github.com/m3rrym4n/smoke-shack/commit/2205cf0639557eaae3b6be43c1a7a6bb957eb386))
+* connect through Home Assistant Supervisor ([0d9edaf](https://github.com/m3rrym4n/smoke-shack/commit/0d9edaf6d25372edde8525fc2a73a060f650fca5))
+* mark pellet bags empty ([f0bbe2d](https://github.com/m3rrym4n/smoke-shack/commit/f0bbe2d1debf64c29057fa09ddf7731dab590e5d))
+* store Home Assistant App data under /data ([2745dda](https://github.com/m3rrym4n/smoke-shack/commit/2745dda61a6e65cc0c5c4b8f12105b15873d64ea))
+
 # [1.2.0](https://github.com/m3rrym4n/smoke-shack/compare/v1.1.1...v1.2.0) (2026-11-01)
 
 
