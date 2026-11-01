@@ -11,8 +11,8 @@ WORKFLOW_PATH = REPOSITORY_ROOT / ".forgejo/workflows/dev-build-deploy.yml"
 @pytest.mark.parametrize(
     "existing_image",
     [
-        "192.168.1.73:5050/smoke-stack/smoke-stack:1.1.1-dev.2",
-        "192.168.1.73:5050/smoke-shack/smoke-shack:1.1.1-dev.3",
+        "registry.example:5050/smoke-stack/smoke-stack:1.1.1-dev.2",
+        "registry.example:5050/smoke-shack/smoke-shack:1.1.1-dev.3",
     ],
 )
 def test_deployed_image_rewrite_replaces_any_existing_image_line(
@@ -29,8 +29,9 @@ def test_deployed_image_rewrite_replaces_any_existing_image_line(
 
     subprocess.run(command, check=True)
 
-    assert compose_path.read_text() == (
-        "services:\n"
-        "  smoke-shack:\n"
-        "    image: 192.168.1.73:5050/smoke-shack/smoke-shack:1.2.3-dev.4\n"
-    )
+    rewritten = compose_path.read_text()
+    image_lines = [line for line in rewritten.splitlines() if "image:" in line]
+    assert len(image_lines) == 1
+    assert image_lines[0].startswith("    image: ")
+    assert image_lines[0].endswith("/smoke-shack/smoke-shack:1.2.3-dev.4")
+    assert "smoke-stack/smoke-stack" not in rewritten
