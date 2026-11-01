@@ -4,14 +4,18 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_tracked_files_do_not_contain_private_ipv4_address() -> None:
+def test_tracked_files_do_not_contain_private_references() -> None:
     tracked_files = subprocess.run(
         ["git", "ls-files", "-z"],
         cwd=REPOSITORY_ROOT,
         check=True,
         capture_output=True,
     ).stdout.split(b"\0")
-    private_address_prefix = b"192." + b"168."
+    forbidden_strings = (
+        b"192." + b"168.",
+        b"claude.ai/" + b"artifact",
+        b"limited coding " + b"experience",
+    )
     matches: list[str] = []
 
     for raw_path in tracked_files:
@@ -24,7 +28,8 @@ def test_tracked_files_do_not_contain_private_ipv4_address() -> None:
             or relative_path.parts[0] == ".forgejo"
         ):
             continue
-        if private_address_prefix in (REPOSITORY_ROOT / relative_path).read_bytes():
+        contents = (REPOSITORY_ROOT / relative_path).read_bytes().lower()
+        if any(forbidden_string in contents for forbidden_string in forbidden_strings):
             matches.append(relative_path.as_posix())
 
-    assert matches == [], f"private IPv4 address found in tracked files: {matches}"
+    assert matches == [], f"private reference found in tracked files: {matches}"

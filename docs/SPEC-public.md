@@ -117,7 +117,7 @@ Allowlisted fields: the cook fields in the existing cook JSON (phase times, dura
 
 ## 7. Repos, deploy and build order
 
-- New Forgejo repo `m3rrym4n/smoke-shack-public` (TypeScript Worker + static frontend), registered with Variflex, CI copied from CrateSpy's Forgejo pattern (typecheck, tests). Forgejo only; nothing on GitHub.
+- New Forgejo repo `m3rrym4n/smoke-shack-public` (TypeScript Worker + static frontend), with Forgejo CI for typechecking and tests. Forgejo only; nothing on GitHub.
 - Deploy: Forgejo Actions runs `wrangler deploy` with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as repo secrets. `PUSH_SECRET` is set once with `wrangler secret put`. Custom domain: to be decided.
 - Order: (1) public payload builders and preview endpoints in Smoke-Shack, (2) publisher client and snapshot push, (3) live push loop, (4) Worker scaffold with signed ingest, (5) snapshot storage and read API, (6) live Durable Object and WebSocket, (7) frontend in slices (live board, cook log and timeline, Butcher/Pellets/Profiles/Notes, Ask). The frontend slices need the mockup committed under `docs/mockup/`.
 - Issues stay small (one slice per job) to avoid timeouts.
