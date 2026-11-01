@@ -17,7 +17,7 @@ def test_main_navigation_links_to_backup_view() -> None:
 def test_backup_view_renders_backup_and_restore_sections() -> None:
     view = Path("app/static/js/views/backup.js").read_text()
     assert "Download backup" in view
-    assert 'href="/api/backup"' in view
+    assert 'withBase("/api/backup")' in view
     assert "Restore REPLACES all current data" in view
     assert 'accept=".zip,application/zip"' in view
     assert "window.confirm" not in view

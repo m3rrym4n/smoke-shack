@@ -1,4 +1,4 @@
-import { createCookEvent, createPlannedCook, createSpice, deleteCook, deleteCookEvent, deleteCookPhoto, updateCook, updateCookEvent, uploadCookPhoto } from "../api.js";
+import { createCookEvent, createPlannedCook, createSpice, deleteCook, deleteCookEvent, deleteCookPhoto, updateCook, updateCookEvent, uploadCookPhoto, withBase } from "../api.js";
 import { availableMeat, meatOptionLabel, pelletOptionLabel, validatePelletsUsed } from "../order-pad-logic.js";
 import { addSpice, filterSpiceChoices, removeSpice, spiceBrand, spiceLabel, withSpiceIds } from "../spice-picker-logic.js";
 import { formatSpiceSize, groupSpices } from "../spices-logic.js";
@@ -42,7 +42,8 @@ function money(value) {
 }
 
 function photoMarkup(photo) {
-  return `<figure class="cook-photo" data-photo-id="${photo.id}"><a href="${photo.url}" target="_blank" rel="noopener"><img src="${photo.url}" alt="Cook photo ${photo.id}" loading="lazy"></a><figcaption><button class="paper-button delete-photo" type="button">Delete</button><span class="photo-confirm" hidden></span></figcaption></figure>`;
+  const url = withBase(photo.url);
+  return `<figure class="cook-photo" data-photo-id="${photo.id}"><a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="Cook photo ${photo.id}" loading="lazy"></a><figcaption><button class="paper-button delete-photo" type="button">Delete</button><span class="photo-confirm" hidden></span></figcaption></figure>`;
 }
 
 export function photoGalleryMarkup(photos) {
@@ -264,7 +265,7 @@ export function bindLiveForms(container, { cook, orderCook = cook, events, meat,
     const selected = spices.filter((spice) => selectedSpiceIds.includes(spice.id));
     picker.querySelector(".rub-chips").innerHTML = selected.map((spice) => `<button class="rub-chip" type="button" data-remove-spice="${spice.id}" aria-label="Remove ${escapeHtml(spiceLabel(spice))}">${escapeHtml(spiceLabel(spice))}<span aria-hidden="true">×</span></button>`).join("") || '<span class="rub-empty">No rubs chosen</span>';
     const visible = filterSpiceChoices(spices, picker.querySelector(".rub-search").value);
-    picker.querySelector(".rub-choice-groups").innerHTML = groupSpices(visible).map((group) => `<section><h4>${escapeHtml(group.brand)}</h4>${group.items.map((spice) => `<button class="rub-choice${selectedSpiceIds.includes(spice.id) ? " selected" : ""}" type="button" data-spice-id="${spice.id}" aria-pressed="${selectedSpiceIds.includes(spice.id)}">${spice.photo_url ? `<img src="${escapeHtml(spice.photo_url)}" alt="">` : '<span class="rub-thumb" aria-hidden="true"></span>'}<span><b>${escapeHtml(spice.name)}</b><small>${escapeHtml([spiceBrand(spice), formatSpiceSize(spice.size_oz)].filter(Boolean).join(" · "))}</small></span></button>`).join("")}</section>`).join("") || '<p class="rub-empty">No rubs match.</p>';
+    picker.querySelector(".rub-choice-groups").innerHTML = groupSpices(visible).map((group) => `<section><h4>${escapeHtml(group.brand)}</h4>${group.items.map((spice) => `<button class="rub-choice${selectedSpiceIds.includes(spice.id) ? " selected" : ""}" type="button" data-spice-id="${spice.id}" aria-pressed="${selectedSpiceIds.includes(spice.id)}">${spice.photo_url ? `<img src="${escapeHtml(withBase(spice.photo_url))}" alt="">` : '<span class="rub-thumb" aria-hidden="true"></span>'}<span><b>${escapeHtml(spice.name)}</b><small>${escapeHtml([spiceBrand(spice), formatSpiceSize(spice.size_oz)].filter(Boolean).join(" · "))}</small></span></button>`).join("")}</section>`).join("") || '<p class="rub-empty">No rubs match.</p>';
   };
   if (picker) {
     renderPicker();

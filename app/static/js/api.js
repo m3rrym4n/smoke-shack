@@ -1,5 +1,11 @@
+export function withBase(path) {
+  const relative = String(path).replace(/^\/+/, "");
+  if (typeof document === "undefined") return `/${relative}`;
+  return new URL(relative, document.baseURI).href;
+}
+
 async function requestJson(path, options = {}) {
-  const response = await fetch(path, options);
+  const response = await fetch(withBase(path), options);
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
     try {

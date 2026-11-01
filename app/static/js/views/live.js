@@ -1,4 +1,4 @@
-import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getMeat, getNotes, getPellets, getPlannedCooks, getRecentCooks, getShowcase, getStatus, listSpices, updateCook } from "../api.js";
+import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getMeat, getNotes, getPellets, getPlannedCooks, getRecentCooks, getShowcase, getStatus, listSpices, updateCook, withBase } from "../api.js";
 import { chartMarkup } from "../components/chart.js";
 import { cookLogMarkup } from "../components/cook-log.js";
 import { cookNotesMarkup } from "../components/cook-notes.js";
@@ -54,7 +54,7 @@ export function probeBoard(name, probe, samples, cook, active) {
 function rubDetailMarkup(cook) {
   const rubs = cook?.spices || [];
   if (!rubs.length && !cook?.seasonings) return '<p class="cook-rubs"><b>Rubs:</b> —</p>';
-  return `<div class="cook-rubs"><b>Rubs:</b><div>${rubs.map((spice) => `<span>${spice.photo_url ? `<img src="${escapeHtml(spice.photo_url)}" alt="">` : ""}${escapeHtml(spiceLabel(spice))}</span>`).join("")}${cook.seasonings ? `<span class="seasoning-note">${escapeHtml(cook.seasonings)}</span>` : ""}</div></div>`;
+  return `<div class="cook-rubs"><b>Rubs:</b><div>${rubs.map((spice) => `<span>${spice.photo_url ? `<img src="${escapeHtml(withBase(spice.photo_url))}" alt="">` : ""}${escapeHtml(spiceLabel(spice))}</span>`).join("")}${cook.seasonings ? `<span class="seasoning-note">${escapeHtml(cook.seasonings)}</span>` : ""}</div></div>`;
 }
 
 export function heroMarkup(cook, samples, active, historical, showcase, grillIdentity) {
