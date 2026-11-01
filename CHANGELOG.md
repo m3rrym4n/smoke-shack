@@ -1,3 +1,13 @@
+## [1.1.1](https://github.com/m3rrym4n/smoke-shack/compare/v1.1.0...v1.1.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* include showcase images in backups ([e8272a5](https://github.com/m3rrym4n/smoke-shack/commit/e8272a5ed4abf79b1147a65ac218716c6cd52b0e))
+* keep LAN address out of deploy test ([5e9ba84](https://github.com/m3rrym4n/smoke-shack/commit/5e9ba8432787ab5d062db57fbe178ddfe1d95feb))
+* publish dev image as smoke-shack ([3c3b34d](https://github.com/m3rrym4n/smoke-shack/commit/3c3b34d883b07b0cd93b058c33cf78d25506f8e8))
+* restore safety copy across filesystems ([ad2142c](https://github.com/m3rrym4n/smoke-shack/commit/ad2142c0312478f4a032366478c651bbcd257944))
+
 # [1.1.0](http://192.168.1.73:3001/m3rrym4n/smoke-shack/compare/v1.0.2...v1.1.0) (2026-11-01)
 
 
