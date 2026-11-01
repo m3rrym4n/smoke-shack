@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 import sqlite3
 import tempfile
@@ -54,7 +53,10 @@ async def restore_backup(
         safety_name = f"pre-restore-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.zip"
         safety_path = database_path.parent / safety_name
         safety_temp = build_backup(database_path, photo_dir, app_version)
-        os.replace(safety_temp, safety_path)
+        try:
+            shutil.move(safety_temp, safety_path)
+        finally:
+            safety_temp.unlink(missing_ok=True)
 
         engine = sessions.kw.get("bind")
         if not isinstance(engine, Engine):

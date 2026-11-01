@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import io
 import json
+import os
 import sqlite3
 import zipfile
 from datetime import UTC, date, datetime
@@ -129,6 +131,28 @@ def test_restore_round_trip_rewrites_paths_and_creates_safety_copy(
         assert connection.execute("SELECT photo_path FROM meat").fetchone() == (
             str(live_photos / "meat" / "1.jpg"),
         )
+
+
+def test_restore_safety_copy_succeeds_across_filesystems(tmp_path: Path, monkeypatch) -> None:
+    source_db = tmp_path / "source.db"
+    _migrate(source_db)
+    archive = _archive_bytes(build_backup(source_db, tmp_path / "source-photos", "test"))
+
+    live_db = tmp_path / "live" / "smoke.db"
+    live_db.parent.mkdir()
+    _migrate(live_db)
+
+    def cross_device_replace(_source: Path, _destination: Path) -> None:
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    monkeypatch.setattr(os, "replace", cross_device_replace)
+
+    with _client(live_db, tmp_path / "live-photos", monkeypatch) as client:
+        response = client.post("/api/restore", files={"file": ("backup.zip", archive)})
+
+    assert response.status_code == 200, response.text
+    safety_path = live_db.parent / response.json()["safety_copy"]
+    assert safety_path.is_file()
 
 
 def test_restore_rejections_leave_current_data_unchanged(tmp_path: Path, monkeypatch) -> None:
