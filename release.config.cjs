@@ -1,16 +1,10 @@
 const isMain = process.env.GITHUB_REF_NAME === "main";
 
 const releaseNoteSections = {
-  build: "Build System",
-  ci: "Continuous Integration",
-  docs: "Documentation",
   feat: "Features",
   fix: "Bug Fixes",
   perf: "Performance Improvements",
-  refactor: "Code Refactoring",
   revert: "Reverts",
-  style: "Styles",
-  test: "Tests",
 };
 
 function transformReleaseNoteCommit(commit) {
