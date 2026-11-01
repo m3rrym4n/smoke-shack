@@ -67,12 +67,15 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
+        supervisor_token = os.getenv("SUPERVISOR_TOKEN", "")
+        default_database_path = "/data/smoke-shack.db" if supervisor_token else "smoke-stack.db"
+        default_photo_dir = "/data/photos" if supervisor_token else "photos"
         return cls(
             ha_url=os.getenv("HA_URL", ""),
             ha_token=os.getenv("HA_TOKEN", ""),
-            supervisor_token=os.getenv("SUPERVISOR_TOKEN", ""),
-            database_path=os.getenv("DATABASE_PATH", "smoke-stack.db"),
-            photo_dir=os.getenv("PHOTO_DIR", "photos"),
+            supervisor_token=supervisor_token,
+            database_path=os.getenv("DATABASE_PATH") or default_database_path,
+            photo_dir=os.getenv("PHOTO_DIR") or default_photo_dir,
             grill_name=os.getenv("SMOKE_SHACK_GRILL_NAME")
             or os.getenv("SMOKE_STACK_GRILL_NAME")
             or "",

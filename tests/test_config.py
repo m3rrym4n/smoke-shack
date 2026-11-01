@@ -5,6 +5,57 @@ import pytest
 from app.config import HAConnection, Settings
 
 
+def test_supervisor_uses_data_paths_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUPERVISOR_TOKEN", "supervisor-secret")
+    monkeypatch.delenv("DATABASE_PATH", raising=False)
+    monkeypatch.delenv("PHOTO_DIR", raising=False)
+
+    settings = Settings.from_env()
+
+    assert settings.database_path == "/data/smoke-shack.db"
+    assert settings.photo_dir == "/data/photos"
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "attribute"),
+    [
+        ("DATABASE_PATH", "/custom/database.db", "database_path"),
+        ("PHOTO_DIR", "/custom/photos", "photo_dir"),
+    ],
+)
+def test_explicit_data_path_wins_with_supervisor(
+    monkeypatch: pytest.MonkeyPatch, variable: str, value: str, attribute: str
+) -> None:
+    monkeypatch.setenv("SUPERVISOR_TOKEN", "supervisor-secret")
+    monkeypatch.setenv(variable, value)
+
+    assert getattr(Settings.from_env(), attribute) == value
+
+
+def test_empty_data_paths_use_supervisor_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUPERVISOR_TOKEN", "supervisor-secret")
+    monkeypatch.setenv("DATABASE_PATH", "")
+    monkeypatch.setenv("PHOTO_DIR", "")
+
+    settings = Settings.from_env()
+
+    assert settings.database_path == "/data/smoke-shack.db"
+    assert settings.photo_dir == "/data/photos"
+
+
+def test_data_paths_keep_old_defaults_without_supervisor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SUPERVISOR_TOKEN", raising=False)
+    monkeypatch.delenv("DATABASE_PATH", raising=False)
+    monkeypatch.delenv("PHOTO_DIR", raising=False)
+
+    settings = Settings.from_env()
+
+    assert settings.database_path == "smoke-stack.db"
+    assert settings.photo_dir == "photos"
+
+
 def test_new_grill_name_wins_when_both_are_set(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SMOKE_SHACK_GRILL_NAME", "New name")
     monkeypatch.setenv("SMOKE_STACK_GRILL_NAME", "Old name")
