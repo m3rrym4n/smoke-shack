@@ -1,4 +1,4 @@
-# smoke-stack UI design reference: "BBQ joint signage"
+# Smoke-Shack UI design reference: "BBQ joint signage"
 
 Source: mockup #4 (Signage.dc.html, sample data only). Replicate the look in real components. Do not copy the mockup's runtime. Mobile first: every row wraps, tap targets are at least 44px.
 
@@ -53,10 +53,10 @@ input,textarea{font-family:inherit}
 ```
 
 ## Page layout (max-width 1200px, padding 30px 24px, gap 36px)
-1. Header signs: red SMOKE-STACK sign (Rye 46px, cream text, 5px cream border + 5px dark outer ring, rotate -1deg, subtitle "PELLET-FIRED · LOW & SLOW" 18px letter-spacing .2em) and a pink neon "NOW SMOKING" sign (Bungee 26px, rotate 1.5deg, `.neon`). The neon sign shows only while a cook is active.
+1. Header signs: red SMOKE-SHACK sign (Rye 46px, cream text, 5px cream border + 5px dark outer ring, rotate -1deg, subtitle "PELLET-FIRED · LOW & SLOW" 18px letter-spacing .2em) and a pink neon "NOW SMOKING" sign (Bungee 26px, rotate 1.5deg, `.neon`). The neon sign shows only while a cook is active.
 2. Nav row of `.pbtn` links: Today's special (active, cream bg #f1e3c0, ink text) / Cook log / Profiles / Pellets / Meat / Notes / Ask the pitmaster (inactive: bg #6b3f1f, text #f1e3c0).
 3. Hero (flex-wrap, gap 36): left board "The Pit" with a round gauge, setpoint chips (225/250/275/350/450 as `.cc`), and Start/Fan/Shutdown `.pbtn` (red / cream / dark). Right column: "Today's Special" board and probe boards.
-   - Gauge: SVG 400x400. Black rim, red ring, cream face; ticks every 10 degrees (small) and 50 (large); numerals 0 to 500 in Rye; center text "SMOKE-STACK" (red, 17px), the big temp (Rye 52px), "DEGREES F"; amber setpoint marker triangle at the rim; red needle with hub; "SETPOINT 275" below.
+   - Gauge: SVG 400x400. Black rim, red ring, cream face; ticks every 10 degrees (small) and 50 (large); numerals 0 to 500 in Rye; center text "SMOKE-SHACK" (red, 17px), the big temp (Rye 52px), "DEGREES F"; amber setpoint marker triangle at the rim; red needle with hub; "SETPOINT 275" below.
    - Today's Special: Caveat Brush 46px heading, meat name 38px with weight in salmon, a muted line (setpoint, pellets, profile), a phase bar (28px tall, 3px chalk border; startup = yellow fill, cook = salmon diagonal stripes, remaining = empty; flex proportions by duration), and `.ld` rows for Startup / Cook (yellow, 24px while active) / Cool down / Total grill time (double top rule).
    - Probe board: label, "plugged in" green pill, big temp (Caveat Brush 78px salmon), "aiming for N", progress bar (SVG pill outline with salmon fill, tick marks), "N% of the way to done". Unplugged probe board: X icon plus "sold out (unplugged)" in muted chalk.
 4. "Chalked up: this cook" board: SVG line chart on a 1100x316 canvas. Pit line salmon 5px, probe line blue 5px, dashed cream target line labeled "done at N", startup band as translucent yellow rectangle, a chalk displacement filter (feTurbulence 0.9, scale 2.5) on lines, and numbered yellow event pins on dotted vertical lines. Legend row above. Horizontal scroll on phones (min-width 700px).

@@ -5,10 +5,13 @@ import subprocess
 from pathlib import Path
 
 
-def test_footer_links_to_backup_view() -> None:
+def test_main_navigation_links_to_backup_view() -> None:
     page = Path("app/static/index.html").read_text()
-    assert 'href="#backup"' in page
-    assert "Backup &amp; Restore" in page
+    nav = page.split('<nav class="nav"', 1)[1].split("</nav>", 1)[0]
+    assert nav.rstrip().endswith('<a class="pbtn" href="#backup">Backup &amp; Restore</a>')
+
+    footer = page.split('<footer class="build-footer">', 1)[1].split("</footer>", 1)[0]
+    assert 'href="#backup"' not in footer
 
 
 def test_backup_view_renders_backup_and_restore_sections() -> None:
