@@ -2,6 +2,7 @@ import { buildExportFilename, cookStatusBadgeMarkup, exportPhotoSelection, NO_PH
 import { phaseDurations, showcaseNameLines } from "../live-logic.js";
 import { chartMarkup } from "./chart.js";
 import { seasoningText } from "../spice-picker-logic.js";
+import { withBase } from "../api.js";
 
 const EXPORT_WIDTH = 1080;
 const EXPORT_HEIGHT = 1350;
@@ -41,10 +42,10 @@ function makeCard(cook, content) {
     papers.results ? paper("How it turned out", content.resultsText.trim(), "results-paper") : "",
   ].join("");
   const photo = content.photoUrl
-    ? `<img src="${escapeHtml(content.photoUrl)}" alt="Cook">`
+    ? `<img src="${escapeHtml(withBase(content.photoUrl))}" alt="Cook">`
     : '<div class="share-photo-empty">COOK PHOTO</div>';
   const grillPhoto = content.showcase?.photo_url
-    ? `<img class="share-grill-photo" src="${escapeHtml(content.showcase.photo_url)}" alt="Grill">`
+    ? `<img class="share-grill-photo" src="${escapeHtml(withBase(content.showcase.photo_url))}" alt="Grill">`
     : "";
   const meat = cook.meat?.type || "Mystery smoke";
   const weight = weightText(cook.meat?.pounds);
@@ -119,7 +120,7 @@ function choosePhoto(cook, photos) {
   const dialog = document.createElement("dialog");
   dialog.className = "share-photo-picker";
   const choices = [
-    ...photos.map((photo) => `<label><input type="radio" name="share-photo" value="${photo.id}"${String(photo.id) === selected ? " checked" : ""}><span class="share-picker-thumb"><img src="${escapeHtml(photo.url)}" alt=""></span><span>${escapeHtml(photo.caption || `Photo ${photo.id}`)}</span></label>`),
+    ...photos.map((photo) => `<label><input type="radio" name="share-photo" value="${photo.id}"${String(photo.id) === selected ? " checked" : ""}><span class="share-picker-thumb"><img src="${escapeHtml(withBase(photo.url))}" alt=""></span><span>${escapeHtml(photo.caption || `Photo ${photo.id}`)}</span></label>`),
     `<label><input type="radio" name="share-photo" value="${NO_PHOTO}"${selected === NO_PHOTO ? " checked" : ""}><span class="share-picker-empty">COOK<br>PHOTO</span><span>No photo</span></label>`,
   ].join("");
   dialog.innerHTML = `<form method="dialog"><h2>Pick the cook photo</h2><div class="share-picker-choices">${choices}</div><div class="share-picker-actions"><button class="cc" value="cancel" type="submit">Cancel</button><button class="pbtn" value="make" type="submit">Make PNG</button></div></form>`;

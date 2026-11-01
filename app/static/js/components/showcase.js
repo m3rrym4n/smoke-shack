@@ -1,4 +1,4 @@
-import { deleteShowcaseImage, uploadShowcaseImage } from "../api.js";
+import { deleteShowcaseImage, uploadShowcaseImage, withBase } from "../api.js";
 import {
   readStackPosition as readStackPositionValue, showcaseLayoutClass, showcasePlaceholder, showcaseSaveEnabled,
   showcaseNameLines, validateShowcaseFile, writeStackPosition,
@@ -27,7 +27,7 @@ function grillIllustration() {
 
 function photoMarkup(url, position) {
   if (showcasePlaceholder(url) === "placeholder") return `<div class="showcase-photo placeholder">${grillIllustration()}</div>`;
-  return `<div class="showcase-photo"><img src="${escapeHtml(url)}" alt="Grill"><span class="photo-stack-anchor" data-smokestack style="left:${position.x}%;top:${position.y}%" aria-hidden="true"></span></div>`;
+  return `<div class="showcase-photo"><img src="${escapeHtml(withBase(url))}" alt="Grill"><span class="photo-stack-anchor" data-smokestack style="left:${position.x}%;top:${position.y}%" aria-hidden="true"></span></div>`;
 }
 
 export function showcaseMarkup(showcase, grillIdentity, width = window.innerWidth, smokeControl = true) {
@@ -49,7 +49,7 @@ export function showcaseMarkup(showcase, grillIdentity, width = window.innerWidt
 
 function editorRow(kind, label, imageUrl) {
   const preview = imageUrl
-    ? `<img src="${escapeHtml(imageUrl)}" alt="Current ${label.toLowerCase()}">`
+    ? `<img src="${escapeHtml(withBase(imageUrl))}" alt="Current ${label.toLowerCase()}">`
     : `<span>No ${label.toLowerCase()} uploaded</span>`;
   const accept = kind === "logo"
     ? "image/png,image/jpeg,image/webp,.svg,image/svg+xml"
@@ -97,7 +97,7 @@ export function bindShowcase(container, { grillIdentity = {}, onLogoChange = () 
     const updateImages = (url) => {
       const currentUrl = url ? `${url}?v=${Date.now()}` : null;
       preview.innerHTML = currentUrl
-        ? `<img src="${escapeHtml(currentUrl)}" alt="Current ${kind} preview">`
+        ? `<img src="${escapeHtml(withBase(currentUrl))}" alt="Current ${kind} preview">`
         : `<span>No ${kind === "logo" ? "logo" : "grill photo"} uploaded</span>`;
       if (kind === "logo") {
         onLogoChange(currentUrl);

@@ -1,3 +1,5 @@
+import { withBase } from "../api.js";
+
 const center = 200;
 
 function number(value, fallback = 0) {
@@ -36,7 +38,7 @@ export function gaugeLogoMarkup(logoUrl, width = 400, height = 400) {
   if (!logoUrl) {
     return `<text class="gauge-logo-slot gauge-logo-placeholder" x="${width / 2}" y="${box.y + box.height / 2}">GREEN MOUNTAIN GRILLS</text>`;
   }
-  return `<image class="gauge-logo-slot" href="${escapeAttribute(logoUrl)}" x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" preserveAspectRatio="xMidYMid meet"/>`;
+  return `<image class="gauge-logo-slot" href="${escapeAttribute(withBase(logoUrl))}" x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" preserveAspectRatio="xMidYMid meet"/>`;
 }
 
 export function gaugeSvg(temperature, setpoint, logoUrl = null) {
