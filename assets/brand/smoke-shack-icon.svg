@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Smoke-Shack icon</title>
+  <desc id="desc">A cream, green, and red circular badge with a roof, chimney, and smoke wisp.</desc>
+  <circle cx="512" cy="512" r="500" fill="#f3e2c6"/>
+  <circle cx="512" cy="512" r="440" fill="#1f2b25"/>
+  <circle cx="512" cy="512" r="405" fill="none" stroke="#c0392b" stroke-width="26"/>
+  <g fill="#f3e2c6">
+    <rect x="640" y="455" width="70" height="190"/>
+    <path d="M675 490 C735 455 748 405 710 365 C670 323 630 301 655 255 C670 228 694 217 690 195 C740 231 748 278 721 311 C699 338 694 352 725 384 C770 431 738 476 675 490 Z"/>
+  </g>
+  <polyline points="192,650 506,455 812,650" fill="none" stroke="#f3e2c6" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
