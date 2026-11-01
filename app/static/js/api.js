@@ -140,8 +140,11 @@ export function deleteMeat(meatId) {
   return sendJson("DELETE", `/api/meat/${meatId}`);
 }
 
-export function getPellets() {
-  return getJson("/api/pellets");
+export function getPellets(upc = "") {
+  const params = new URLSearchParams();
+  if (upc) params.set("upc", upc);
+  const query = params.toString();
+  return getJson(`/api/pellets${query ? `?${query}` : ""}`);
 }
 
 export function getCookStats(params = new URLSearchParams()) {
