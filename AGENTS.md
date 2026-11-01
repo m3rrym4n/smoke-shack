@@ -8,7 +8,7 @@ Read `docs/SPEC.md` and `docs/SPEC-addendum.md` before any work. The issue you w
 - Use Conventional Commit prefixes (`feat:`, `fix:`, `docs:`, `chore:`).
 - Any new cross-cook aggregate must exclude cooks with `exclude_from_stats`.
 - Codex never pushes to or merges into `main`.
-- Add a `CHANGELOG.md` entry under `## Unreleased` for any functional code change.
+- Do not edit `CHANGELOG.md`; it is generated from commit messages at release time. Use a clear Conventional Commit subject, because it becomes the release note.
 - Merged PR branches are deleted automatically by `.forgejo/workflows/cleanup-merged-branches.yml` using a Forgejo authorized integration.
 
 ## Deploy conventions (these override the deploy bullets in issues)

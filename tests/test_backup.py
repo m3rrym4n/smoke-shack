@@ -47,6 +47,7 @@ def test_build_backup_contains_valid_snapshot_manifest_and_photos(tmp_path: Path
         "2.3.0-dev.4",
         created_at=datetime(2026, 10, 31, 18, 0, tzinfo=UTC),
     )
+    assert archive_path.parent == database.parent
     source.close()
     try:
         with zipfile.ZipFile(archive_path) as archive:

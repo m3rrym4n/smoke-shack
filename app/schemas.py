@@ -15,6 +15,19 @@ from pydantic import (
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
+def clean_upc(value: object) -> object:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("UPC must be a string")
+    cleaned = value.replace(" ", "").replace("-", "")
+    if cleaned == "":
+        return None
+    if not cleaned.isascii() or not cleaned.isdigit() or not 8 <= len(cleaned) <= 14:
+        raise ValueError("UPC must contain 8 to 14 digits after removing spaces and dashes")
+    return cleaned
+
+
 class MeatCreate(BaseModel):
     type: NonEmptyStr
     pounds: float = Field(gt=0)
@@ -59,6 +72,20 @@ class PelletCreate(BaseModel):
     product_name: NonEmptyStr
     price_per_pound: float = Field(ge=0)
     purchased_on: date = Field(default_factory=date.today)
+    upc: str | None = None
+    bag_size_lb: float | None = Field(default=None, gt=0, le=100)
+    emptied_on: date | None = None
+
+    _clean_upc = field_validator("upc", mode="before")(clean_upc)
+
+    @model_validator(mode="after")
+    def validate_emptied_on(self) -> PelletCreate:
+        if self.emptied_on is not None:
+            if self.emptied_on < self.purchased_on:
+                raise ValueError("Empty date cannot be before purchase date")
+            if self.emptied_on > date.today():
+                raise ValueError("Empty date cannot be in the future")
+        return self
 
 
 class PelletUpdate(BaseModel):
@@ -66,6 +93,11 @@ class PelletUpdate(BaseModel):
     product_name: NonEmptyStr | None = None
     price_per_pound: float | None = Field(default=None, ge=0)
     purchased_on: date | None = None
+    upc: str | None = None
+    bag_size_lb: float | None = Field(default=None, gt=0, le=100)
+    emptied_on: date | None = None
+
+    _clean_upc = field_validator("upc", mode="before")(clean_upc)
 
 
 class PelletResponse(BaseModel):
@@ -76,6 +108,11 @@ class PelletResponse(BaseModel):
     product_name: str
     price_per_pound: float
     purchased_on: date
+    upc: str | None
+    bag_size_lb: float | None
+    emptied_on: date | None
+    is_empty: bool
+    bag_cost: float | None
     has_photo: bool
     photo_url: str | None
 

@@ -153,6 +153,15 @@ def test_status_with_ha_unconfigured(sessions: sessionmaker[Session]) -> None:
     assert status["grill_maker"] is None
 
 
+def test_status_with_supervisor_configured(sessions: sessionmaker[Session]) -> None:
+    app = create_app(Settings(supervisor_token="supervisor-secret"), sessions)
+    with TestClient(app) as client:
+        status = client.get("/status").json()
+
+    assert status["ha"]["configured"] is True
+    assert "supervisor-secret" not in repr(status)
+
+
 def test_status_grill_name_fallback_and_cached_ha_name(
     sessions: sessionmaker[Session],
 ) -> None:
@@ -205,7 +214,10 @@ def test_missing_token_startup_warns_and_serves_health(
     with TestClient(app) as client:
         assert client.get("/health").json() == {"status": "ok"}
 
-    assert "HA_URL/HA_TOKEN not set; Home Assistant ingest disabled" in caplog.messages
+    assert (
+        "HA_URL/HA_TOKEN or SUPERVISOR_TOKEN not set; Home Assistant ingest disabled"
+        in caplog.messages
+    )
 
 
 def test_status_reports_active_cook(sessions: sessionmaker[Session], clock: FakeClock) -> None:

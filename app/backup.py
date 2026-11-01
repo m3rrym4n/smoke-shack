@@ -21,14 +21,21 @@ def build_backup(
 
     The caller owns the returned path and must delete it after use.
     """
+    database_directory = Path(database_path).parent
     archive_file = tempfile.NamedTemporaryFile(
-        prefix="smoke-shack-backup-", suffix=".zip", delete=False
+        prefix="smoke-shack-backup-",
+        suffix=".zip",
+        dir=database_directory,
+        delete=False,
     )
     archive_path = Path(archive_file.name)
     archive_file.close()
 
     snapshot_file = tempfile.NamedTemporaryFile(
-        prefix="smoke-shack-db-", suffix=".db", delete=False
+        prefix="smoke-shack-db-",
+        suffix=".db",
+        dir=database_directory,
+        delete=False,
     )
     snapshot_path = Path(snapshot_file.name)
     snapshot_file.close()

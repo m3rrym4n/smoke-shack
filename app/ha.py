@@ -77,12 +77,22 @@ class HomeAssistantClient:
         poll_interval_seconds: int = 10,
         max_size_bytes: int = 67_108_864,
         coalesce_window_seconds: float = 1.0,
+        *,
+        template_url: str | None = None,
+        host: str | None = None,
     ) -> None:
-        parsed = urlsplit(url)
-        scheme = {"http": "ws", "https": "wss"}.get(parsed.scheme, parsed.scheme)
-        self.websocket_url = urlunsplit((scheme, parsed.netloc, "/api/websocket", "", ""))
-        self.template_url = urlunsplit((parsed.scheme, parsed.netloc, "/api/template", "", ""))
-        self.host = parsed.hostname or parsed.netloc
+        if template_url is None:
+            parsed = urlsplit(url)
+            scheme = {"http": "ws", "https": "wss"}.get(parsed.scheme, parsed.scheme)
+            self.websocket_url = urlunsplit((scheme, parsed.netloc, "/api/websocket", "", ""))
+            self.template_url = urlunsplit(
+                (parsed.scheme, parsed.netloc, "/api/template", "", "")
+            )
+            self.host = parsed.hostname or parsed.netloc
+        else:
+            self.websocket_url = url
+            self.template_url = template_url
+            self.host = host or urlsplit(url).hostname or urlsplit(url).netloc
         self.token = token
         self.entities = entities
         self.entity_ids = entities.all

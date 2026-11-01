@@ -11,7 +11,9 @@ from sqlalchemy import create_engine, inspect, text
 def test_migration_chain_has_exactly_one_head() -> None:
     script = ScriptDirectory.from_config(Config("alembic.ini"))
 
-    assert len(script.get_heads()) == 1
+    assert len(script.get_heads()) == 1, (
+        "multiple Alembic heads: merge or re-parent the newer migration"
+    )
 
 
 def test_empty_database_upgrades_to_complete_head(
@@ -29,6 +31,9 @@ def test_empty_database_upgrades_to_complete_head(
     assert "cooked" in {column["name"] for column in schema.get_columns("meat")}
     assert "photo_path" in {column["name"] for column in schema.get_columns("meat")}
     assert "photo_path" in {column["name"] for column in schema.get_columns("pellets")}
+    assert "upc" in {column["name"] for column in schema.get_columns("pellets")}
+    assert "bag_size_lb" in {column["name"] for column in schema.get_columns("pellets")}
+    assert "emptied_on" in {column["name"] for column in schema.get_columns("pellets")}
     assert "photo_path" in {column["name"] for column in schema.get_columns("spices")}
     assert "meat_groups" in schema.get_table_names()
     assert "meat_group_types" in schema.get_table_names()
@@ -156,3 +161,56 @@ def test_exclude_from_stats_migration_defaults_existing_cooks_to_false(
         value = connection.execute(text("SELECT exclude_from_stats FROM cooks")).scalar_one()
     assert column["nullable"] is False
     assert value == 0
+
+
+def test_pellet_fields_migration_preserves_existing_rows(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    database = tmp_path / "pellet-fields.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))  # type: ignore[attr-defined]
+    config = Config("alembic.ini")
+    command.upgrade(config, "7da6cbe17b2a")
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO pellets (vendor, product_name, price_per_pound, purchased_on) "
+                "VALUES ('Bear Mountain', 'Oak', 1.25, '2026-10-16')"
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    columns = {column["name"]: column for column in inspect(engine).get_columns("pellets")}
+    with engine.connect() as connection:
+        row = connection.execute(
+            text("SELECT vendor, product_name, upc, bag_size_lb FROM pellets")
+        ).one()
+    assert columns["upc"]["nullable"] is True
+    assert columns["bag_size_lb"]["nullable"] is True
+    assert row == ("Bear Mountain", "Oak", None, None)
+
+
+def test_pellet_emptied_on_migration_preserves_existing_rows(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    database = tmp_path / "pellet-emptied-on.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))  # type: ignore[attr-defined]
+    config = Config("alembic.ini")
+    command.upgrade(config, "c6e8395a2714")
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO pellets (vendor, product_name, price_per_pound, purchased_on) "
+                "VALUES ('Bear Mountain', 'Oak', 1.25, '2026-10-16')"
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    columns = {column["name"]: column for column in inspect(engine).get_columns("pellets")}
+    with engine.connect() as connection:
+        emptied_on = connection.execute(text("SELECT emptied_on FROM pellets")).scalar_one()
+    assert columns["emptied_on"]["nullable"] is True
+    assert emptied_on is None
