@@ -1,4 +1,4 @@
-import { deletePhoto, uploadPhoto } from "../api.js";
+import { deletePhoto, uploadPhoto, withBase } from "../api.js";
 import { PHOTO_MAX_BYTES, downscaleSize, validatePhotoFile } from "../photo-logic.js";
 
 function photoError(error) {
@@ -35,7 +35,7 @@ async function jpegBlob(file) {
 
 export function itemPhotoMarkup(item) {
   const image = item.photo_url
-    ? `<button class="item-photo-thumb" type="button" aria-label="View photo"><img src="${item.photo_url}" alt="" loading="lazy"></button>`
+    ? `<button class="item-photo-thumb" type="button" aria-label="View photo"><img src="${withBase(item.photo_url)}" alt="" loading="lazy"></button>`
     : '<div class="item-photo-placeholder" aria-label="No photo">No photo</div>';
   return `<div class="item-photo" data-photo>
     ${image}
@@ -108,7 +108,7 @@ export function bindItemPhoto(root, kind, id) {
       const blob = await jpegBlob(file);
       setBusy(true, "Uploading photo…");
       const updated = await uploadPhoto(kind, id, blob);
-      showPhoto(updated.photo_url);
+      showPhoto(withBase(updated.photo_url));
       setBusy(false, "Photo uploaded.");
     } catch (error) {
       setBusy(false);

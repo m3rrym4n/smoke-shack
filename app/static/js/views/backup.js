@@ -1,4 +1,4 @@
-import { restoreBackup } from "../api.js";
+import { restoreBackup, withBase } from "../api.js";
 import { restoreEnabled } from "../backup-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -31,7 +31,7 @@ export function mountBackupView(container) {
         <h2>Backup</h2>
         <p>Download the cook log, pantry and its photos, grill logo and picture, notes, pinned events, meat groups, profiles, pellets, and everything else in the database.</p>
         <p class="mut">Home Assistant connection settings and <code>entities.yaml</code> are not included.</p>
-        <a class="pbtn backup-download" href="/api/backup" download>Download backup</a>
+        <a class="pbtn backup-download" href="${withBase("/api/backup")}" download>Download backup</a>
       </section>
       <section class="stp backup-section restore-section">
         <h2>Restore</h2>

@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from email.utils import formatdate
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import Depends, FastAPI, File, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -42,6 +45,8 @@ from app.service import CookService, as_utc
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 BUILD_INFO_PATH = Path(__file__).with_name("build_info.txt")
+STATIC_INDEX_PATH = Path(__file__).parent / "static" / "index.html"
+INGRESS_PATH_PATTERN = re.compile(r"^/api/hassio_ingress/[A-Za-z0-9_-]+$")
 
 
 class RevalidatingStaticFiles(StaticFiles):
@@ -189,6 +194,25 @@ def create_app(
     app.include_router(showcase_router)
     app.include_router(stats_router)
     app.include_router(export_router)
+
+    @app.get("/", response_class=HTMLResponse)
+    def index(request: Request) -> Response:
+        ingress_path = request.headers.get("X-Ingress-Path", "")
+        base_path = ingress_path if INGRESS_PATH_PATTERN.fullmatch(ingress_path) else ""
+        content = STATIC_INDEX_PATH.read_text(encoding="utf-8").replace(
+            "<head>", f'<head>\n    <base href="{base_path}/">', 1
+        )
+        stat = STATIC_INDEX_PATH.stat()
+        etag = f'"{hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()}"'
+        headers = {
+            "Cache-Control": "no-cache",
+            "ETag": etag,
+            "Last-Modified": formatdate(stat.st_mtime, usegmt=True),
+        }
+        if request.headers.get("If-None-Match") == etag:
+            return Response(status_code=304, headers=headers)
+        return HTMLResponse(content, headers=headers)
+
     app.mount(
         "/",
         RevalidatingStaticFiles(directory=Path(__file__).parent / "static", html=True),

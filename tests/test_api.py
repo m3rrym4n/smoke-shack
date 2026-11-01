@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from conftest import FakeClock, FakeHAClient
@@ -33,6 +34,53 @@ def test_static_shell_and_existing_routes(sessions: sessionmaker[Session]) -> No
         assert "PELLET-FIRED" not in home.text
         assert client.get("/health").status_code == 200
         assert client.get("/docs").status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        (None, '<base href="/">'),
+        ("/api/hassio_ingress/abc123", '<base href="/api/hassio_ingress/abc123/">'),
+        ('/api/hassio_ingress/abc"123', '<base href="/">'),
+        ("/api/hassio_ingress/<abc>", '<base href="/">'),
+        ("/api/hassio_ingress/abc/extra", '<base href="/">'),
+    ],
+)
+def test_static_shell_uses_only_valid_ingress_base(
+    sessions: sessionmaker[Session], header: str | None, expected: str
+) -> None:
+    headers = {"X-Ingress-Path": header} if header is not None else {}
+    with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
+        response = client.get("/", headers=headers)
+
+    assert response.status_code == 200
+    assert expected in response.text
+    if header is not None and expected == '<base href="/">':
+        assert header not in response.text
+
+
+def test_api_routes_remain_at_normal_paths(sessions: sessionmaker[Session]) -> None:
+    with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
+        assert client.get("/health").json() == {"status": "ok"}
+        assert client.get("/status").status_code == 200
+
+
+def test_frontend_has_no_root_relative_resources_or_direct_fetches() -> None:
+    static = Path("app/static")
+    index = (static / "index.html").read_text(encoding="utf-8")
+    javascript = {
+        path: path.read_text(encoding="utf-8")
+        for path in (static / "js").rglob("*.js")
+        if "vendor" not in path.parts
+    }
+
+    assert 'href="/' not in index
+    assert 'src="/' not in index
+    for path, source in javascript.items():
+        assert 'href="/' not in source, path
+        assert 'src="/' not in source, path
+        if path.name != "api.js":
+            assert "fetch(" not in source, path
 
 
 def test_static_files_revalidate_without_changing_api_cache(
