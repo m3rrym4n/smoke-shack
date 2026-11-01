@@ -76,14 +76,17 @@ def create_app(
         data_gap_event_min_seconds=config.data_gap_event_min_seconds,
     )
     client = ha_client
-    ha_status = HAStatus(configured=bool(config.ha_url and config.ha_token))
-    if client is None and config.ha_url and config.ha_token:
+    connection = config.ha_connection
+    ha_status = HAStatus(configured=connection is not None)
+    if client is None and connection is not None:
         client = HomeAssistantClient(
-            config.ha_url,
-            config.ha_token,
+            connection.websocket_url,
+            connection.token,
             config.load_entities(),
             config.sample_interval_seconds,
             config.ha_ws_max_size_bytes,
+            template_url=connection.template_url,
+            host=connection.host,
         )
     if client is not None:
         ha_status = client.status
@@ -92,8 +95,10 @@ def create_app(
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         Path(config.photo_dir).mkdir(parents=True, exist_ok=True)
         seed_spices(factory)
-        if not config.ha_url or not config.ha_token:
-            logger.warning("HA_URL/HA_TOKEN not set; Home Assistant ingest disabled")
+        if connection is None:
+            logger.warning(
+                "HA_URL/HA_TOKEN or SUPERVISOR_TOKEN not set; Home Assistant ingest disabled"
+            )
         task = (
             asyncio.create_task(ingest(client, service, config.sample_interval_seconds))
             if client
