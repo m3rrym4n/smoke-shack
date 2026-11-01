@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/m3rrym4n/smoke-shack/compare/v1.1.1...v1.2.0) (2026-11-01)
+
+
+### Features
+
+* support Home Assistant ingress path prefixes ([960c67d](https://github.com/m3rrym4n/smoke-shack/commit/960c67d7a9ddf097cf66aadf3bd66339ef206c19))
+
 ## [1.1.1](https://github.com/m3rrym4n/smoke-shack/compare/v1.1.0...v1.1.1) (2026-11-01)
 
 
