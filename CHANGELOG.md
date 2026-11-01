@@ -1,3 +1,23 @@
+# [1.1.0](http://192.168.1.73:3001/m3rrym4n/smoke-shack/compare/v1.0.2...v1.1.0) (2026-11-01)
+
+
+### Bug Fixes
+
+* restore deploy image and backup navigation ([02cf7e9](http://192.168.1.73:3001/m3rrym4n/smoke-shack/commit/02cf7e93acae0c02ad233b7b7c0a53684acede87))
+* seed all default meat group types ([5a1179a](http://192.168.1.73:3001/m3rrym4n/smoke-shack/commit/5a1179a94caf4c35d6664493fc4d521247cad22c))
+* update visible branding to Smoke-Shack ([64e874f](http://192.168.1.73:3001/m3rrym4n/smoke-shack/commit/64e874f09adc1497f76619451a484ec5f057608d))
+
+
+### Features
+
+* accept Smoke-Shack grill name variable ([5924e8e](http://192.168.1.73:3001/m3rrym4n/smoke-shack/commit/5924e8ef726ec09c0c383784f92aedadda4c7c38))
+* add backup export API ([e09fc54](http://192.168.1.73:3001/m3rrym4n/smoke-shack/commit/e09fc54951af91d6ef6dc57daa17ea93a5e57fd1))
+* add backup restore API ([f112123](http://192.168.1.73:3001/m3rrym4n/smoke-shack/commit/f112123275ed964d934ee04431ad1ec1b2c2ca08))
+* add backup restore page ([42e1acf](http://192.168.1.73:3001/m3rrym4n/smoke-shack/commit/42e1acfc0cd0537f7f5a3a103d461ca2591737f1))
+* add meat group management UI ([78dee8d](http://192.168.1.73:3001/m3rrym4n/smoke-shack/commit/78dee8d19b312e7d9af8a61d6c45f16c453cc1a9))
+* add meat groups backend ([f08d768](http://192.168.1.73:3001/m3rrym4n/smoke-shack/commit/f08d7682e0b819f9960150c6bbf51dd7a9e51e40))
+* show pitmaster cook-time confidence ([53e01af](http://192.168.1.73:3001/m3rrym4n/smoke-shack/commit/53e01af0d5a3a4a61195cbf01c4dffef65960ada))
+
 ## Unreleased
 
 ### Bug Fixes
