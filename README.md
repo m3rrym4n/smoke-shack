@@ -51,46 +51,22 @@ Other Home Assistant grill integrations may work if you map their entities in
 
 ## Quick start with Docker Compose
 
-Create `compose.yml` and replace `<image>`, the Home Assistant host, token, and grill name
-with values for your installation:
+Download this repository's [`compose.yml`](compose.yml), then create a `.env` file beside it
+with the URL of your Home Assistant instance and a long-lived access token:
 
-```yaml
-services:
-  smoke-shack:
-    image: <image> # Replace with the Smoke-Shack image you want to run.
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    environment:
-      HA_URL: http://home-assistant-host:8123
-      HA_TOKEN: replace-with-a-long-lived-access-token
-      DATABASE_PATH: /data/smoke-shack.db
-      PHOTO_DIR: /data/photos
-      ENTITIES_CONFIG: /app/config/entities.yaml
-      SMOKE_SHACK_GRILL_NAME: My Pellet Grill
-      TZ: America/Los_Angeles
-    volumes:
-      - smoke-shack-data:/data
-      - ./config/entities.yaml:/app/config/entities.yaml:ro
-
-volumes:
-  smoke-shack-data:
+```dotenv
+HA_URL=http://home-assistant-host:8123
+HA_TOKEN=replace-with-a-long-lived-access-token
 ```
 
-The `<image>` placeholder will be replaced with a published image reference once images are
-available. Until then, build the image from this repository with
-`docker build -t smoke-shack .` and use `smoke-shack` as the Compose `image` value.
-
-Copy [`config/entities.yaml`](config/entities.yaml) next to the Compose file, edit it as
-described below, then start the app:
+Start the app from the directory containing both files:
 
 ```sh
 docker compose up -d
 ```
 
-Open `http://docker-host:8000`. Keep the Home Assistant token out of version control; a
-Compose `.env` file or your container platform's secret storage is preferable to committing
-it in the Compose file.
+Open `http://docker-host:8011`. Keep the `.env` file out of version control; your container
+platform's secret storage is also suitable for `HA_TOKEN`.
 
 ## Configure Home Assistant entities
 
