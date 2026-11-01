@@ -1,8 +1,44 @@
 const isMain = process.env.GITHUB_REF_NAME === "main";
 
+const releaseNoteSections = {
+  build: "Build System",
+  ci: "Continuous Integration",
+  docs: "Documentation",
+  feat: "Features",
+  fix: "Bug Fixes",
+  perf: "Performance Improvements",
+  refactor: "Code Refactoring",
+  revert: "Reverts",
+  style: "Styles",
+  test: "Tests",
+};
+
+function transformReleaseNoteCommit(commit) {
+  const notes = commit.notes.map((note) => ({ ...note, title: "BREAKING CHANGES" }));
+  const type = commit.revert ? "Reverts" : releaseNoteSections[commit.type];
+
+  if (!type && notes.length === 0) return undefined;
+
+  return {
+    ...commit,
+    notes,
+    type: type || commit.type,
+    scope: commit.scope === "*" ? "" : commit.scope,
+    shortHash: commit.hash?.substring(0, 7) || commit.shortHash,
+    references: [],
+  };
+}
+
 const plugins = [
   "@semantic-release/commit-analyzer",
-  "@semantic-release/release-notes-generator",
+  [
+    "@semantic-release/release-notes-generator",
+    {
+      host: "https://github.com",
+      parserOpts: { issuePrefixes: ["FORGEJO-ISSUE-"] },
+      writerOpts: { transform: transformReleaseNoteCommit },
+    },
+  ],
 ];
 
 if (isMain) {
