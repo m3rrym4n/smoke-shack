@@ -149,6 +149,7 @@ def create_app(
         archive_path = build_backup(
             config.database_path,
             config.photo_dir,
+            Path(config.photo_dir).parent / "showcase",
             _version(),
             created_at=created_at,
         )
@@ -166,6 +167,7 @@ def create_app(
             file,
             Path(config.database_path),
             Path(config.photo_dir),
+            Path(config.photo_dir).parent / "showcase",
             factory,
             _version(),
             config.restore_max_bytes,

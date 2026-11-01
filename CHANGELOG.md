@@ -22,6 +22,7 @@
 
 ### Bug Fixes
 
+* include the grill logo and picture in backup and restore archives
 * keep the deployable dev image and move Backup & Restore into the main navigation
 * update visible branding to Smoke-Shack
 

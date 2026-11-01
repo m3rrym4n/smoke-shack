@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import io
 import json
+import os
 import sqlite3
 import zipfile
 from datetime import UTC, date, datetime
@@ -91,7 +93,9 @@ def test_restore_round_trip_rewrites_paths_and_creates_safety_copy(
             (str(cook_photo),),
         )
         connection.commit()
-    archive = _archive_bytes(build_backup(source_db, source_photos, "test"))
+    archive = _archive_bytes(
+        build_backup(source_db, source_photos, tmp_path / "source-showcase", "test")
+    )
 
     live_db = tmp_path / "live" / "smoke.db"
     live_db.parent.mkdir()
@@ -131,10 +135,132 @@ def test_restore_round_trip_rewrites_paths_and_creates_safety_copy(
         )
 
 
+def test_restore_round_trip_includes_showcase_images(tmp_path: Path, monkeypatch) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    source_db = source_root / "smoke.db"
+    source_photos = source_root / "photos"
+    source_showcase = source_root / "showcase"
+    source_showcase.mkdir()
+    (source_showcase / "logo.png").write_bytes(b"logo-bytes")
+    (source_showcase / "photo.jpg").write_bytes(b"photo-bytes")
+    _migrate(source_db)
+    archive = _archive_bytes(build_backup(source_db, source_photos, source_showcase, "test"))
+
+    live_root = tmp_path / "live"
+    live_root.mkdir()
+    live_db = live_root / "smoke.db"
+    live_photos = live_root / "photos"
+    _migrate(live_db)
+
+    with _client(live_db, live_photos, monkeypatch) as client:
+        response = client.post("/api/restore", files={"file": ("backup.zip", archive)})
+
+    assert response.status_code == 200, response.text
+    assert (live_root / "showcase" / "logo.png").read_bytes() == b"logo-bytes"
+    assert (live_root / "showcase" / "photo.jpg").read_bytes() == b"photo-bytes"
+
+
+def test_old_backup_leaves_existing_showcase_untouched(tmp_path: Path, monkeypatch) -> None:
+    source_db = tmp_path / "source.db"
+    _migrate(source_db)
+    archive = _archive_bytes(
+        build_backup(source_db, tmp_path / "source-photos", tmp_path / "source-showcase", "test")
+    )
+    archive = _rewrite_archive(
+        archive,
+        lambda entries: entries.__setitem__(
+            "manifest.json",
+            json.dumps(
+                {
+                    key: value
+                    for key, value in json.loads(entries["manifest.json"]).items()
+                    if key != "showcase_count"
+                }
+            ).encode(),
+        ),
+    )
+
+    live_root = tmp_path / "live-old"
+    live_root.mkdir()
+    live_db = live_root / "smoke.db"
+    live_photos = live_root / "photos"
+    live_showcase = live_root / "showcase"
+    live_showcase.mkdir()
+    (live_showcase / "logo.png").write_bytes(b"keep-logo")
+    (live_showcase / "photo.jpg").write_bytes(b"keep-photo")
+    _migrate(live_db)
+
+    with _client(live_db, live_photos, monkeypatch) as client:
+        response = client.post("/api/restore", files={"file": ("old.zip", archive)})
+
+    assert response.status_code == 200, response.text
+    assert (live_showcase / "logo.png").read_bytes() == b"keep-logo"
+    assert (live_showcase / "photo.jpg").read_bytes() == b"keep-photo"
+
+
+def test_invalid_showcase_entries_leave_current_data_unchanged(tmp_path: Path, monkeypatch) -> None:
+    source_db = tmp_path / "source-invalid.db"
+    _migrate(source_db)
+    valid = _archive_bytes(
+        build_backup(source_db, tmp_path / "source-invalid-photos", tmp_path / "missing", "test")
+    )
+
+    for name in ("showcase/../evil.png", "showcase/other.txt"):
+        archive = _rewrite_archive(
+            valid, lambda entries, name=name: entries.__setitem__(name, b"evil")
+        )
+        live_root = tmp_path / name.replace("/", "-").replace(".", "_")
+        live_root.mkdir()
+        live_db = live_root / "smoke.db"
+        live_photos = live_root / "photos"
+        live_showcase = live_root / "showcase"
+        live_showcase.mkdir()
+        (live_showcase / "logo.png").write_bytes(b"keep")
+        _migrate(live_db)
+
+        with _client(live_db, live_photos, monkeypatch) as client:
+            response = client.post("/api/restore", files={"file": ("bad.zip", archive)})
+
+        assert response.status_code == 422, (name, response.text)
+        assert (live_showcase / "logo.png").read_bytes() == b"keep"
+
+
+def test_restore_safety_copy_succeeds_across_filesystems(tmp_path: Path, monkeypatch) -> None:
+    source_db = tmp_path / "source.db"
+    _migrate(source_db)
+    archive = _archive_bytes(
+        build_backup(
+            source_db,
+            tmp_path / "source-photos",
+            tmp_path / "source-showcase",
+            "test",
+        )
+    )
+
+    live_db = tmp_path / "live" / "smoke.db"
+    live_db.parent.mkdir()
+    _migrate(live_db)
+
+    def cross_device_replace(_source: Path, _destination: Path) -> None:
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    monkeypatch.setattr(os, "replace", cross_device_replace)
+
+    with _client(live_db, tmp_path / "live-photos", monkeypatch) as client:
+        response = client.post("/api/restore", files={"file": ("backup.zip", archive)})
+
+    assert response.status_code == 200, response.text
+    safety_path = live_db.parent / response.json()["safety_copy"]
+    assert safety_path.is_file()
+
+
 def test_restore_rejections_leave_current_data_unchanged(tmp_path: Path, monkeypatch) -> None:
     source_db = tmp_path / "source.db"
     _migrate(source_db)
-    valid = _archive_bytes(build_backup(source_db, tmp_path / "none", "test"))
+    valid = _archive_bytes(
+        build_backup(source_db, tmp_path / "none", tmp_path / "none-showcase", "test")
+    )
     head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
 
     cases = {
@@ -202,7 +328,9 @@ def test_restore_rejects_active_cook_and_oversized_upload(tmp_path: Path, monkey
             (now, now, now),
         )
         connection.commit()
-    archive = _archive_bytes(build_backup(database, tmp_path / "photos", "test"))
+    archive = _archive_bytes(
+        build_backup(database, tmp_path / "photos", tmp_path / "showcase", "test")
+    )
     with _client(database, tmp_path / "photos", monkeypatch) as client:
         response = client.post("/api/restore", files={"file": ("x.zip", archive)})
     assert response.status_code == 409
@@ -216,7 +344,9 @@ def test_restore_rejects_active_cook_and_oversized_upload(tmp_path: Path, monkey
 def test_restore_migrates_older_revision(tmp_path: Path, monkeypatch) -> None:
     old_db = tmp_path / "old.db"
     _migrate(old_db, "ef36b629902e")
-    archive = _archive_bytes(build_backup(old_db, tmp_path / "old-photos", "old"))
+    archive = _archive_bytes(
+        build_backup(old_db, tmp_path / "old-photos", tmp_path / "old-showcase", "old")
+    )
     live_db = tmp_path / "live.db"
     _migrate(live_db)
     with _client(live_db, tmp_path / "new-photos", monkeypatch) as client:

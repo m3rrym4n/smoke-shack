@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 import sqlite3
 import tempfile
@@ -22,12 +21,15 @@ from app.backup import _database_manifest, build_backup
 from app.models import Cook
 
 ALLOWED_FILES = {"manifest.json", "smoke-shack.db"}
+SHOWCASE_STEMS = {"logo", "photo"}
+SHOWCASE_SUFFIXES = {".png", ".jpg", ".webp", ".svg"}
 
 
 async def restore_backup(
     upload: UploadFile,
     database_path: Path,
     photo_dir: Path,
+    showcase_dir: Path,
     sessions: sessionmaker[Session],
     app_version: str,
     max_bytes: int,
@@ -53,8 +55,11 @@ async def restore_backup(
 
         safety_name = f"pre-restore-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.zip"
         safety_path = database_path.parent / safety_name
-        safety_temp = build_backup(database_path, photo_dir, app_version)
-        os.replace(safety_temp, safety_path)
+        safety_temp = build_backup(database_path, photo_dir, showcase_dir, app_version)
+        try:
+            shutil.move(safety_temp, safety_path)
+        finally:
+            safety_temp.unlink(missing_ok=True)
 
         engine = sessions.kw.get("bind")
         if not isinstance(engine, Engine):
@@ -63,6 +68,7 @@ async def restore_backup(
         engine.dispose()
         _upgrade_database(database_path)
         _replace_photos(temporary / "photos", photo_dir)
+        _replace_showcase(temporary / "showcase", showcase_dir)
         _rewrite_photo_paths(database_path, photo_dir)
         engine.dispose()
 
@@ -102,7 +108,13 @@ def _validate_and_extract(archive_path: Path, destination: Path) -> dict[str, An
                 if path.is_absolute() or ".." in path.parts or "\\" in member.filename:
                     raise ValueError(f"Unsafe zip member: {member.filename}")
                 name = path.as_posix().rstrip("/")
-                allowed = name in ALLOWED_FILES or name == "photos" or name.startswith("photos/")
+                allowed = (
+                    name in ALLOWED_FILES
+                    or name == "photos"
+                    or name.startswith("photos/")
+                    or name == "showcase"
+                    or _is_showcase_file(path)
+                )
                 if not allowed:
                     raise ValueError(f"Unexpected zip member: {member.filename}")
                 if name:
@@ -122,7 +134,8 @@ def _validate_and_extract(archive_path: Path, destination: Path) -> dict[str, An
             if manifest.get("db_sha256") != _sha256(database):
                 raise ValueError("Database checksum does not match manifest")
             for member in archive.infolist():
-                if PurePosixPath(member.filename).as_posix().startswith("photos/"):
+                member_path = PurePosixPath(member.filename)
+                if member_path.as_posix().startswith("photos/") or _is_showcase_file(member_path):
                     archive.extract(member, destination)
             return manifest
     except (zipfile.BadZipFile, OSError, ValueError) as exc:
@@ -180,6 +193,27 @@ def _replace_photos(source: Path, destination: Path) -> None:
             child.unlink()
     if source.is_dir():
         shutil.copytree(source, destination, dirs_exist_ok=True)
+
+
+def _is_showcase_file(path: PurePosixPath) -> bool:
+    return (
+        len(path.parts) == 2
+        and path.parts[0] == "showcase"
+        and path.stem in SHOWCASE_STEMS
+        and path.suffix in SHOWCASE_SUFFIXES
+    )
+
+
+def _replace_showcase(source: Path, destination: Path) -> None:
+    if not source.is_dir() or not any(path.is_file() for path in source.iterdir()):
+        return
+    destination.mkdir(parents=True, exist_ok=True)
+    for stem in SHOWCASE_STEMS:
+        for suffix in SHOWCASE_SUFFIXES:
+            (destination / f"{stem}{suffix}").unlink(missing_ok=True)
+    for child in source.iterdir():
+        if child.is_file():
+            shutil.copy2(child, destination / child.name)
 
 
 def _rewrite_photo_paths(database: Path, photo_dir: Path) -> None:
