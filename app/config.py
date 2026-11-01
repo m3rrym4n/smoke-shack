@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import yaml
 
@@ -41,9 +42,18 @@ class EntityConfig:
 
 
 @dataclass(frozen=True)
+class HAConnection:
+    websocket_url: str
+    template_url: str
+    token: str = field(repr=False)
+    host: str
+
+
+@dataclass(frozen=True)
 class Settings:
     ha_url: str = ""
-    ha_token: str = ""
+    ha_token: str = field(default="", repr=False)
+    supervisor_token: str = field(default="", repr=False)
     database_path: str = "smoke-stack.db"
     photo_dir: str = "photos"
     grill_name: str = ""
@@ -60,6 +70,7 @@ class Settings:
         return cls(
             ha_url=os.getenv("HA_URL", ""),
             ha_token=os.getenv("HA_TOKEN", ""),
+            supervisor_token=os.getenv("SUPERVISOR_TOKEN", ""),
             database_path=os.getenv("DATABASE_PATH", "smoke-stack.db"),
             photo_dir=os.getenv("PHOTO_DIR", "photos"),
             grill_name=os.getenv("SMOKE_SHACK_GRILL_NAME")
@@ -73,6 +84,32 @@ class Settings:
             entities_path=os.getenv("ENTITIES_CONFIG", "config/entities.yaml"),
             restore_max_bytes=int(os.getenv("RESTORE_MAX_BYTES", str(500 * 1024 * 1024))),
         )
+
+    @property
+    def ha_connection(self) -> HAConnection | None:
+        if self.ha_url and self.ha_token:
+            parsed = urlsplit(self.ha_url)
+            websocket_scheme = {"http": "ws", "https": "wss"}.get(
+                parsed.scheme, parsed.scheme
+            )
+            return HAConnection(
+                websocket_url=urlunsplit(
+                    (websocket_scheme, parsed.netloc, "/api/websocket", "", "")
+                ),
+                template_url=urlunsplit(
+                    (parsed.scheme, parsed.netloc, "/api/template", "", "")
+                ),
+                token=self.ha_token,
+                host=parsed.hostname or parsed.netloc,
+            )
+        if self.supervisor_token:
+            return HAConnection(
+                websocket_url="ws://supervisor/core/websocket",
+                template_url="http://supervisor/core/api/template",
+                token=self.supervisor_token,
+                host="supervisor",
+            )
+        return None
 
     def load_entities(self) -> EntityConfig:
         raw = yaml.safe_load(Path(self.entities_path).read_text())
