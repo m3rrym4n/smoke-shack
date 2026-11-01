@@ -5,8 +5,7 @@ on:
   pull_request:
     types: [closed]
 
-permissions:
-  contents: write
+enable-openid-connect: true
 
 jobs:
   delete-branch:
@@ -19,15 +18,25 @@ jobs:
     steps:
       - name: Delete merged branch
         env:
-          FORGEJO_TOKEN: ${{ github.token }}
+          AUDIENCE: u:1:ed96ed72-3f19-475c-82ce-cf9edd21dff9
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
+          jwt_response_file="$(mktemp)"
           response_file="$(mktemp)"
-          trap 'rm -f "$response_file"' EXIT
+          trap 'rm -f "$jwt_response_file" "$response_file"' EXIT
+          jwt_status="$(curl --silent --show-error --output "$jwt_response_file" --write-out '%{http_code}' \
+            --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${AUDIENCE}")"
+          if [ "$jwt_status" != "200" ]; then
+            echo "Failed to fetch JWT: HTTP ${jwt_status}" >&2
+            exit 1
+          fi
+          jwt="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["value"])' "$jwt_response_file")"
+          echo "::add-mask::${jwt}"
           encoded_ref="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["HEAD_REF"], safe=""))')"
           status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
             --request DELETE \
-            --header "Authorization: token ${FORGEJO_TOKEN}" \
+            --header "Authorization: Bearer ${jwt}" \
             "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/branches/${encoded_ref}")"
           if [ "$status" = "204" ] || [ "$status" = "404" ]; then
             echo "Branch cleanup completed with HTTP ${status}."

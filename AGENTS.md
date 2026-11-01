@@ -8,7 +8,7 @@ Read `docs/SPEC.md` and `docs/SPEC-addendum.md` before any work. The issue you w
 - Any new cross-cook aggregate must exclude cooks with `exclude_from_stats`.
 - Codex never pushes to or merges into `main`.
 - Add a `CHANGELOG.md` entry under `## Unreleased` for any functional code change.
-- Merged PR branches are deleted automatically by `.forgejo/workflows/cleanup-merged-branches.yml`.
+- Merged PR branches are deleted automatically by `.forgejo/workflows/cleanup-merged-branches.yml` using a Forgejo authorized integration.
 
 ## Deploy conventions (these override the deploy bullets in issues)
 - The app deploys to the target host (`your-host`) as a **Dockhand git stack** that reads `compose.yml` from the root of this repo. There is no SSH access and no manual deploys.
