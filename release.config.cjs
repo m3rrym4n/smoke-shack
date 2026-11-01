@@ -43,7 +43,9 @@ plugins.push([
   "@semantic-release/exec",
   {
     prepareCmd:
-      "printf '%s\\n' '${nextRelease.version}' > app/build_info.txt && printf 'IMAGE_TAG=%s\\n' '${nextRelease.version}' >> \"$GITHUB_ENV\"",
+      "printf '%s\\n' '${nextRelease.version}' > app/build_info.txt" +
+      (isMain ? " && node scripts/set-app-version.cjs '${nextRelease.version}'" : "") +
+      " && printf 'IMAGE_TAG=%s\\n' '${nextRelease.version}' >> \"$GITHUB_ENV\"",
   },
 ]);
 
@@ -51,7 +53,7 @@ if (isMain) {
   plugins.push([
     "@semantic-release/git",
     {
-      assets: ["CHANGELOG.md"],
+      assets: ["CHANGELOG.md", "smoke-shack/config.yaml"],
       message: "chore(release): ${nextRelease.version} [skip ci]\\n\\n${nextRelease.notes}",
     },
   ]);
