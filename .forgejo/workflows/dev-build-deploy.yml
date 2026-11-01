@@ -3,7 +3,7 @@ name: Dev Build and Deploy
 on:
   push:
     branches: [dev]
-    paths-ignore: [compose.yml]
+    paths-ignore: [deploy/dev/compose.yml]
   pull_request:
     branches: [dev]
   workflow_dispatch:
@@ -108,10 +108,10 @@ jobs:
             exit 0
           fi
 
-          sed -i "s|^\( *\)image: .*|\1image: 192.168.1.73:5050/smoke-shack/smoke-shack:${{ env.IMAGE_TAG }}|" compose.yml
+          sed -i "s|^\( *\)image: .*|\1image: 192.168.1.73:5050/smoke-shack/smoke-shack:${{ env.IMAGE_TAG }}|" deploy/dev/compose.yml
           git config user.email "ci@smoke-stack.local"
           git config user.name "smoke-stack-ci"
-          git add compose.yml
+          git add deploy/dev/compose.yml
           git commit -m "chore: update smoke-shack-dev deployed image to ${{ env.IMAGE_TAG }}"
 
           if newer_dev_commit_exists; then

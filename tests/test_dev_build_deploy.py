@@ -23,7 +23,8 @@ def test_deployed_image_rewrite_replaces_any_existing_image_line(
         line.strip() for line in workflow.splitlines() if line.strip().startswith("sed -i ")
     )
     command = shlex.split(sed_line.replace("${{ env.IMAGE_TAG }}", "1.2.3-dev.4"))
-    compose_path = tmp_path / "compose.yml"
+    compose_path = tmp_path / "deploy/dev/compose.yml"
+    compose_path.parent.mkdir(parents=True)
     compose_path.write_text(f"services:\n  smoke-shack:\n    image: {existing_image}\n")
     command[-1] = str(compose_path)
 
