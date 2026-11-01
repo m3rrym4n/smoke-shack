@@ -89,6 +89,9 @@ warning: sensor.green_mountain_grill_warning
 extra_probes: []
 ```
 
+If your entity IDs differ, copy `config/entities.yaml` next to `compose.yml`, edit the copied
+file, uncomment the entity-map volume line in `compose.yml`, and run `docker compose up -d` again.
+
 Each value is a Home Assistant entity ID:
 
 - `pit_climate`: the grill climate entity; supplies the operating mode and pit setpoint.
