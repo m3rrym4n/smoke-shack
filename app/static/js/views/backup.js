@@ -29,7 +29,7 @@ export function mountBackupView(container) {
     <div class="backup-sections">
       <section class="stp backup-section">
         <h2>Backup</h2>
-        <p>Download the cook log, pantry and its photos, notes, pinned events, meat groups, profiles, pellets, and everything else in the database.</p>
+        <p>Download the cook log, pantry and its photos, grill logo and picture, notes, pinned events, meat groups, profiles, pellets, and everything else in the database.</p>
         <p class="mut">Home Assistant connection settings and <code>entities.yaml</code> are not included.</p>
         <a class="pbtn backup-download" href="/api/backup" download>Download backup</a>
       </section>

@@ -12,6 +12,7 @@ from pathlib import Path
 def build_backup(
     database_path: str | Path,
     photo_dir: str | Path,
+    showcase_dir: str | Path,
     app_version: str,
     *,
     created_at: datetime | None = None,
@@ -36,6 +37,7 @@ def build_backup(
         _snapshot_database(Path(database_path), snapshot_path)
         tables, schema_revision = _database_manifest(snapshot_path)
         photos = sorted(path for path in Path(photo_dir).rglob("*") if path.is_file())
+        showcase_files = sorted(path for path in Path(showcase_dir).rglob("*") if path.is_file())
         timestamp = (created_at or datetime.now(UTC)).astimezone(UTC)
         manifest = {
             "format_version": 1,
@@ -44,6 +46,7 @@ def build_backup(
             "created_at": timestamp.isoformat().replace("+00:00", "Z"),
             "tables": tables,
             "photo_count": len(photos),
+            "showcase_count": len(showcase_files),
             "db_sha256": _sha256(snapshot_path),
         }
 
@@ -53,6 +56,12 @@ def build_backup(
             root = Path(photo_dir)
             for photo in photos:
                 archive.write(photo, Path("photos") / photo.relative_to(root))
+            showcase_root = Path(showcase_dir)
+            for showcase_file in showcase_files:
+                archive.write(
+                    showcase_file,
+                    Path("showcase") / showcase_file.relative_to(showcase_root),
+                )
     except Exception:
         archive_path.unlink(missing_ok=True)
         raise

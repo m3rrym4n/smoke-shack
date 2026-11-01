@@ -35,10 +35,15 @@ def test_build_backup_contains_valid_snapshot_manifest_and_photos(tmp_path: Path
     photos = tmp_path / "photos"
     (photos / "nested").mkdir(parents=True)
     (photos / "nested" / "cook.jpg").write_bytes(b"photo")
+    showcase = tmp_path / "showcase"
+    showcase.mkdir()
+    (showcase / "logo.png").write_bytes(b"logo")
+    (showcase / "photo.jpg").write_bytes(b"grill")
 
     archive_path = build_backup(
         database,
         photos,
+        showcase,
         "2.3.0-dev.4",
         created_at=datetime(2026, 10, 31, 18, 0, tzinfo=UTC),
     )
@@ -49,6 +54,8 @@ def test_build_backup_contains_valid_snapshot_manifest_and_photos(tmp_path: Path
                 "manifest.json",
                 "smoke-shack.db",
                 "photos/nested/cook.jpg",
+                "showcase/logo.png",
+                "showcase/photo.jpg",
             }
             manifest = json.loads(archive.read("manifest.json"))
             snapshot = archive.read("smoke-shack.db")
@@ -60,6 +67,7 @@ def test_build_backup_contains_valid_snapshot_manifest_and_photos(tmp_path: Path
             "created_at": "2026-10-31T18:00:00Z",
             "tables": {"alembic_version": 1, "cooks": 2},
             "photo_count": 1,
+            "showcase_count": 2,
             "db_sha256": hashlib.sha256(snapshot).hexdigest(),
         }
         snapshot_path = tmp_path / "snapshot.db"
@@ -78,11 +86,14 @@ def test_build_backup_allows_missing_photo_directory(tmp_path: Path) -> None:
     database = tmp_path / "live.db"
     _database(database).close()
 
-    archive_path = build_backup(database, tmp_path / "missing", "dev")
+    archive_path = build_backup(
+        database, tmp_path / "missing", tmp_path / "missing-showcase", "dev"
+    )
     try:
         with zipfile.ZipFile(archive_path) as archive:
             assert archive.namelist() == ["smoke-shack.db", "manifest.json"]
             assert json.loads(archive.read("manifest.json"))["photo_count"] == 0
+            assert json.loads(archive.read("manifest.json"))["showcase_count"] == 0
     finally:
         archive_path.unlink(missing_ok=True)
 
