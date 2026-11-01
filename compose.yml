@@ -1,10 +1,10 @@
 services:
   smoke-shack:
-    image: 192.168.1.73:5050/smoke-shack/smoke-shack:1.1.1-dev.3
-    container_name: smoke-shack-dev
+    image: m3rrym4n/smoke-shack:latest
+    container_name: smoke-shack
     restart: unless-stopped
     ports:
-      - "8010:8000"
+      - "8011:8000"
     environment:
       HA_URL: ${HA_URL}
       HA_TOKEN: ${HA_TOKEN}
@@ -16,7 +16,9 @@ services:
       DATA_GAP_EVENT_MIN_SECONDS: ${DATA_GAP_EVENT_MIN_SECONDS:-120}
       TZ: America/Los_Angeles
     volumes:
-      - smoke-shack-dev-data:/data
+      - smoke-shack-data:/data
+      # Uncomment to override the default Home Assistant entity map.
+      # - ./entities.yaml:/app/config/entities.yaml:ro
     healthcheck:
       test:
         - CMD
@@ -29,4 +31,4 @@ services:
       start_period: 10s
 
 volumes:
-  smoke-shack-dev-data:
+  smoke-shack-data:

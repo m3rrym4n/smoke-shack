@@ -131,6 +131,33 @@ jobs:
             echo "Created Forgejo release ${tag}."
           done < <(git tag --list 'v[0-9]*' --sort=version:refname | awk 'index($0, "-") == 0')
 
+  sync-dev:
+    needs: release
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge main into dev
+        run: |
+          git fetch origin main dev
+
+          if git merge-base --is-ancestor origin/main origin/dev; then
+            echo "origin/dev already contains origin/main; nothing to sync."
+            exit 0
+          fi
+
+          git checkout -B dev origin/dev
+          git config user.email "ci@smoke-stack.local"
+          git config user.name "smoke-stack-ci"
+          if ! git merge --no-ff origin/main -m "chore: sync main into dev"; then
+            git merge --abort || true
+            echo "Failed to sync main into dev because the merge has conflicts." >&2
+            exit 1
+          fi
+          git push origin HEAD:dev
+
   publish-image:
     needs: release
     if: github.ref_name == 'main'
@@ -163,7 +190,20 @@ jobs:
           echo "PUBLISH_IMAGE=true" >> "$GITHUB_ENV"
       - name: Install Docker CLI
         if: env.PUBLISH_IMAGE == 'true'
-        run: apt-get update && apt-get install -y docker.io
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y docker.io
+          if ! docker buildx version; then
+            buildx_binary="$(mktemp)"
+            trap 'rm -f "$buildx_binary"' EXIT
+            curl -fsSL \
+              https://github.com/docker/buildx/releases/download/v0.20.1/buildx-v0.20.1.linux-amd64 \
+              -o "$buildx_binary"
+            echo "8c38f60308a895fa570f1410e453c5de11aafd65a99fa99965d96d24b6225a78  $buildx_binary" | sha256sum -c -
+            install -D -m 0755 "$buildx_binary" /usr/local/lib/docker/cli-plugins/docker-buildx
+          fi
+          docker buildx version
       - name: Log in to Docker Hub
         if: env.PUBLISH_IMAGE == 'true'
         env:
@@ -173,40 +213,88 @@ jobs:
       - name: Skip image build when version is already published
         if: env.PUBLISH_IMAGE == 'true'
         run: |
-          if docker manifest inspect "m3rrym4n/smoke-shack:${RELEASE_VERSION}" >/dev/null 2>&1; then
+          image_details="$(
+            docker buildx imagetools inspect \
+              "m3rrym4n/smoke-shack:${RELEASE_VERSION}" 2>/dev/null || true
+          )"
+          if printf '%s\n' "$image_details" | grep -q 'Platform:.*linux/amd64' && \
+             printf '%s\n' "$image_details" | grep -q 'Platform:.*linux/arm64'; then
             echo "m3rrym4n/smoke-shack:${RELEASE_VERSION} is already published; nothing to do"
             echo "PUBLISH_IMAGE=false" >> "$GITHUB_ENV"
           fi
+      - name: Register arm64 emulation
+        if: env.PUBLISH_IMAGE == 'true'
+        run: docker run --privileged --rm tonistiigi/binfmt:qemu-v9.2.2 --install arm64
+      - name: Create multi-platform builder
+        if: env.PUBLISH_IMAGE == 'true'
+        run: |
+          builder_name="smoke-shack-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+          docker buildx create \
+            --name "$builder_name" \
+            --driver docker-container \
+            --use
+          docker buildx inspect --bootstrap
+          echo "BUILDX_BUILDER=$builder_name" >> "$GITHUB_ENV"
       - name: Prepare build info
         if: env.PUBLISH_IMAGE == 'true'
         run: printf '%s\n' "$RELEASE_VERSION" > app/build_info.txt
-      - name: Build image
+      - name: Build images for platform scans
         if: env.PUBLISH_IMAGE == 'true'
         run: |
           revision="$(git rev-parse HEAD)"
-          docker build \
+          docker buildx build \
+            --platform linux/amd64 \
             --label org.opencontainers.image.source=https://github.com/m3rrym4n/smoke-shack \
             --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
             --label "org.opencontainers.image.revision=${revision}" \
             --label org.opencontainers.image.licenses=MIT \
-            --tag "m3rrym4n/smoke-shack:${RELEASE_VERSION}" \
-            --tag m3rrym4n/smoke-shack:latest \
+            --tag "smoke-shack-scan:amd64-${RELEASE_VERSION}" \
             --tag "192.168.1.73:5050/smoke-shack/smoke-shack:${RELEASE_VERSION}" \
+            --load \
             .
-      - name: Trivy container scan
+          docker buildx build \
+            --platform linux/arm64 \
+            --label org.opencontainers.image.source=https://github.com/m3rrym4n/smoke-shack \
+            --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
+            --label "org.opencontainers.image.revision=${revision}" \
+            --label org.opencontainers.image.licenses=MIT \
+            --tag "smoke-shack-scan:arm64-${RELEASE_VERSION}" \
+            --load \
+            .
+      - name: Trivy container scans
         if: env.PUBLISH_IMAGE == 'true'
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.69.3 image \
             --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
-            "m3rrym4n/smoke-shack:${RELEASE_VERSION}"
+            "smoke-shack-scan:amd64-${RELEASE_VERSION}"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.69.3 image \
+            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            "smoke-shack-scan:arm64-${RELEASE_VERSION}"
       - name: Push images
         if: env.PUBLISH_IMAGE == 'true'
         run: |
-          docker push "m3rrym4n/smoke-shack:${RELEASE_VERSION}"
+          revision="$(git rev-parse HEAD)"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --label org.opencontainers.image.source=https://github.com/m3rrym4n/smoke-shack \
+            --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
+            --label "org.opencontainers.image.revision=${revision}" \
+            --label org.opencontainers.image.licenses=MIT \
+            --tag "m3rrym4n/smoke-shack:${RELEASE_VERSION}" \
+            --tag m3rrym4n/smoke-shack:latest \
+            --push \
+            .
           docker push "192.168.1.73:5050/smoke-shack/smoke-shack:${RELEASE_VERSION}"
-          docker push m3rrym4n/smoke-shack:latest
+      - name: Remove multi-platform builder
+        if: always()
+        run: |
+          if [ -n "${BUILDX_BUILDER:-}" ]; then
+            docker buildx rm "$BUILDX_BUILDER" || true
+          fi
       - name: Log out of Docker Hub
         if: always()
         run: docker logout docker.io || true
