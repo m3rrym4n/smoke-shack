@@ -1,0 +1,32 @@
+services:
+  smoke-shack:
+    image: 192.168.1.73:5050/smoke-shack/smoke-shack:1.1.1-dev.3
+    container_name: smoke-shack-dev
+    restart: unless-stopped
+    ports:
+      - "8010:8000"
+    environment:
+      HA_URL: ${HA_URL}
+      HA_TOKEN: ${HA_TOKEN}
+      HA_WS_MAX_SIZE_BYTES: ${HA_WS_MAX_SIZE_BYTES:-67108864}
+      DATABASE_PATH: /data/smoke-shack.db
+      PHOTO_DIR: /data/photos
+      SMOKE_SHACK_GRILL_NAME: ${SMOKE_SHACK_GRILL_NAME:-}
+      SAMPLE_INTERVAL_SECONDS: ${SAMPLE_INTERVAL_SECONDS:-10}
+      DATA_GAP_EVENT_MIN_SECONDS: ${DATA_GAP_EVENT_MIN_SECONDS:-120}
+      TZ: America/Los_Angeles
+    volumes:
+      - smoke-shack-dev-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  smoke-shack-dev-data:

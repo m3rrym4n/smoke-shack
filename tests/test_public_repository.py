@@ -25,7 +25,7 @@ def test_tracked_files_do_not_contain_private_references() -> None:
         # Keep the dev image registry address until Public Launch, Phase 4.
         if (
             relative_path in {Path("CHANGELOG.md"), Path("compose.yml")}
-            or relative_path.parts[0] == ".forgejo"
+            or relative_path.parts[0] in {".forgejo", "deploy"}
         ):
             continue
         contents = (REPOSITORY_ROOT / relative_path).read_bytes().lower()
