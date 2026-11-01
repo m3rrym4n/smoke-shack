@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: smoke-stack-dev-deploy
+  group: smoke-stack-dev-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
