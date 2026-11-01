@@ -11,7 +11,9 @@ from sqlalchemy import create_engine, inspect, text
 def test_migration_chain_has_exactly_one_head() -> None:
     script = ScriptDirectory.from_config(Config("alembic.ini"))
 
-    assert len(script.get_heads()) == 1
+    assert len(script.get_heads()) == 1, (
+        "multiple Alembic heads: merge or re-parent the newer migration"
+    )
 
 
 def test_empty_database_upgrades_to_complete_head(
