@@ -21,6 +21,10 @@ These original vector assets use only simple geometry and outlined glyphs. The S
 
 No other colors are used.
 
+The badge rings run from a cream outer circle through green and red rings to a
+green centre (radii 480, 448, 430, and 404 respectively in the 1024-unit
+viewBox).
+
 ## Typeface and license
 
 The header uses **Bitter** (ExtraBold for “SMOKE-SHACK” and Medium for the subtitle), designed by Sol Matas and the Bitter project contributors. Bitter is licensed under the [SIL Open Font License 1.1](https://openfontlicense.org/). The final SVG contains outlined paths only and does not embed or require the font.
