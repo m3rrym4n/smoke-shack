@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/smoke-shack-header-1280x640.png" alt="Smoke-Shack: a cook journal for pellet grills" width="800">
+</p>
+
 # Smoke-Shack
 
 Smoke-Shack is a self-hosted cook journal for pellet grills. It records grill and probe data
