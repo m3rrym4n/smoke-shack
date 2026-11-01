@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from conftest import FakeHAClient
 from fastapi.testclient import TestClient
@@ -177,6 +177,69 @@ def test_pellet_upc_bag_size_cost_and_filter(sessions: sessionmaker[Session]) ->
         assert cleared.json()["upc"] is None
         assert cleared.json()["bag_size_lb"] is None
         assert cleared.json()["bag_cost"] is None
+
+
+def test_pellet_empty_state_validation_and_list_filter(sessions: sessionmaker[Session]) -> None:
+    purchased_on = date.today() - timedelta(days=2)
+    base = {
+        "vendor": "Bear Mountain",
+        "product_name": "Oak",
+        "price_per_pound": 1.23,
+        "purchased_on": purchased_on.isoformat(),
+    }
+    with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
+        created = client.post("/api/pellets", json=base)
+        pellet_id = created.json()["id"]
+        assert created.json()["emptied_on"] is None
+        assert created.json()["is_empty"] is False
+
+        before_purchase = client.patch(
+            f"/api/pellets/{pellet_id}",
+            json={"emptied_on": (purchased_on - timedelta(days=1)).isoformat()},
+        )
+        future = client.patch(
+            f"/api/pellets/{pellet_id}",
+            json={"emptied_on": (date.today() + timedelta(days=1)).isoformat()},
+        )
+        assert before_purchase.status_code == 422
+        assert future.status_code == 422
+
+        emptied = client.patch(
+            f"/api/pellets/{pellet_id}", json={"emptied_on": date.today().isoformat()}
+        )
+        assert emptied.status_code == 200
+        assert emptied.json()["emptied_on"] == date.today().isoformat()
+        assert emptied.json()["is_empty"] is True
+        assert client.get("/api/pellets").json() == []
+        assert client.get("/api/pellets?include_empty=true").json() == [emptied.json()]
+
+        restored = client.patch(f"/api/pellets/{pellet_id}", json={"emptied_on": None})
+        assert restored.status_code == 200
+        assert restored.json()["emptied_on"] is None
+        assert restored.json()["is_empty"] is False
+        assert client.get("/api/pellets").json() == [restored.json()]
+
+
+def test_create_pellet_validates_empty_date(sessions: sessionmaker[Session]) -> None:
+    base = {"vendor": "Neighbor", "product_name": "Blend", "price_per_pound": 0}
+    with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
+        pellet_id = client.post("/api/pellets", json=base).json()["id"]
+        assert client.post(
+            "/api/pellets",
+            json={
+                **base,
+                "purchased_on": date.today().isoformat(),
+                "emptied_on": (date.today() + timedelta(days=1)).isoformat(),
+            },
+        ).status_code == 422
+        assert client.post(
+            "/api/pellets",
+            json={
+                **base,
+                "purchased_on": date.today().isoformat(),
+                "emptied_on": (date.today() - timedelta(days=1)).isoformat(),
+            },
+        ).status_code == 422
 
         for upc in ("1234567", "123456789012345", "1234567A"):
             response = client.post("/api/pellets", json={**base, "upc": upc})

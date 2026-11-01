@@ -111,9 +111,12 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
     return;
   }
   if (editing && requestedCook) {
-    const [meat, pellets, cooks, photos, spices] = await Promise.all([
+    const [meat, availablePellets, cooks, photos, spices] = await Promise.all([
       getMeat(), getPellets(), getCookLogCooks(10000), getCookPhotos(requestedCook.id), listSpices(),
     ]);
+    const pellets = requestedCook.pellet && !availablePellets.some((item) => item.id === requestedCook.pellet.id)
+      ? [...availablePellets, requestedCook.pellet]
+      : availablePellets;
     if (!isCurrent()) return;
     updateSmoke(null, null);
     const form = orderPadMarkup(requestedCook, meat, pellets, cooks, {
@@ -153,6 +156,9 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
         : selectOrderPadMode(active ? cook : null, sortedPlans, closed);
     mode = selection.mode;
     orderCook = selection.cook;
+    if (orderCook?.pellet && !pellets.some((item) => item.id === orderCook.pellet.id)) {
+      pellets.push(orderCook.pellet);
+    }
     const photos = orderCook?.id ? await getCookPhotos(orderCook.id) : [];
     order = orderPadMarkup(orderCook, meat, pellets, [...closedCooks, ...planned, ...(active && cook ? [cook] : [])], { ...selection, planned: sortedPlans, photos, spices });
   }

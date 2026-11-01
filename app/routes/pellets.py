@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
@@ -24,8 +25,12 @@ def _get_pellet(pellet_id: int, session: Session) -> Pellet:
 
 
 @router.get("", response_model=list[PelletResponse])
-def list_pellets(session: SessionDep, upc: str | None = None) -> list[Pellet]:
+def list_pellets(
+    session: SessionDep, upc: str | None = None, include_empty: bool = False
+) -> list[Pellet]:
     query = select(Pellet).order_by(Pellet.vendor, Pellet.product_name, Pellet.id)
+    if not include_empty:
+        query = query.where(Pellet.emptied_on.is_(None))
     if upc is not None:
         try:
             cleaned_upc = clean_upc(upc)
@@ -52,7 +57,20 @@ def get_pellet(pellet_id: int, session: SessionDep) -> Pellet:
 @router.patch("/{pellet_id}", response_model=PelletResponse)
 def update_pellet(pellet_id: int, payload: PelletUpdate, session: SessionDep) -> Pellet:
     item = _get_pellet(pellet_id, session)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    purchased_on = changes.get("purchased_on", item.purchased_on)
+    emptied_on = changes.get("emptied_on", item.emptied_on)
+    if emptied_on is not None:
+        if emptied_on < purchased_on:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Empty date cannot be before purchase date",
+            )
+        if emptied_on > date.today():
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "Empty date cannot be in the future"
+            )
+    for field, value in changes.items():
         setattr(item, field, value)
     session.commit()
     session.refresh(item)

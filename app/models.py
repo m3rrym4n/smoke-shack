@@ -205,9 +205,14 @@ class Pellet(Base):
     product_name: Mapped[str]
     price_per_pound: Mapped[Decimal] = mapped_column(Numeric(8, 2))
     purchased_on: Mapped[date] = mapped_column(Date)
+    emptied_on: Mapped[date | None] = mapped_column(Date)
     upc: Mapped[str | None] = mapped_column(String(14))
     bag_size_lb: Mapped[float | None]
     photo_path: Mapped[str | None]
+
+    @property
+    def is_empty(self) -> bool:
+        return self.emptied_on is not None
 
     @property
     def bag_cost(self) -> float | None:

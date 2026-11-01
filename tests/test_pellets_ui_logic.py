@@ -78,3 +78,24 @@ def test_bag_cost_display_uses_api_value_only_when_pricing_is_complete() -> None
         "{bag_size_lb:null,price_per_pound:1.23,bag_cost:null})]))"
     )
     assert run_logic(expression, "bagCostDisplay") == ["$24.60/bag", ""]
+
+
+def test_split_pellets_separates_stock_and_empty_bags() -> None:
+    expression = (
+        "const result=splitPellets([{id:1,is_empty:false},{id:2,is_empty:true},"
+        "{id:3,is_empty:false}]);console.log(JSON.stringify(result))"
+    )
+    assert run_logic(expression, "splitPellets") == {
+        "inStock": [{"id": 1, "is_empty": False}, {"id": 3, "is_empty": False}],
+        "empty": [{"id": 2, "is_empty": True}],
+    }
+
+
+def test_pantry_loads_empty_bags_and_order_pad_uses_default_filter() -> None:
+    pantry = Path("app/static/js/views/pellets.js").read_text()
+    live = Path("app/static/js/views/live.js").read_text()
+    assert "getPellets(upc, true)" in pantry
+    assert "getPellets()" in live
+    assert "Mark empty" in pantry
+    assert "Undo" in pantry
+    assert "Empty bags" in pantry

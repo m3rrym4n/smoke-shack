@@ -356,4 +356,8 @@ def test_restore_migrates_older_revision(tmp_path: Path, monkeypatch) -> None:
     assert response.json()["schema_revision_after"] != "ef36b629902e"
     with sqlite3.connect(live_db) as connection:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(pellets)")}
-        assert {"upc", "bag_size_lb"} <= columns
+        assert {"upc", "bag_size_lb", "emptied_on"} <= columns
+        emptied_count = connection.execute(
+            "SELECT COUNT(*) FROM pellets WHERE emptied_on IS NOT NULL"
+        ).fetchone()[0]
+        assert emptied_count == 0

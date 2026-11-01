@@ -23,6 +23,13 @@ export function bagCostDisplay(item) {
   return `$${Number(item.bag_cost).toFixed(2)}/bag`;
 }
 
+export function splitPellets(items) {
+  return {
+    inStock: items.filter((item) => !item.is_empty),
+    empty: items.filter((item) => item.is_empty),
+  };
+}
+
 export function validatePellet(values) {
   const errors = {};
   if (!String(values.vendor || "").trim()) errors.vendor = "Enter a pellet vendor.";

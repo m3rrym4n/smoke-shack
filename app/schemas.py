@@ -74,8 +74,18 @@ class PelletCreate(BaseModel):
     purchased_on: date = Field(default_factory=date.today)
     upc: str | None = None
     bag_size_lb: float | None = Field(default=None, gt=0, le=100)
+    emptied_on: date | None = None
 
     _clean_upc = field_validator("upc", mode="before")(clean_upc)
+
+    @model_validator(mode="after")
+    def validate_emptied_on(self) -> PelletCreate:
+        if self.emptied_on is not None:
+            if self.emptied_on < self.purchased_on:
+                raise ValueError("Empty date cannot be before purchase date")
+            if self.emptied_on > date.today():
+                raise ValueError("Empty date cannot be in the future")
+        return self
 
 
 class PelletUpdate(BaseModel):
@@ -85,6 +95,7 @@ class PelletUpdate(BaseModel):
     purchased_on: date | None = None
     upc: str | None = None
     bag_size_lb: float | None = Field(default=None, gt=0, le=100)
+    emptied_on: date | None = None
 
     _clean_upc = field_validator("upc", mode="before")(clean_upc)
 
@@ -99,6 +110,8 @@ class PelletResponse(BaseModel):
     purchased_on: date
     upc: str | None
     bag_size_lb: float | None
+    emptied_on: date | None
+    is_empty: bool
     bag_cost: float | None
     has_photo: bool
     photo_url: str | None
