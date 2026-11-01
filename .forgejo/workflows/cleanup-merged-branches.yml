@@ -1,0 +1,38 @@
+# Deletes same-repository pull request branches after they are merged.
+name: Cleanup Merged Branches
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  delete-branch:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != 'dev' &&
+      github.event.pull_request.head.ref != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete merged branch
+        env:
+          FORGEJO_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          encoded_ref="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["HEAD_REF"], safe=""))')"
+          status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            --request DELETE \
+            --header "Authorization: token ${FORGEJO_TOKEN}" \
+            "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/branches/${encoded_ref}")"
+          if [ "$status" = "204" ] || [ "$status" = "404" ]; then
+            echo "Branch cleanup completed with HTTP ${status}."
+            exit 0
+          fi
+          echo "Failed to delete branch: HTTP ${status}" >&2
+          cat "$response_file" >&2
+          exit 1
