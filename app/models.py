@@ -178,6 +178,26 @@ class Meat(Base):
         return _pantry_photo_url("meat", self.id, self.photo_path)
 
 
+class MeatGroup(Base):
+    __tablename__ = "meat_groups"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True)
+    types: Mapped[list[MeatGroupType]] = relationship(
+        back_populates="group", cascade="all, delete-orphan", order_by="MeatGroupType.type_key"
+    )
+
+
+class MeatGroupType(Base):
+    __tablename__ = "meat_group_types"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("meat_groups.id", ondelete="CASCADE"))
+    type_key: Mapped[str] = mapped_column(String, unique=True)
+    group: Mapped[MeatGroup] = relationship(back_populates="types")
+
+
+Index("uq_meat_groups_name_ci", func.lower(MeatGroup.name), unique=True)
+
+
 class Pellet(Base):
     __tablename__ = "pellets"
     id: Mapped[int] = mapped_column(primary_key=True)

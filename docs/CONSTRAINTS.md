@@ -1,4 +1,4 @@
-# smoke-stack hard constraints (read before every job)
+# Smoke-Shack hard constraints (read before every job)
 
 This file supplements `docs/SPEC.md`. If the two disagree, this file wins.
 
@@ -7,7 +7,7 @@ This file supplements `docs/SPEC.md`. If the two disagree, this file wins.
 The grill's WiFi module serves a **serial UDP stream** (port 8080) and supports **one UDP client at a time**. Home Assistant's `gmg-ha` integration (PyPI library `gmg-local`) is that one client. A second client makes the grill return truncated or garbage replies for everyone (seen on the first real cook: setpoint 0 / 65535, mode flipping to off, warning "Unknown", probes flapping).
 
 Rules for ALL code in this repo:
-- smoke-stack must NEVER open a UDP socket to the grill, import `gmg-local`, or poll the grill's IP in any way. This includes scripts, tests that hit real hardware, and "discovery" helpers.
+- Smoke-Shack must NEVER open a UDP socket to the grill, import `gmg-local`, or poll the grill's IP in any way. This includes scripts, tests that hit real hardware, and "discovery" helpers.
 - All grill data comes from Home Assistant (websocket `state_changed` events and `get_states`).
 - All grill control (Start, Fan, Shutdown, setpoint, profile steps) goes through Home Assistant services (`climate.set_hvac_mode`, `climate.set_temperature`), never direct UDP.
 - Do not add dependencies such as `gmg-local`, or any code that uses `socket` for the grill.

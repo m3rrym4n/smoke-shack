@@ -3,9 +3,10 @@ requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "smoke-stack"
+name = "smoke-shack"
 version = "0.1.0"
 description = "A Home Assistant-backed pellet grill cook journal"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
   "alembic==1.16.5",

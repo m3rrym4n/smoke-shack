@@ -36,6 +36,12 @@ export function getStatus() {
   return getJson("/status");
 }
 
+export function restoreBackup(file) {
+  const body = new FormData();
+  body.append("file", file);
+  return requestJson("/api/restore", { method: "POST", body });
+}
+
 export function getShowcase() {
   return getJson("/api/showcase");
 }
@@ -139,6 +145,26 @@ export function getCookStats(params = new URLSearchParams()) {
 
 export function getCookStatsMeatTypes() {
   return getJson("/api/stats/meat-types");
+}
+
+export function getMeatGroups() {
+  return getJson("/api/meat-groups");
+}
+
+export function createMeatGroup(name) {
+  return sendJson("POST", "/api/meat-groups", { name });
+}
+
+export function renameMeatGroup(groupId, name) {
+  return sendJson("PATCH", `/api/meat-groups/${groupId}`, { name });
+}
+
+export function deleteMeatGroup(groupId) {
+  return sendJson("DELETE", `/api/meat-groups/${groupId}`);
+}
+
+export function replaceMeatGroupTypes(groupId, types) {
+  return sendJson("PUT", `/api/meat-groups/${groupId}/types`, { types });
 }
 
 export function getCooksForPellet(pelletId) {

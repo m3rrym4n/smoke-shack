@@ -1,0 +1,5 @@
+[extend]
+useDefault = true
+
+[allowlist]
+# Add only narrowly scoped, reviewed false positives with a documented justification.

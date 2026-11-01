@@ -1,14 +1,14 @@
-# smoke-stack: product spec
+# Smoke-Shack: product spec
 
 Cook journal for a Green Mountain Grills Daniel Boone Prime WiFi pellet grill, controlled through Home Assistant (HA) using the `gmg-ha` integration (local UDP). It records the **raw samples** of every cook (not chart screenshots) so cooks can be aggregated and queried, e.g. "average cook time for a 4 lb pork picnic shoulder at 275".
 
-Owner: Stan (solo developer, limited coding experience; all coding is done by Codex via Variflex jobs). Keep the code simple, boring and well tested.
+Owner: Pacific Shift Labs. Keep the code simple, boring and well tested.
 
 ## 1. Stack and deployment
 
 - Python 3.12, FastAPI, SQLite (WAL mode), SQLAlchemy 2 + Alembic, pytest, ruff, mypy.
 - One Docker image, single container, one volume for the SQLite DB and uploaded photos.
-- Forgejo-native CI/CD copied from CrateSpy's pattern (`.forgejo/workflows/dev-build-deploy.yml`, `main-release.yml`), deployed through Dockhand to the Factory VM (192.168.1.73). Look at `m3rrym4n/cratespy` for the real workflow files and copy the shape exactly.
+- Forgejo-native CI/CD (`.forgejo/workflows/dev-build-deploy.yml`, `main-release.yml`), deployed through Dockhand to the target host (`your-host`).
 - Configuration by environment variables only: `HA_URL`, `HA_TOKEN` (long-lived token, secret), `DATABASE_PATH`, `PHOTO_DIR`, `SAMPLE_INTERVAL_SECONDS` (default 10), `TZ`.
 - HA entity IDs are **configuration, not code** (YAML or env): pit climate entity, pit temp, setpoint, probe 1 and 2 temps, fire state, power state, plus an optional list of extra probes (Bluetooth probes via ESP32 will be added later).
 - No auth in v1 (LAN only). Do not add telemetry.
@@ -88,7 +88,7 @@ Free-form sticky notes, tagged by scope: this cook, pellets, gear. Title and bod
 
 ## 9. UI (look and feel is decided)
 
-Direction: **BBQ joint signage**. The approved mockup is at https://claude.ai/artifact/D5hTGkPDbQ1h1xXtobQBse (private to Stan; its final markup is copied to `docs/mockup/Signage.dc.html` in this repo by Stan or Claude as the reference). Do not invent another style.
+Direction: **BBQ joint signage**. The approved mockup at `docs/mockup/Signage.dc.html` is the design reference. Do not invent another style.
 
 Design tokens:
 - Page: wood paneling background (#4a2d19 with repeating-linear-gradient grain).
@@ -100,7 +100,7 @@ Design tokens:
 - **Responsive**: must work on desktop and phone browsers. Min 44 px touch targets, flex-wrap rows, no horizontal page scroll (the chart may scroll sideways inside its own panel on a phone). No frontend build step in v1: server-rendered templates (Jinja2) with a small amount of vanilla JS or htmx, vendored locally. Fonts may load from Google Fonts.
 - Start / Fan / Shutdown buttons call HA `climate.set_hvac_mode` (Heat / Fan only / Off). Do not add safety lectures, confirmations for Start, or warning text. A short confirmation on Shutdown only.
 
-## 10. Build plan (separate Variflex jobs, in order)
+## 10. Build plan (in order)
 
 1. Scaffold, schema + migrations, HA ingest, phase state machine, tests, Docker, CI/CD skeleton (issue 1).
 2. CRUD APIs for meat, pellets, notes, profiles, user events, cooks (including photos) + query/stats API + CSV/JSON export.

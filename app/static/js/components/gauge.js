@@ -62,7 +62,6 @@ export function gaugeSvg(temperature, setpoint, logoUrl = null) {
   return `<svg class="gauge" viewBox="0 0 400 400" role="img" aria-label="Pit temperature ${Math.round(temp)} degrees, setpoint ${Math.round(target)}">
     <circle class="gauge-rim" cx="200" cy="200" r="184"/><circle class="gauge-ring" cx="200" cy="200" r="171"/><circle class="gauge-face" cx="200" cy="200" r="158"/>
     ${ticks}${labels}
-    <text class="gauge-brand" x="200" y="145">SMOKE-STACK</text>
     <text class="gauge-temp" x="200" y="205">${Math.round(temp)}°</text>
     <text class="gauge-unit" x="200" y="232">DEGREES F</text>
     ${gaugeLogoMarkup(logoUrl)}

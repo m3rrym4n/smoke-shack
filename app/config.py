@@ -53,6 +53,7 @@ class Settings:
     incomplete_timeout_minutes: int = 90
     tz: str = "America/Los_Angeles"
     entities_path: str = "config/entities.yaml"
+    restore_max_bytes: int = 500 * 1024 * 1024
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -61,13 +62,16 @@ class Settings:
             ha_token=os.getenv("HA_TOKEN", ""),
             database_path=os.getenv("DATABASE_PATH", "smoke-stack.db"),
             photo_dir=os.getenv("PHOTO_DIR", "photos"),
-            grill_name=os.getenv("SMOKE_STACK_GRILL_NAME", ""),
+            grill_name=os.getenv("SMOKE_SHACK_GRILL_NAME")
+            or os.getenv("SMOKE_STACK_GRILL_NAME")
+            or "",
             sample_interval_seconds=int(os.getenv("SAMPLE_INTERVAL_SECONDS", "10")),
             data_gap_event_min_seconds=int(os.getenv("DATA_GAP_EVENT_MIN_SECONDS", "120")),
             ha_ws_max_size_bytes=int(os.getenv("HA_WS_MAX_SIZE_BYTES", "67108864")),
             incomplete_timeout_minutes=int(os.getenv("INCOMPLETE_TIMEOUT_MINUTES", "90")),
             tz=os.getenv("TZ", "America/Los_Angeles"),
             entities_path=os.getenv("ENTITIES_CONFIG", "config/entities.yaml"),
+            restore_max_bytes=int(os.getenv("RESTORE_MAX_BYTES", str(500 * 1024 * 1024))),
         )
 
     def load_entities(self) -> EntityConfig:
