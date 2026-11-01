@@ -210,3 +210,135 @@ jobs:
       - name: Log out of Docker Hub
         if: always()
         run: docker logout docker.io || true
+
+  public-release:
+    needs: release
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find stable release at latest main
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags --force
+          git checkout --force main
+          git reset --hard origin/main
+
+          stable_tag="$(
+            git tag --points-at HEAD --list 'v[0-9]*' |
+              awk 'index($0, "-") == 0' |
+              sort -V |
+              tail -n 1
+          )"
+          if [ -z "$stable_tag" ]; then
+            echo "no stable release at HEAD, nothing to publish"
+            echo "PUBLISH_PUBLIC_RELEASE=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          version="${stable_tag#v}"
+          echo "RELEASE_TAG=$stable_tag" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "PUBLISH_PUBLIC_RELEASE=true" >> "$GITHUB_ENV"
+      - name: Extract release notes
+        if: env.PUBLISH_PUBLIC_RELEASE == 'true'
+        run: |
+          set -euo pipefail
+          body="$(awk -v version="$RELEASE_VERSION" '
+            /^# / || /^## / {
+              heading = $0
+              sub(/^##? /, "", heading)
+              sub(/^\[/, "", heading)
+              if (found) exit
+              suffix = substr(heading, length(version) + 1, 1)
+              if (heading == version || (index(heading, version) == 1 && \
+                  (suffix == " " || suffix == "]" || suffix == "("))) found = 1
+            }
+            found { print }
+          ' CHANGELOG.md)"
+          if [ -z "$body" ]; then
+            body="Release ${RELEASE_TAG}."
+          fi
+          body="${body}
+
+          Docker image: docker pull m3rrym4n/smoke-shack:${RELEASE_VERSION}"
+          delimiter="release-notes-$(date +%s)-$$"
+          {
+            echo "RELEASE_BODY<<${delimiter}"
+            printf '%s\n' "$body"
+            echo "$delimiter"
+          } >> "$GITHUB_ENV"
+      - name: Create release on public mirror
+        if: env.PUBLISH_PUBLIC_RELEASE == 'true'
+        env:
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          api_url="https://api.github.com/repos/m3rrym4n/smoke-shack"
+
+          request() {
+            curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+              --header "Authorization: Bearer ${GH_RELEASE_TOKEN}" \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              "$@"
+          }
+
+          status="$(request "${api_url}/releases/tags/${RELEASE_TAG}")"
+          if [ "$status" = "200" ]; then
+            echo "Public release ${RELEASE_TAG} already exists; nothing to do."
+            exit 0
+          fi
+          if [ "$status" != "404" ]; then
+            echo "Failed to check for public release ${RELEASE_TAG}: HTTP ${status}" >&2
+            cat "$response_file" >&2
+            exit 1
+          fi
+
+          tag_found=false
+          for attempt in $(seq 1 40); do
+            status="$(request "${api_url}/git/ref/tags/${RELEASE_TAG}")"
+            if [ "$status" = "200" ]; then
+              tag_found=true
+              break
+            fi
+            if [ "$status" != "404" ]; then
+              echo "Failed to check for public tag ${RELEASE_TAG}: HTTP ${status}" >&2
+              cat "$response_file" >&2
+              exit 1
+            fi
+            if [ "$attempt" -lt 40 ]; then
+              echo "Public tag ${RELEASE_TAG} is not available yet; waiting 15 seconds."
+              sleep 15
+            fi
+          done
+          if [ "$tag_found" != "true" ]; then
+            echo "Public tag ${RELEASE_TAG} did not appear after 40 attempts; release was not created." >&2
+            exit 1
+          fi
+
+          payload="$(TAG="$RELEASE_TAG" BODY="$RELEASE_BODY" node -e '
+            process.stdout.write(JSON.stringify({
+              tag_name: process.env.TAG,
+              name: process.env.TAG,
+              body: process.env.BODY,
+              draft: false,
+              prerelease: false,
+            }));
+          ')"
+          status="$(request \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data "$payload" \
+            "${api_url}/releases")"
+          if [ "$status" != "201" ]; then
+            echo "Failed to create public release ${RELEASE_TAG}: HTTP ${status}" >&2
+            cat "$response_file" >&2
+            exit 1
+          fi
+          echo "Created public release ${RELEASE_TAG}."
