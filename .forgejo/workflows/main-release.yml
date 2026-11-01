@@ -130,3 +130,83 @@ jobs:
             fi
             echo "Created Forgejo release ${tag}."
           done < <(git tag --list 'v[0-9]*' --sort=version:refname | awk 'index($0, "-") == 0')
+
+  publish-image:
+    needs: release
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find stable release at latest main
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags --force
+          git checkout --force main
+          git reset --hard origin/main
+
+          stable_tag="$(
+            git tag --points-at HEAD --list 'v[0-9]*' |
+              awk 'index($0, "-") == 0' |
+              sort -V |
+              tail -n 1
+          )"
+          if [ -z "$stable_tag" ]; then
+            echo "no stable release at HEAD, nothing to publish"
+            echo "PUBLISH_IMAGE=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          version="${stable_tag#v}"
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "PUBLISH_IMAGE=true" >> "$GITHUB_ENV"
+      - name: Install Docker CLI
+        if: env.PUBLISH_IMAGE == 'true'
+        run: apt-get update && apt-get install -y docker.io
+      - name: Log in to Docker Hub
+        if: env.PUBLISH_IMAGE == 'true'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+      - name: Skip image build when version is already published
+        if: env.PUBLISH_IMAGE == 'true'
+        run: |
+          if docker manifest inspect "m3rrym4n/smoke-shack:${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "m3rrym4n/smoke-shack:${RELEASE_VERSION} is already published; nothing to do"
+            echo "PUBLISH_IMAGE=false" >> "$GITHUB_ENV"
+          fi
+      - name: Prepare build info
+        if: env.PUBLISH_IMAGE == 'true'
+        run: printf '%s\n' "$RELEASE_VERSION" > app/build_info.txt
+      - name: Build image
+        if: env.PUBLISH_IMAGE == 'true'
+        run: |
+          revision="$(git rev-parse HEAD)"
+          docker build \
+            --label org.opencontainers.image.source=https://github.com/m3rrym4n/smoke-shack \
+            --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
+            --label "org.opencontainers.image.revision=${revision}" \
+            --label org.opencontainers.image.licenses=MIT \
+            --tag "m3rrym4n/smoke-shack:${RELEASE_VERSION}" \
+            --tag m3rrym4n/smoke-shack:latest \
+            --tag "192.168.1.73:5050/smoke-shack/smoke-shack:${RELEASE_VERSION}" \
+            .
+      - name: Trivy container scan
+        if: env.PUBLISH_IMAGE == 'true'
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.69.3 image \
+            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            "m3rrym4n/smoke-shack:${RELEASE_VERSION}"
+      - name: Push images
+        if: env.PUBLISH_IMAGE == 'true'
+        run: |
+          docker push "m3rrym4n/smoke-shack:${RELEASE_VERSION}"
+          docker push "192.168.1.73:5050/smoke-shack/smoke-shack:${RELEASE_VERSION}"
+          docker push m3rrym4n/smoke-shack:latest
+      - name: Log out of Docker Hub
+        if: always()
+        run: docker logout docker.io || true
