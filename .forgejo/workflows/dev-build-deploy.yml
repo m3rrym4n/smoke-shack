@@ -44,6 +44,8 @@ jobs:
         run: .quality-venv/bin/ruff check .
       - name: Mypy
         run: .quality-venv/bin/mypy app
+      - name: Install release tooling
+        run: npm install --no-package-lock --no-audit --no-fund
       - name: Pytest
         run: .quality-venv/bin/pytest
 
