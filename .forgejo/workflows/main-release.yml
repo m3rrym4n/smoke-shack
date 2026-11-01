@@ -131,6 +131,33 @@ jobs:
             echo "Created Forgejo release ${tag}."
           done < <(git tag --list 'v[0-9]*' --sort=version:refname | awk 'index($0, "-") == 0')
 
+  sync-dev:
+    needs: release
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge main into dev
+        run: |
+          git fetch origin main dev
+
+          if git merge-base --is-ancestor origin/main origin/dev; then
+            echo "origin/dev already contains origin/main; nothing to sync."
+            exit 0
+          fi
+
+          git checkout -B dev origin/dev
+          git config user.email "ci@smoke-stack.local"
+          git config user.name "smoke-stack-ci"
+          if ! git merge --no-ff origin/main -m "chore: sync main into dev"; then
+            git merge --abort || true
+            echo "Failed to sync main into dev because the merge has conflicts." >&2
+            exit 1
+          fi
+          git push origin HEAD:dev
+
   publish-image:
     needs: release
     if: github.ref_name == 'main'
