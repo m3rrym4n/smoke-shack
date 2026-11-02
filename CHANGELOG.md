@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/m3rrym4n/smoke-shack/compare/v1.3.0...v1.3.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* make app data writable at startup ([c91d8b7](https://github.com/m3rrym4n/smoke-shack/commit/c91d8b757d85560e6039ea26e23691752fcd0a74))
+
 # [1.3.0](https://github.com/m3rrym4n/smoke-shack/compare/v1.2.0...v1.3.0) (2026-11-01)
 
 
