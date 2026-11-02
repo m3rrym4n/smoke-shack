@@ -1,7 +1,7 @@
 name: Smoke-Shack
 slug: smoke-shack
 description: Cook journal for pellet grills that reads from Home Assistant
-version: "1.3.2"
+version: "1.3.3"
 url: https://github.com/m3rrym4n/smoke-shack
 image: m3rrym4n/smoke-shack
 arch:
