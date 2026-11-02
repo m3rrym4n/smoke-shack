@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app import models  # noqa: F401
+from app.config import Settings
 from app.database import Base
 
 config = context.config
 if config.config_file_name:
     fileConfig(config.config_file_name)
-database_path = config.attributes.get("database_path") or os.getenv(
-    "DATABASE_PATH", "smoke-stack.db"
-)
+database_path = config.attributes.get("database_path") or Settings.from_env().database_path
 config.set_main_option("sqlalchemy.url", f"sqlite:///{database_path}")
 target_metadata = Base.metadata
 
