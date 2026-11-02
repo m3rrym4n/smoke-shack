@@ -1,3 +1,10 @@
+## [1.3.3](https://github.com/m3rrym4n/smoke-shack/compare/v1.3.2...v1.3.3) (2026-11-02)
+
+
+### Bug Fixes
+
+* collapse repeated leading request slashes ([9c534fa](https://github.com/m3rrym4n/smoke-shack/commit/9c534fa0a8b56a5db748fd3da92acd83ef138ddb))
+
 ## [1.3.2](https://github.com/m3rrym4n/smoke-shack/compare/v1.3.1...v1.3.2) (2026-11-02)
 
 
