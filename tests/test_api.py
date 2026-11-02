@@ -65,6 +65,33 @@ def test_api_routes_remain_at_normal_paths(sessions: sessionmaker[Session]) -> N
         assert client.get("/status").status_code == 200
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/status",
+        "/api/cooks?limit=100&offset=0&state=planned",
+    ],
+)
+def test_repeated_leading_slashes_match_normal_paths(
+    sessions: sessionmaker[Session], path: str
+) -> None:
+    with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
+        normal = client.get(path)
+        repeated = client.get(f"http://testserver/{path}")
+
+    assert repeated.status_code == normal.status_code
+    assert repeated.content == normal.content
+
+
+def test_only_leading_slashes_are_collapsed(sessions: sessionmaker[Session]) -> None:
+    with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
+        normal = client.get("/status")
+        internal = client.get("/api//cooks")
+
+    assert normal.status_code == 200
+    assert internal.status_code == 404
+
+
 def test_frontend_has_no_root_relative_resources_or_direct_fetches() -> None:
     static = Path("app/static")
     index = (static / "index.html").read_text(encoding="utf-8")
