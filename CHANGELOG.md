@@ -1,3 +1,10 @@
+## [1.3.4](https://github.com/m3rrym4n/smoke-shack/compare/v1.3.3...v1.3.4) (2026-11-02)
+
+
+### Bug Fixes
+
+* enable streaming ingress for backup restores ([6158189](https://github.com/m3rrym4n/smoke-shack/commit/6158189d70900093a4deef4c921bf3c861e1e959))
+
 ## [1.3.3](https://github.com/m3rrym4n/smoke-shack/compare/v1.3.2...v1.3.3) (2026-11-02)
 
 
