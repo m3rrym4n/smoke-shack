@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.background import BackgroundTask
-from starlette.types import Scope
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.backup import build_backup
 from app.config import Settings
@@ -60,6 +60,20 @@ class RevalidatingStaticFiles(StaticFiles):
         response = super().file_response(full_path, stat_result, scope, status_code)
         response.headers["Cache-Control"] = "no-cache"
         return response
+
+
+class CollapseLeadingSlashesMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["path"].startswith("//"):
+            scope = dict(scope)
+            scope["path"] = "/" + scope["path"].lstrip("/")
+            raw_path = scope.get("raw_path")
+            if raw_path is not None:
+                scope["raw_path"] = b"/" + raw_path.lstrip(b"/")
+        await self.app(scope, receive, send)
 
 
 def create_app(
@@ -112,6 +126,7 @@ def create_app(
                 await asyncio.gather(task, return_exceptions=True)
 
     app = FastAPI(title="Smoke Stack", lifespan=lifespan)
+    app.add_middleware(CollapseLeadingSlashesMiddleware)
 
     @app.get("/health")
     def health() -> dict[str, str]:
