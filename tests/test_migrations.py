@@ -2,10 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
+
+from app.config import Settings
+
+
+def migration_config() -> Config:
+    repository = Path(__file__).parent.parent
+    config = Config(repository / "alembic.ini")
+    config.set_main_option("script_location", str(repository / "migrations"))
+    return config
 
 
 def test_migration_chain_has_exactly_one_head() -> None:
@@ -14,6 +24,56 @@ def test_migration_chain_has_exactly_one_head() -> None:
     assert len(script.get_heads()) == 1, (
         "multiple Alembic heads: merge or re-parent the newer migration"
     )
+
+
+def test_supervisor_migrations_use_app_database_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    working_directory = tmp_path / "working"
+    data_directory = tmp_path / "data"
+    working_directory.mkdir()
+    data_directory.mkdir()
+    monkeypatch.chdir(working_directory)
+    monkeypatch.setenv("SUPERVISOR_TOKEN", "supervisor-secret")
+    monkeypatch.delenv("DATABASE_PATH", raising=False)
+    app_settings = Settings.from_env()
+    redirected_database = data_directory / Path(app_settings.database_path).name
+    monkeypatch.setattr(
+        Settings,
+        "from_env",
+        classmethod(lambda cls: Settings(database_path=str(redirected_database))),
+    )
+
+    command.upgrade(migration_config(), "head")
+
+    assert app_settings.database_path == "/data/smoke-shack.db"
+    assert "spices" in inspect(create_engine(f"sqlite:///{redirected_database}")).get_table_names()
+    assert not (working_directory / "smoke-stack.db").exists()
+
+
+def test_migrations_honor_explicit_database_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "explicit.db"
+    monkeypatch.setenv("SUPERVISOR_TOKEN", "supervisor-secret")
+    monkeypatch.setenv("DATABASE_PATH", str(database))
+
+    command.upgrade(migration_config(), "head")
+
+    assert "spices" in inspect(create_engine(f"sqlite:///{database}")).get_table_names()
+
+
+def test_migrations_keep_default_database_path_without_supervisor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SUPERVISOR_TOKEN", raising=False)
+    monkeypatch.delenv("DATABASE_PATH", raising=False)
+
+    command.upgrade(migration_config(), "head")
+
+    database = tmp_path / "smoke-stack.db"
+    assert "spices" in inspect(create_engine(f"sqlite:///{database}")).get_table_names()
 
 
 def test_empty_database_upgrades_to_complete_head(
