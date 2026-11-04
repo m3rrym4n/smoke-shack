@@ -1,3 +1,10 @@
+## [1.3.5](https://github.com/m3rrym4n/smoke-shack/compare/v1.3.4...v1.3.5) (2026-11-04)
+
+
+### Bug Fixes
+
+* replace Home Assistant placeholder branding ([f729b81](https://github.com/m3rrym4n/smoke-shack/commit/f729b811382d40b4d1936c827206843291db1355))
+
 ## [1.3.4](https://github.com/m3rrym4n/smoke-shack/compare/v1.3.3...v1.3.4) (2026-11-02)
 
 
