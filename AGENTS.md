@@ -12,14 +12,15 @@ Read `docs/SPEC.md` and `docs/SPEC-addendum.md` before any work. The issue you w
 - Merged PR branches are deleted automatically by `.forgejo/workflows/cleanup-merged-branches.yml` using a Forgejo authorized integration.
 
 ## Deploy conventions (these override the deploy bullets in issues)
-- The app deploys to the target host (`your-host`) as a **Dockhand git stack** that reads `compose.yml` from the root of this repo. There is no SSH access and no manual deploys.
-- `compose.yml` is the **dev** stack: service `smoke-shack`, `container_name: smoke-shack-dev`, named volume `smoke-shack-dev-data` mounted at `/data`, host port `8010` mapped to container port `8000`, `restart: unless-stopped`, environment variables passed through from the stack env (`HA_URL`, `HA_TOKEN`, `DATABASE_PATH=/data/smoke-shack.db`, `PHOTO_DIR=/data/photos`, `SAMPLE_INTERVAL_SECONDS`, `TZ=America/Los_Angeles`). Do not commit secrets.
-- A `compose.main.yml` (container `smoke-stack`, volume `smoke-stack-data`, host port `8011`) is added later, at the first promotion to `main`. Do not create it now.
-- The image is pushed to the Zot registry at `your-host:5050/smoke-shack/smoke-shack:<tag>`. The compose `image:` line must be a literal tag so a CI step can rewrite it (the CrateSpy tag write-back pattern); for job 1 use a placeholder tag and document it.
+- Root `compose.yml` is the public install file. It uses the Docker Hub image, service and container `smoke-shack`, named volume `smoke-shack-data` mounted at `/data`, and host port `8011` mapped to container port `8000`. Do not point it at the dev stack or Zot.
+- `deploy/dev/compose.yml` is the internal Dockhand dev stack on the target host (`your-host`): service `smoke-shack`, `container_name: smoke-shack-dev`, named volume `smoke-shack-dev-data` mounted at `/data`, and host port `8010` mapped to container port `8000`. It is the only compose file where CI writes the deployed image tag, and its `image:` line must remain a literal tag.
+- Do not create `compose.main.yml`.
+- Stable releases are published by CI to Docker Hub (multi-arch) and Zot. Codex does not touch release or publish workflows unless the issue says so.
+- There is no SSH access and no manual deploys. Do not commit secrets.
 - Health check: the endpoint is `GET /health` (not `/healthz`) and returns `{"status":"ok"}` with HTTP 200. Add a matching `healthcheck:` in `compose.yml`.
 - The container listens on port 8000 and runs `uvicorn` as a non-root user.
 
 ## Style
-- Keep it simple and boring. No auth, telemetry, or safety text or confirmations. No secrets in the repo.
+- Keep it simple and boring. No auth, telemetry, or safety text or confirmations in the app UI. The Safety section in the docs is intentional; do not remove it. No secrets in the repo.
 
-CI runs a redacted gitleaks scan against the full Git history on every configured push and pull request. If it finds a credential, rotate the credential first, then remove it from history or add a narrowly scoped allowlist entry with a documented justification for a reviewed false positive.
+CI runs a gitleaks scan against the full Git history. If it finds a credential, rotate the credential first.
