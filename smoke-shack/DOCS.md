@@ -22,11 +22,20 @@ Smoke-Shack has been tested only with a Green Mountain Grills Daniel Boone Prime
 
 ## Install
 
-1. In Home Assistant, go to **Settings → Apps**.
-2. Open the three-dot menu and select **Repositories**.
-3. Add `https://github.com/m3rrym4n/smoke-shack`.
-4. Install Smoke-Shack, then start it.
-5. Open Smoke-Shack from the Home Assistant sidebar.
+1. **Click the button to add the repository** to your Home Assistant instance:
+
+   [![Add Repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fm3rrym4n%2Fsmoke-shack)
+
+   Or add it manually in Settings → Apps → Install app → ⋮ → Repositories
+   (Settings → Add-ons → Add-on store before Home Assistant 2026.2):
+
+   ```text
+   https://github.com/m3rrym4n/smoke-shack
+   ```
+
+2. **Find Smoke-Shack** in the app store and click **Install**.
+3. **Click Start** when the install finishes.
+4. **Open Smoke-Shack** from the Home Assistant sidebar.
 
 ## How a cook works
 
@@ -43,6 +52,10 @@ After the cook, open it from the **Cook Log** to add or edit the result, notes, 
 Cook data and photos are stored in the app's `/data` directory. Use **Backup & Restore** inside Smoke-Shack to download or restore a backup. Home Assistant backups also include the app's data.
 
 Uninstalling the app deletes its data. Select **Keep backup** when uninstalling, or download a backup in Smoke-Shack first.
+
+## Other ways to run Smoke-Shack
+
+This page covers the Home Assistant App. To run Smoke-Shack on your own server with Docker, see the [README](https://github.com/m3rrym4n/smoke-shack#choose-your-setup). Manual mode (no Home Assistant) is coming soon.
 
 ## Troubleshooting
 

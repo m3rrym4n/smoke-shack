@@ -14,13 +14,17 @@ Assistant and never controls the grill.
 
 Smoke-Shack is a journal and monitor, not a safety system. Always check your grill in person. Never leave a cooking grill unattended.
 
-## Home Assistant App
+## Choose your setup
 
-Add `https://github.com/m3rrym4n/smoke-shack` as a Home Assistant App repository:
+Choose the setup path that matches where you want to run Smoke-Shack and how your cooks are
+recorded:
 
-[![Add to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fm3rrym4n%2Fsmoke-shack)
-
-Smoke-Shack is read-only toward Home Assistant; `gmg-ha` and Home Assistant handle all grill controls.
+- **[Self-hosted with Docker (gmg-ha)](#setup-1-self-hosted-with-docker-gmg-ha)** — for Docker
+  users whose grill data comes from the `gmg-ha` Home Assistant integration.
+- **[Home Assistant App (gmg-ha)](#setup-2-home-assistant-app-gmg-ha)** — for Home Assistant
+  OS or Supervised users who want Smoke-Shack to run inside Home Assistant.
+- **[Self-hosted, manual mode](#setup-3-self-hosted-manual-mode-coming-soon)** — for users
+  without Home Assistant or `gmg-ha`; coming soon.
 
 ## Status
 
@@ -45,7 +49,9 @@ Assistant then provides the grill data to Smoke-Shack. Smoke-Shack does not talk
 it only reads from Home Assistant through its REST API and WebSocket connection, then records
 each cook in its own SQLite database.
 
-## Requirements
+## Setup 1: Self-hosted with Docker (gmg-ha)
+
+### Requirements
 
 1. **Home Assistant**, running and reachable from the Smoke-Shack container, with a
    [long-lived access token](https://www.home-assistant.io/docs/authentication/#your-account-profile).
@@ -61,7 +67,7 @@ each cook in its own SQLite database.
 Other Home Assistant grill integrations may work if you map their entities in
 `entities.yaml`, but only `gmg-ha` is tested.
 
-## Quick start with Docker Compose
+### Quick start with Docker Compose
 
 Download this repository's [`compose.yml`](compose.yml), then create a `.env` file beside it
 with the URL of your Home Assistant instance and a long-lived access token:
@@ -80,7 +86,7 @@ docker compose up -d
 Open `http://docker-host:8011`. Keep the `.env` file out of version control; your container
 platform's secret storage is also suitable for `HA_TOKEN`.
 
-## Configure Home Assistant entities
+### Configure Home Assistant entities
 
 `ENTITIES_CONFIG` tells Smoke-Shack where to find the YAML entity map. The included
 [`config/entities.yaml`](config/entities.yaml) uses the entity IDs that `gmg-ha` creates in a
@@ -122,6 +128,29 @@ Each value is a Home Assistant entity ID:
 All keys except `extra_probes` are required. Check your entity IDs in Home Assistant under
 **Developer tools → States**. If they differ from the example, replace the values rather than
 changing the keys.
+
+## Setup 2: Home Assistant App (gmg-ha)
+
+Requirements:
+
+- Home Assistant OS or Supervised.
+- The [`gmg-ha` integration](https://github.com/y3klab/gmg-ha), installed through
+  [HACS](https://www.hacs.xyz/).
+- Your grill in Wi-Fi mode on the same network as Home Assistant.
+
+[![Add Repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fm3rrym4n%2Fsmoke-shack)
+
+Or add the repository manually:
+
+```text
+https://github.com/m3rrym4n/smoke-shack
+```
+
+The app uses the default `gmg-ha` entity names; details are in the app's Documentation tab.
+
+## Setup 3: Self-hosted, manual mode (coming soon)
+
+> **Coming soon.** Manual mode will let you log cooks by hand with no Home Assistant or grill integration. It is not available yet.
 
 ## Data and backups
 
