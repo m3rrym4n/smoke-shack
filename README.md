@@ -10,6 +10,18 @@ events, ingredients, notes, and results. It was built and tested with a Green Mo
 Daniel Boone Prime WiFi through the `gmg-ha` integration. Smoke-Shack only reads from Home
 Assistant and never controls the grill.
 
+## Safety
+
+Smoke-Shack is a journal and monitor, not a safety system. Always check your grill in person. Never leave a cooking grill unattended.
+
+## Home Assistant App
+
+Add `https://github.com/m3rrym4n/smoke-shack` as a Home Assistant App repository:
+
+[![Add to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fm3rrym4n%2Fsmoke-shack)
+
+Smoke-Shack is read-only toward Home Assistant; `gmg-ha` and Home Assistant handle all grill controls.
+
 ## Status
 
 Smoke-Shack is an early release. The author uses it daily with one grill, but expect rough
