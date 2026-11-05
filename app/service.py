@@ -9,10 +9,9 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.equipment import first_equipment_id
-from app.models import Cook, Event, Sample
+from app.models import Channel, ChannelReading, Cook, Event, Sample
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def as_utc(value: datetime) -> datetime:
@@ -33,6 +32,7 @@ class GrillSnapshot:
     probe1_target: float | None = None
     probe2_target: float | None = None
     extra_probes: dict[str, float | None] = field(default_factory=dict)
+    extra_probe_targets: dict[str, float | None] = field(default_factory=dict)
     fire_state: str | None = None
     power_state: str | None = None
     hvac_mode: str | None = None
@@ -172,7 +172,7 @@ class CookService:
             ):
                 if gap_detected:
                     logger.info("cook %s Home Assistant data gap ended", cook.id)
-                session.add(self._sample(cook.id, snapshot, now))
+                session.add(self._sample(session, cook, snapshot, now))
             self._advance_phase(session, cook, previous, snapshot, now)
             self._record_time_to_done(session, cook, snapshot, now)
             self._previous_snapshots[cook.id] = snapshot
@@ -438,9 +438,11 @@ class CookService:
         )
 
     @staticmethod
-    def _sample(cook_id: int, snapshot: GrillSnapshot, now: datetime) -> Sample:
-        return Sample(
-            cook_id=cook_id,
+    def _sample(
+        session: Session, cook: Cook, snapshot: GrillSnapshot, now: datetime
+    ) -> Sample:
+        sample = Sample(
+            cook_id=cook.id,
             ts=now,
             pit_temp=snapshot.pit_temp,
             setpoint=snapshot.setpoint,
@@ -453,6 +455,38 @@ class CookService:
             power_state=snapshot.power_state,
             hvac_mode=snapshot.hvac_mode,
         )
+        values = {
+            "pit": (snapshot.pit_temp, snapshot.setpoint),
+            "probe1": (snapshot.probe1, snapshot.probe1_target),
+            "probe2": (snapshot.probe2, snapshot.probe2_target),
+        }
+        extra_keys = snapshot.extra_probes.keys() | snapshot.extra_probe_targets.keys()
+        values.update(
+            {
+                raw_key.rsplit(".", 1)[-1]: (
+                    snapshot.extra_probes.get(raw_key),
+                    snapshot.extra_probe_targets.get(raw_key),
+                )
+                for raw_key in extra_keys
+            }
+        )
+        channels = {
+            channel.key: channel
+            for channel in session.scalars(
+                select(Channel).where(Channel.equipment_id == cook.equipment_id)
+            )
+        }
+        for key, (value, target) in values.items():
+            if value is None and target is None:
+                continue
+            channel = channels.get(key)
+            if channel is None:
+                logger.debug("ignoring snapshot channel %s with no matching equipment channel", key)
+                continue
+            sample.channel_readings.append(
+                ChannelReading(channel_id=channel.id, value=value, target=target)
+            )
+        return sample
 
     @staticmethod
     def _snapshot_from_sample(sample: Sample) -> GrillSnapshot:
