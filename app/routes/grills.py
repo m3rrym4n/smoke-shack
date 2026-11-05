@@ -73,7 +73,7 @@ async def connect_grill(grill_id: str, request: Request, session: SessionDep) ->
             model=profile.model,
             type=profile.type,
             fuel_type=profile.fuel_type,
-            units={"fahrenheit": "F", "celsius": "C"}.get(profile.units.casefold(), profile.units),
+            units=profile.units,
             connected=False,
         )
         equipment.channels = [
@@ -207,11 +207,10 @@ def _visible_grills(
         if not main_entities:
             main_entities = entity_ids
 
-        # HA's "unknown" means the present device has not reported yet, so only an
-        # explicit unavailable state on every main channel makes it unavailable.
-        available = not main_entities or any(
-            states.get(entity_id) != "unavailable" for entity_id in main_entities
-        )
+        # Registry-only entities are disabled or removed. Of entities with state,
+        # HA's "unknown" still means the device is present but has not reported yet.
+        main_states = [states[entity_id] for entity_id in main_entities if entity_id in states]
+        available = any(state != "unavailable" for state in main_states)
         maker = _text(device.get("manufacturer"))
         model = _text(device.get("model"))
         name = _text(device.get("name_by_user")) or _text(device.get("name")) or model or device_id

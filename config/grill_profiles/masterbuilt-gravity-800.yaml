@@ -3,7 +3,7 @@ maker: Masterbuilt
 model: Gravity 800
 type: pellet
 fuel_type: charcoal
-units: fahrenheit
+units: F
 device_match:
   manufacturer: Masterbuilt
   model: Gravity Series 800
@@ -12,47 +12,52 @@ channels:
     role: pit
     label: Pit
     source:
-      role: grill_temp_f
+      role: grill_temp
       domain: sensor
     target:
-      role: target_temp_f
-      domain: number
+      role: target_temp
+      domain: sensor
+      optional: true
   - key: probe1
     role: meat
     label: Probe 1
     source:
-      role: probe1_temp_f
+      role: probe1_temp
       domain: sensor
     target:
-      role: probe1_target_f
+      role: probe1_target
       domain: sensor
+      optional: true
   - key: probe2
     role: meat
     label: Probe 2
     source:
-      role: probe2_temp_f
+      role: probe2_temp
       domain: sensor
     target:
-      role: probe2_target_f
+      role: probe2_target
       domain: sensor
+      optional: true
   - key: probe3
     role: meat
     label: Probe 3
     source:
-      role: probe3_temp_f
+      role: probe3_temp
       domain: sensor
     target:
-      role: probe3_target_f
+      role: probe3_target
       domain: sensor
+      optional: true
   - key: probe4
     role: meat
     label: Probe 4
     source:
-      role: probe4_temp_f
+      role: probe4_temp
       domain: sensor
     target:
-      role: probe4_target_f
+      role: probe4_target
       domain: sensor
+      optional: true
 power:
   role: power
   domain: binary_sensor
@@ -66,8 +71,8 @@ door_open:
   role: door_open
   domain: binary_sensor
 error:
-  role: error
-  domain: sensor
+  role: problem
+  domain: binary_sensor
 last_reported:
   role: last_reported
   domain: sensor

@@ -18,6 +18,7 @@ class EntityRole(BaseModel):
 
     role: str = Field(min_length=1)
     domain: str = Field(min_length=1)
+    optional: bool = False
 
 
 class DeviceMatch(BaseModel):
@@ -45,7 +46,7 @@ class GrillProfile(BaseModel):
     model: str = Field(min_length=1)
     type: Literal["pellet"]
     fuel_type: str = Field(min_length=1)
-    units: str = Field(min_length=1)
+    units: Literal["F", "C"]
     device_match: DeviceMatch
     channels: tuple[ChannelProfile, ...] = Field(min_length=1)
     power: EntityRole
@@ -124,7 +125,9 @@ def resolve_channels(profile: GrillProfile, entities: Iterable[DeviceEntity]) ->
     for channel in profile.channels:
         source = _find_entity(channel.source, available)
         target = _find_entity(channel.target, available) if channel.target else None
-        if source is None or (channel.target is not None and target is None):
+        if source is None or (
+            channel.target is not None and not channel.target.optional and target is None
+        ):
             missing.append(channel.key)
             continue
         resolved.append(

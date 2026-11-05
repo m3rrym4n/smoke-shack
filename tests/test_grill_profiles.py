@@ -6,6 +6,7 @@ from app.api import create_app
 from app.config import Settings
 from app.grill_profiles import (
     DeviceEntity,
+    GrillProfile,
     GrillProfileError,
     load_grill_profiles,
     resolve_channels,
@@ -16,22 +17,19 @@ PROFILE_DIRECTORY = Path("config/grill_profiles")
 
 def _mock_entities(*, include_probe4: bool = True) -> list[DeviceEntity]:
     roles = [
-        ("sensor", "grill_temp_f"),
-        ("number", "target_temp_f"),
-        ("sensor", "probe1_temp_f"),
-        ("sensor", "probe1_target_f"),
-        ("sensor", "probe2_temp_f"),
-        ("sensor", "probe2_target_f"),
-        ("sensor", "probe3_temp_f"),
-        ("sensor", "probe3_target_f"),
+        ("sensor", "grill_temp"),
+        ("sensor", "target_temp"),
+        ("sensor", "probe1_temp"),
+        ("sensor", "probe2_temp"),
+        ("sensor", "probe3_temp"),
     ]
     if include_probe4:
-        roles.extend((("sensor", "probe4_temp_f"), ("sensor", "probe4_target_f")))
+        roles.append(("sensor", "probe4_temp"))
     return [
         DeviceEntity(
-            entity_id=f"{domain}.masterbuilt_{role}",
+            entity_id=f"{domain}.mock_masterbuilt_gravity_series_800_1_{role}",
             domain=domain,
-            unique_id_suffix=f"mock_{role}",
+            unique_id_suffix=f"mock_masterbuilt_gravity_series_800_1_{role}",
             original_name=role.replace("_", " "),
         )
         for domain, role in roles
@@ -51,7 +49,10 @@ def test_gravity_800_profile_resolves_all_channels() -> None:
         "probe4",
     ]
     assert result.missing_roles == ()
-    assert all(channel.target_entity_id is not None for channel in result.channels)
+    assert result.channels[0].target_entity_id == (
+        "sensor.mock_masterbuilt_gravity_series_800_1_target_temp"
+    )
+    assert all(channel.target_entity_id is None for channel in result.channels[1:])
 
 
 def test_missing_probe4_returns_other_channels_and_reports_role() -> None:
@@ -61,6 +62,19 @@ def test_missing_probe4_returns_other_channels_and_reports_role() -> None:
 
     assert [channel.key for channel in result.channels] == ["pit", "probe1", "probe2", "probe3"]
     assert result.missing_roles == ("probe4",)
+
+
+def test_units_must_use_database_value() -> None:
+    (profile,) = load_grill_profiles(PROFILE_DIRECTORY)
+
+    with pytest.raises(ValueError, match="Input should be 'F' or 'C'"):
+        GrillProfile.model_validate({**profile.model_dump(), "units": "fahrenheit"})
+
+
+def test_docker_image_copies_grill_profiles() -> None:
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+
+    assert "COPY config ./config" in dockerfile
 
 
 def test_malformed_profile_has_clear_filename_error(tmp_path: Path) -> None:

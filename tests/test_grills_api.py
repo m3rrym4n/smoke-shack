@@ -54,38 +54,38 @@ def registry_snapshot(*, unavailable: bool = False) -> HARegistrySnapshot:
         ),
         entities=(
             {
-                "entity_id": "sensor.mb_grill_temp_f",
+                "entity_id": "sensor.mb_grill_temp",
                 "device_id": "masterbuilt-device",
-                "unique_id": "abc_grill_temp_f",
-                "original_name": "Grill Temp F",
+                "unique_id": "mock_masterbuilt_gravity_series_800_1_grill_temp",
+                "original_name": "Grill Temp",
             },
             {
-                "entity_id": "sensor.mb_probe1_temp_f",
+                "entity_id": "sensor.mb_probe1_temp",
                 "device_id": "masterbuilt-device",
-                "unique_id": "abc_probe1_temp_f",
-                "original_name": "Probe1 Temp F",
+                "unique_id": "mock_masterbuilt_gravity_series_800_1_probe1_temp",
+                "original_name": "Probe1 Temp",
             },
             *tuple(
                 {
-                    "entity_id": f"sensor.mb_probe{number}_temp_f",
+                    "entity_id": f"sensor.mb_probe{number}_temp",
                     "device_id": "masterbuilt-device",
-                    "unique_id": f"abc_probe{number}_temp_f",
-                    "original_name": f"Probe{number} Temp F",
+                    "unique_id": f"mock_masterbuilt_gravity_series_800_1_probe{number}_temp",
+                    "original_name": f"Probe{number} Temp",
                 }
                 for number in range(2, 5)
             ),
             {
-                "entity_id": "number.mb_target_temp_f",
+                "entity_id": "sensor.mb_target_temp",
                 "device_id": "masterbuilt-device",
-                "unique_id": "abc_target_temp_f",
-                "original_name": "Target Temp F",
+                "unique_id": "mock_masterbuilt_gravity_series_800_1_target_temp",
+                "original_name": "Target Temp",
             },
             *tuple(
                 {
-                    "entity_id": f"sensor.mb_probe{number}_target_f",
+                    "entity_id": f"sensor.mb_probe{number}_target",
                     "device_id": "masterbuilt-device",
-                    "unique_id": f"abc_probe{number}_target_f",
-                    "original_name": f"Probe{number} Target F",
+                    "unique_id": f"mock_masterbuilt_gravity_series_800_1_probe{number}_target",
+                    "original_name": f"Probe{number} Target",
                 }
                 for number in range(1, 5)
             ),
@@ -115,17 +115,13 @@ def registry_snapshot(*, unavailable: bool = False) -> HARegistrySnapshot:
             },
         ),
         states=(
-            {"entity_id": "sensor.mb_grill_temp_f", "state": state},
-            {"entity_id": "sensor.mb_probe1_temp_f", "state": state},
+            {"entity_id": "sensor.mb_grill_temp", "state": state},
+            {"entity_id": "sensor.mb_probe1_temp", "state": state},
             *tuple(
-                {"entity_id": f"sensor.mb_probe{number}_temp_f", "state": state}
+                {"entity_id": f"sensor.mb_probe{number}_temp", "state": state}
                 for number in range(2, 5)
             ),
-            {"entity_id": "number.mb_target_temp_f", "state": state},
-            *tuple(
-                {"entity_id": f"sensor.mb_probe{number}_target_f", "state": state}
-                for number in range(1, 5)
-            ),
+            {"entity_id": "sensor.mb_target_temp", "state": state},
             {"entity_id": "light.kitchen", "state": "on"},
             {"entity_id": "sensor.pit", "state": "225"},
             {"entity_id": "sensor.probe1", "state": "145"},
@@ -182,6 +178,27 @@ def test_profile_device_is_not_available_when_all_main_entities_are_unavailable(
             "connection_status": "disconnected",
         }
     ]
+
+
+def test_registry_only_main_entity_does_not_make_device_available(sessions) -> None:
+    snapshot = registry_snapshot(unavailable=True)
+    states = tuple(
+        state
+        for state in snapshot.states
+        if state["entity_id"] != "sensor.mb_probe4_temp"
+    )
+    snapshot = HARegistrySnapshot(
+        devices=snapshot.devices,
+        entities=snapshot.entities,
+        states=states,
+    )
+    app = create_app(Settings(), sessions, RegistryHAClient(snapshot))
+
+    with TestClient(app) as client:
+        response = client.get("/api/grills")
+
+    assert response.status_code == 200
+    assert response.json()[0]["device_status"] == "not_available"
 
 
 def test_returns_503_when_home_assistant_is_unreachable(sessions) -> None:
