@@ -4,6 +4,12 @@
 
 # Smoke-Shack
 
+![Supports aarch64 Architecture][aarch64-shield]
+![Supports amd64 Architecture][amd64-shield]
+
+[aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
+[amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
+
 Smoke-Shack is a self-hosted cook journal for pellet grills. It records grill and probe data
 from Home Assistant, turning each cook into a searchable history of temperatures, phases,
 events, ingredients, notes, and results. It was built and tested with a Green Mountain Grills
