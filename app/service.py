@@ -38,6 +38,7 @@ class GrillSnapshot:
     power_state: str | None = None
     hvac_mode: str | None = None
     warning: str | None = None
+    cook_lifecycle_enabled: bool = True
 
     def implausible_reason(self) -> str | None:
         if self.setpoint is not None and not 100 <= self.setpoint <= 550:
@@ -98,6 +99,7 @@ class CookService:
         self.data_gap_event_min_seconds = data_gap_event_min_seconds
         self._invalid_since: datetime | None = None
         self._previous_snapshots: dict[int, GrillSnapshot] = {}
+        self._unsupported_equipment_id: int | None = None
 
     def process(self, snapshot: GrillSnapshot, at: datetime | None = None) -> Cook | None:
         now = as_utc(at or self.clock.now()).replace(microsecond=0)
@@ -105,6 +107,16 @@ class CookService:
             equipment_id = connected_equipment_id(session)
             if equipment_id is None:
                 return None
+            if not snapshot.cook_lifecycle_enabled:
+                if self._unsupported_equipment_id != equipment_id:
+                    logger.info(
+                        "connected equipment %s has no cook start/stop mapping; "
+                        "cook recording is disabled",
+                        equipment_id,
+                    )
+                    self._unsupported_equipment_id = equipment_id
+                return None
+            self._unsupported_equipment_id = None
             cook = session.scalar(
                 select(Cook)
                 .where(Cook.ended_at.is_(None), Cook.status != "planned")

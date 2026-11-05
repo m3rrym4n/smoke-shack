@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import EntityConfig
 from app.ha import HAStatus, HomeAssistantClient, ingest, parse_device_template
-from app.models import Cook, Event, Sample
+from app.models import Channel, Cook, Equipment, Event, Sample
 from app.service import CookService, GrillSnapshot
 
 
@@ -167,6 +167,114 @@ def entity_config() -> EntityConfig:
         warning="sensor.warning",
         extra_probes=("sensor.extra_probe",),
     )
+
+
+def set_connected_channels(
+    sessions: sessionmaker[Session],
+    channels: list[tuple[str, str, str | None]],
+) -> int:
+    with sessions() as session:
+        equipment = session.query(Equipment).one()
+        equipment.channels = [
+            Channel(
+                key=key,
+                role="pit" if key == "pit" else "meat",
+                label=key.title(),
+                source_entity=source,
+                target_entity=target,
+                position=position,
+            )
+            for position, (key, source, target) in enumerate(channels)
+        ]
+        session.commit()
+        return equipment.id
+
+
+def test_connected_masterbuilt_channels_build_snapshot_and_watch_list(
+    sessions: sessionmaker[Session],
+) -> None:
+    channels = [
+        ("pit", "sensor.mb_pit", "sensor.mb_target"),
+        *[
+            (f"probe{number}", f"sensor.mb_probe{number}", f"sensor.mb_probe{number}_target")
+            for number in range(1, 5)
+        ],
+    ]
+    set_connected_channels(sessions, channels)
+    client = HomeAssistantClient("http://ha", "token", entity_config(), sessions=sessions)
+
+    assert client.refresh_watch_list()
+    assert client.entity_ids == {
+        entity for _, source, target in channels for entity in (source, target) if entity
+    }
+    snapshot = client._snapshot(
+        {
+            entity: {"entity_id": entity, "state": str(value)}
+            for value, entity in enumerate(sorted(client.entity_ids), start=100)
+        }
+    )
+
+    assert snapshot.pit_temp is not None
+    assert snapshot.setpoint is not None
+    assert set(snapshot.extra_probes) == {"probe3", "probe4"}
+    assert set(snapshot.extra_probe_targets) == {"probe3", "probe4"}
+    assert snapshot.fire_state is None
+    assert snapshot.power_state is None
+    assert snapshot.hvac_mode is None
+    assert not snapshot.cook_lifecycle_enabled
+
+
+def test_switching_connected_equipment_refreshes_watch_list(
+    sessions: sessionmaker[Session],
+) -> None:
+    first_id = set_connected_channels(sessions, [("pit", "sensor.first", None)])
+    client = HomeAssistantClient("http://ha", "token", entity_config(), sessions=sessions)
+    client.refresh_watch_list()
+    assert client.entity_ids == {"sensor.first"}
+
+    with sessions() as session:
+        first = session.get(Equipment, first_id)
+        assert first is not None
+        first.connected = False
+        second = Equipment(nickname="Second", type="pellet", units="F", connected=True)
+        second.channels = [
+            Channel(
+                key="pit",
+                role="pit",
+                label="Pit",
+                source_entity="sensor.second",
+                position=0,
+            )
+        ]
+        session.add(second)
+        session.commit()
+
+    assert client.refresh_watch_list()
+    assert client.entity_ids == {"sensor.second"}
+
+
+def test_connected_nonlegacy_grill_starts_no_cook_and_logs_once(
+    sessions: sessionmaker[Session], clock: FakeClock, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("INFO", logger="app.service")
+    set_connected_channels(sessions, [("pit", "sensor.mb_pit", "sensor.mb_target")])
+    snapshot = GrillSnapshot(
+        pit_temp=250,
+        setpoint=275,
+        fire_state="Running",
+        power_state="On",
+        hvac_mode="heat",
+        cook_lifecycle_enabled=False,
+    )
+    service = CookService(sessions, clock)
+
+    service.process(snapshot)
+    service.process(snapshot)
+
+    with sessions() as session:
+        assert session.scalar(select(Cook.id)) is None
+        assert session.scalar(select(Sample.id)) is None
+    assert caplog.text.count("has no cook start/stop mapping") == 1
 
 
 @pytest.mark.asyncio
@@ -326,7 +434,9 @@ def test_unconfigured_entities_are_dropped_from_full_state_results() -> None:
     assert states == {entities.pit_temp: {"entity_id": entities.pit_temp, "state": "250"}}
 
 
-def test_snapshot_reads_climate_attributes_and_real_probe_connections() -> None:
+def test_snapshot_reads_connected_yaml_equipment_like_before(
+    sessions: sessionmaker[Session],
+) -> None:
     entities = EntityConfig(
         pit_climate="climate.green_mountain_grill",
         pit_temp="sensor.green_mountain_grill_temperature",
@@ -356,8 +466,18 @@ def test_snapshot_reads_climate_attributes_and_real_probe_connections() -> None:
         entities.power_state: {"state": "On"},
         entities.warning: {"state": "None"},
     }
+    set_connected_channels(
+        sessions,
+        [
+            ("pit", entities.pit_temp, entities.pit_climate),
+            ("probe1", entities.probe1_temp, entities.probe1_climate),
+            ("probe2", entities.probe2_temp, entities.probe2_climate),
+        ],
+    )
+    client = HomeAssistantClient("http://ha", "token", entities, sessions=sessions)
+    client.refresh_watch_list()
 
-    snapshot = HomeAssistantClient("http://ha", "token", entities)._snapshot(states)
+    snapshot = client._snapshot(states)
 
     assert snapshot.setpoint == 275
     assert snapshot.grill_name == "Daniel Boone Prime"
@@ -366,6 +486,7 @@ def test_snapshot_reads_climate_attributes_and_real_probe_connections() -> None:
     assert snapshot.probe1_connected
     assert not snapshot.probe2_connected
     assert snapshot.probe2 is None
+    assert snapshot.cook_lifecycle_enabled
 
 
 @pytest.mark.asyncio
