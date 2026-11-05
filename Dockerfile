@@ -16,4 +16,4 @@ RUN mkdir -p /data/photos && chown -R smoke:smoke /data /app
 VOLUME ["/data"]
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["python", "-m", "app.startup"]

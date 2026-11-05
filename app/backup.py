@@ -41,7 +41,7 @@ def build_backup(
     snapshot_file.close()
 
     try:
-        _snapshot_database(Path(database_path), snapshot_path)
+        snapshot_database(Path(database_path), snapshot_path)
         tables, schema_revision = _database_manifest(snapshot_path)
         photos = sorted(path for path in Path(photo_dir).rglob("*") if path.is_file())
         showcase_files = sorted(path for path in Path(showcase_dir).rglob("*") if path.is_file())
@@ -78,7 +78,8 @@ def build_backup(
     return archive_path
 
 
-def _snapshot_database(source_path: Path, destination_path: Path) -> None:
+def snapshot_database(source_path: Path, destination_path: Path) -> None:
+    """Create a consistent SQLite snapshot, including committed WAL contents."""
     with sqlite3.connect(source_path) as source, sqlite3.connect(destination_path) as destination:
         source.backup(destination)
 
