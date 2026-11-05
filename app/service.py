@@ -8,6 +8,7 @@ from typing import Protocol
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.equipment import first_equipment_id
 from app.models import Cook, Event, Sample
 
 logger = logging.getLogger(__name__)
@@ -121,7 +122,11 @@ class CookService:
                     return None
                 cook = self._adopt_planned(session, now)
                 if cook is None:
-                    cook = Cook(started_at=now, status="startup")
+                    cook = Cook(
+                        started_at=now,
+                        status="startup",
+                        equipment_id=first_equipment_id(session),
+                    )
                     session.add(cook)
                     session.flush()
                 logger.info("cook %s started", cook.id)

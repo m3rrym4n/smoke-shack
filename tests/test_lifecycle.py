@@ -53,6 +53,7 @@ def test_normal_cook(sessions: sessionmaker[Session], clock: FakeClock) -> None:
     service = CookService(sessions, clock)
     cook = service.process(snap())
     assert cook is not None and cook.status == "startup"
+    assert cook.equipment_id is not None
     clock.advance(minutes=5)
     service.process(snap(setpoint=275, fire="Running"))
     clock.advance(hours=2)

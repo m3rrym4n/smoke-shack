@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base, make_engine, make_session_factory
 from app.ha import HAStatus
+from app.models import Equipment
 from app.service import GrillSnapshot
 
 
@@ -39,7 +40,18 @@ class FakeHAClient:
 def sessions(tmp_path: Path) -> sessionmaker[Session]:
     engine = make_engine(str(tmp_path / "test.db"))
     Base.metadata.create_all(engine)
-    return make_session_factory(engine)
+    factory = make_session_factory(engine)
+    with factory() as session:
+        session.add(
+            Equipment(
+                nickname="Grill",
+                type="pellet",
+                fuel_type="pellets",
+                units="F",
+            )
+        )
+        session.commit()
+    return factory
 
 
 @pytest.fixture

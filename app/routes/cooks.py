@@ -10,6 +10,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.deps import get_session
+from app.equipment import first_equipment_id
 from app.models import Cook, Event, Meat, Note, Pellet, Photo, Profile, Sample, Spice
 from app.routes.events import event_json
 from app.schemas import CookUpdate, PlannedCookCreate
@@ -174,7 +175,12 @@ def create_planned_cook(
 ) -> dict[str, Any]:
     values = payload.model_dump(exclude={"state", "spice_ids"})
     _validate_references(values, session)
-    cook = Cook(started_at=None, status="planned", **values)
+    cook = Cook(
+        started_at=None,
+        status="planned",
+        equipment_id=first_equipment_id(session),
+        **values,
+    )
     cook.spices = _get_spices(payload.spice_ids, session)
     session.add(cook)
     session.commit()
