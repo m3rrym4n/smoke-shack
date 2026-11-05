@@ -276,6 +276,14 @@ class EventResponse(BaseModel):
     photo_path: str | None
 
 
+class SampleChannelResponse(BaseModel):
+    key: str
+    label: str
+    role: str
+    value: float | None
+    target: float | None
+
+
 class PhotoUpdate(BaseModel):
     caption: str | None = None
 

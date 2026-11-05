@@ -7,11 +7,23 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import delete, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
+from app.channel_samples import channel_payload, compatibility_values
 from app.deps import get_session
 from app.equipment import first_equipment_id
-from app.models import Cook, Event, Meat, Note, Pellet, Photo, Profile, Sample, Spice
+from app.models import (
+    ChannelReading,
+    Cook,
+    Event,
+    Meat,
+    Note,
+    Pellet,
+    Photo,
+    Profile,
+    Sample,
+    Spice,
+)
 from app.routes.events import event_json
 from app.schemas import CookUpdate, PlannedCookCreate
 from app.service import as_utc
@@ -35,14 +47,19 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
     meat = session.get(Meat, cook.meat_id) if cook.meat_id is not None else None
     pellet = session.get(Pellet, cook.pellet_id) if cook.pellet_id is not None else None
     profile = session.get(Profile, cook.profile_id) if cook.profile_id is not None else None
-    current_setpoint = None
-    if cook.ended_at is None and cook.status != "planned":
-        current_setpoint = session.scalar(
-            select(Sample.setpoint)
-            .where(Sample.cook_id == cook.id)
-            .order_by(Sample.ts.desc(), Sample.id.desc())
-            .limit(1)
-        )
+    latest_sample = session.scalar(
+        select(Sample)
+        .options(selectinload(Sample.channel_readings).selectinload(ChannelReading.channel))
+        .where(Sample.cook_id == cook.id)
+        .order_by(Sample.ts.desc(), Sample.id.desc())
+        .limit(1)
+    )
+    latest_values = compatibility_values(latest_sample) if latest_sample is not None else None
+    current_setpoint = (
+        latest_values["setpoint"]
+        if latest_values is not None and cook.ended_at is None and cook.status != "planned"
+        else None
+    )
     result: dict[str, Any] = {
         "id": cook.id,
         "created_at": _iso(cook.created_at),
@@ -104,6 +121,7 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
         "setpoint_override": cook.setpoint_override,
         "effective_setpoint": cook.effective_setpoint,
         "current_setpoint": current_setpoint,
+        "channels": channel_payload(latest_sample) if latest_sample is not None else [],
         "time_to_done_seconds": cook.time_to_done_seconds,
         "has_gap": cook.has_gap,
         "incomplete": cook.incomplete,
@@ -170,9 +188,7 @@ def _get_spices(spice_ids: list[int], session: Session) -> list[Spice]:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_planned_cook(
-    payload: PlannedCookCreate, session: SessionDep
-) -> dict[str, Any]:
+def create_planned_cook(payload: PlannedCookCreate, session: SessionDep) -> dict[str, Any]:
     values = payload.model_dump(exclude={"state", "spice_ids"})
     _validate_references(values, session)
     cook = Cook(
@@ -191,10 +207,7 @@ def create_planned_cook(
 @router.get("/next")
 def next_planned_cook(session: SessionDep) -> dict[str, Any]:
     cook = session.scalar(
-        select(Cook)
-        .where(Cook.status == "planned")
-        .order_by(Cook.created_at, Cook.id)
-        .limit(1)
+        select(Cook).where(Cook.status == "planned").order_by(Cook.created_at, Cook.id).limit(1)
     )
     if cook is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No planned cook")
@@ -246,24 +259,25 @@ def delete_cook(cook_id: int, session: SessionDep, request: Request) -> Response
 @router.get("/{cook_id}/samples")
 def samples(cook_id: int, session: SessionDep) -> list[dict[str, Any]]:
     cook = _get_cook(cook_id, session)
-    rows = session.scalars(select(Sample).where(Sample.cook_id == cook_id).order_by(Sample.ts))
+    rows = session.scalars(
+        select(Sample)
+        .options(selectinload(Sample.channel_readings).selectinload(ChannelReading.channel))
+        .where(Sample.cook_id == cook_id)
+        .order_by(Sample.ts)
+    )
     return [_sample_json(row, cook.started_at) for row in rows]
 
 
 def _sample_json(sample: Sample, started: datetime | None) -> dict[str, Any]:
     if started is None:
         raise ValueError("planned cooks cannot have samples")
+    values = compatibility_values(sample)
     return {
         "id": sample.id,
         "ts": _iso(sample.ts),
         "elapsed_seconds": int((as_utc(sample.ts) - as_utc(started)).total_seconds()),
-        "pit_temp": sample.pit_temp,
-        "setpoint": sample.setpoint,
-        "probe1": sample.probe1,
-        "probe2": sample.probe2,
-        "probe1_target": sample.probe1_target,
-        "probe2_target": sample.probe2_target,
-        "extra_probes": sample.extra_probes,
+        **values,
+        "channels": channel_payload(sample),
         "fire_state": sample.fire_state,
         "power_state": sample.power_state,
         "hvac_mode": sample.hvac_mode,
