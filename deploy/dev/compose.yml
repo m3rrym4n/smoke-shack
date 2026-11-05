@@ -1,6 +1,6 @@
 services:
   smoke-shack:
-    image: 192.168.1.73:5050/smoke-shack/smoke-shack:1.4.0-dev.1
+    image: 192.168.1.73:5050/smoke-shack/smoke-shack:1.4.0-dev.2
     container_name: smoke-shack-dev
     restart: unless-stopped
     ports:
