@@ -271,6 +271,8 @@ def test_planned_cook_create_list_next_unlink_and_delete(
     assert unlinked.json()["meat_id"] is None
     assert deleted.status_code == 204
     assert new_next.json()["id"] == second.json()["id"]
+    with sessions() as session:
+        assert session.get(Cook, second.json()["id"]).equipment_id is not None
 
 
 def test_next_planned_cook_returns_404_when_empty(sessions: sessionmaker[Session]) -> None:

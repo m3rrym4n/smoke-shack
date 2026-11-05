@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -97,6 +98,218 @@ def test_empty_database_upgrades_to_complete_head(
     assert "photo_path" in {column["name"] for column in schema.get_columns("spices")}
     assert "meat_groups" in schema.get_table_names()
     assert "meat_group_types" in schema.get_table_names()
+    assert "equipment" in schema.get_table_names()
+    assert "channels" in schema.get_table_names()
+    with create_engine(f"sqlite:///{database}").connect() as connection:
+        assert connection.execute(text("SELECT nickname FROM equipment")).scalar_one() == "Grill"
+        assert connection.execute(text("SELECT count(*) FROM channels")).scalar_one() == 3
+
+
+def test_equipment_migration_seeds_channels_and_links_existing_cooks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "equipment.db"
+    entities = tmp_path / "entities.yaml"
+    entities.write_text(
+        """pit_climate: climate.grill
+pit_temp: sensor.grill_pit
+probe1_temp: sensor.grill_food_one
+probe2_temp: sensor.grill_food_two
+probe1_connection: binary_sensor.grill_probe_one
+probe2_connection: binary_sensor.grill_probe_two
+probe1_climate: climate.grill_probe_one
+probe2_climate: climate.grill_probe_two
+fire_state: sensor.grill_fire
+power_state: sensor.grill_power
+warning: sensor.grill_warning
+extra_probes:
+  - sensor.ambient_left
+"""
+    )
+    monkeypatch.setenv("DATABASE_PATH", str(database))
+    monkeypatch.setenv("ENTITIES_CONFIG", str(entities))
+    monkeypatch.setenv("SMOKE_STACK_GRILL_NAME", "Legacy Grill")
+    monkeypatch.setenv("SMOKE_SHACK_GRILL_NAME", "Back Patio")
+    config = Config("alembic.ini")
+    command.upgrade(config, "21a15e99d09c")
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO cooks "
+                "(started_at, status, rotisserie, has_gap, incomplete, exclude_from_stats, "
+                "created_at, updated_at) VALUES "
+                "('2026-10-16T16:57:03Z', 'closed', 0, 0, 0, 0, "
+                "'2026-10-16T16:57:03Z', '2026-10-16T16:57:03Z')"
+            )
+        )
+        cook_id = connection.execute(text("SELECT id FROM cooks")).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO samples (cook_id, ts, extra_probes) "
+                "VALUES (:cook_id, '2026-10-16T16:58:03Z', '{}')"
+            ),
+            {"cook_id": cook_id},
+        )
+
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        equipment = connection.execute(
+            text("SELECT id, nickname, maker, model, type, fuel_type, units FROM equipment")
+        ).one()
+        channels = connection.execute(
+            text(
+                "SELECT key, role, label, source_entity, target_entity, calibration_offset, "
+                "position FROM channels ORDER BY position"
+            )
+        ).all()
+        cook = connection.execute(
+            text("SELECT equipment_id, started_at, status FROM cooks")
+        ).one()
+        sample = connection.execute(
+            text("SELECT cook_id, ts, extra_probes FROM samples")
+        ).one()
+
+    assert equipment[1:] == ("Back Patio", None, None, "pellet", "pellets", "F")
+    assert channels == [
+        ("pit", "pit", "Pit", "sensor.grill_pit", None, 0.0, 0),
+        ("probe1", "meat", "Probe 1", "sensor.grill_food_one", "climate.grill_probe_one", 0.0, 1),
+        ("probe2", "meat", "Probe 2", "sensor.grill_food_two", "climate.grill_probe_two", 0.0, 2),
+        ("ambient_left", "meat", "Ambient Left", "sensor.ambient_left", None, 0.0, 3),
+    ]
+    assert cook == (equipment.id, "2026-10-16T16:57:03Z", "closed")
+    assert sample == (cook_id, "2026-10-16T16:58:03Z", "{}")
+
+    command.downgrade(config, "21a15e99d09c")
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM equipment")).scalar_one() == 1
+        assert connection.execute(text("SELECT count(*) FROM channels")).scalar_one() == 4
+
+
+def test_channel_readings_migration_converts_all_legacy_values(tmp_path: Path, monkeypatch) -> None:
+    database = tmp_path / "channel-readings.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))
+    config = Config("alembic.ini")
+    command.upgrade(config, "9d08aa7d2f1b")
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO cooks "
+                "(started_at, status, rotisserie, has_gap, incomplete, exclude_from_stats, "
+                "created_at, updated_at, equipment_id) "
+                "SELECT '2026-10-16T16:57:03Z', 'closed', 0, 0, 0, 0, "
+                "'2026-10-16T16:57:03Z', '2026-10-16T16:57:03Z', id FROM equipment"
+            )
+        )
+        cook_id = connection.execute(text("SELECT id FROM cooks")).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO samples "
+                "(cook_id, ts, pit_temp, setpoint, probe1, probe2, probe1_target, "
+                "probe2_target, extra_probes) VALUES "
+                "(:cook, '2026-10-16T16:58:03Z', 225, 250, NULL, NULL, 203, NULL, :first),"
+                "(:cook, '2026-10-16T16:59:03Z', NULL, NULL, NULL, 150, NULL, NULL, :second),"
+                "(:cook, '2026-10-16T17:00:03Z', NULL, NULL, NULL, NULL, NULL, NULL, '{}')"
+            ),
+            {
+                "cook": cook_id,
+                "first": json.dumps({"sensor.ambient_left": 100, "unused": None}),
+                "second": json.dumps({"ambient_left": 101}),
+            },
+        )
+
+    command.upgrade(config, "head")
+
+    schema = inspect(engine)
+    assert "channel_readings" in schema.get_table_names()
+    assert {"sample_id", "channel_id"} == {
+        column
+        for constraint in schema.get_unique_constraints("channel_readings")
+        for column in constraint["column_names"]
+    }
+    assert any(
+        index["column_names"] == ["channel_id", "sample_id"]
+        for index in schema.get_indexes("channel_readings")
+    )
+    assert {column["name"] for column in schema.get_columns("samples")} >= {
+        "pit_temp",
+        "probe1",
+        "probe2",
+        "extra_probes",
+    }
+    with engine.connect() as connection:
+        readings = connection.execute(
+            text(
+                "SELECT samples.ts, channels.key, channel_readings.value, "
+                "channel_readings.target FROM channel_readings "
+                "JOIN samples ON samples.id = channel_readings.sample_id "
+                "JOIN channels ON channels.id = channel_readings.channel_id "
+                "ORDER BY samples.ts, channels.key"
+            )
+        ).all()
+        converted_count = connection.execute(
+            text(
+                "SELECT COUNT(*) FROM channel_readings JOIN samples "
+                "ON samples.id = channel_readings.sample_id WHERE samples.cook_id = :cook"
+            ),
+            {"cook": cook_id},
+        ).scalar_one()
+        ambient = connection.execute(
+            text("SELECT key, source_entity FROM channels WHERE key = 'ambient_left'")
+        ).one()
+
+    assert readings == [
+        ("2026-10-16T16:58:03Z", "ambient_left", 100.0, None),
+        ("2026-10-16T16:58:03Z", "pit", 225.0, 250.0),
+        ("2026-10-16T16:58:03Z", "probe1", None, 203.0),
+        ("2026-10-16T16:59:03Z", "ambient_left", 101.0, None),
+        ("2026-10-16T16:59:03Z", "probe2", 150.0, None),
+    ]
+    assert converted_count == 5
+    assert ambient == ("ambient_left", "sensor.ambient_left")
+
+
+def test_channel_readings_migration_failure_rolls_back_schema_and_data(
+    tmp_path: Path, monkeypatch
+) -> None:
+    database = tmp_path / "channel-readings-rollback.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))
+    config = Config("alembic.ini")
+    command.upgrade(config, "9d08aa7d2f1b")
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO cooks "
+                "(started_at, status, rotisserie, has_gap, incomplete, exclude_from_stats, "
+                "created_at, updated_at, equipment_id) "
+                "SELECT '2026-10-16T16:57:03Z', 'closed', 0, 0, 0, 0, "
+                "'2026-10-16T16:57:03Z', '2026-10-16T16:57:03Z', id FROM equipment"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO samples (cook_id, ts, pit_temp, extra_probes) "
+                "SELECT cooks.id, '2026-10-16T16:58:03Z', 225, "
+                "'{\"sensor.new_probe\": 170}' FROM cooks"
+            )
+        )
+    config.attributes["fail_channel_readings_after_batch"] = True
+
+    with pytest.raises(RuntimeError, match="Forced channel readings conversion failure"):
+        command.upgrade(config, "head")
+
+    assert "channel_readings" not in inspect(engine).get_table_names()
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            "9d08aa7d2f1b"
+        )
+        assert connection.execute(
+            text("SELECT COUNT(*) FROM channels WHERE key = 'new_probe'")
+        ).scalar_one() == 0
+        assert connection.execute(text("SELECT pit_temp FROM samples")).scalar_one() == 225
 
 
 def test_meat_groups_migration_seeds_all_types_idempotently(

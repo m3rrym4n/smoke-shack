@@ -15,3 +15,11 @@ def test_home_assistant_app_metadata() -> None:
     assert config["homeassistant_api"] is True
     assert isinstance(config["version"], str)
     assert config["version"]
+
+
+def test_home_assistant_app_uses_image_default_start_command() -> None:
+    config = yaml.safe_load(Path("smoke-shack/config.yaml").read_text())
+    dockerfile = Path("Dockerfile").read_text()
+
+    assert "command" not in config
+    assert 'CMD ["python", "-m", "app.startup"]' in dockerfile

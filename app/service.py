@@ -6,12 +6,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy import select, update
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
-from app.models import Cook, Event, Sample
+from app.channel_samples import compatibility_values
+from app.equipment import first_equipment_id
+from app.models import Channel, ChannelReading, Cook, Event, Sample
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def as_utc(value: datetime) -> datetime:
@@ -32,6 +33,7 @@ class GrillSnapshot:
     probe1_target: float | None = None
     probe2_target: float | None = None
     extra_probes: dict[str, float | None] = field(default_factory=dict)
+    extra_probe_targets: dict[str, float | None] = field(default_factory=dict)
     fire_state: str | None = None
     power_state: str | None = None
     hvac_mode: str | None = None
@@ -121,7 +123,11 @@ class CookService:
                     return None
                 cook = self._adopt_planned(session, now)
                 if cook is None:
-                    cook = Cook(started_at=now, status="startup")
+                    cook = Cook(
+                        started_at=now,
+                        status="startup",
+                        equipment_id=first_equipment_id(session),
+                    )
                     session.add(cook)
                     session.flush()
                 logger.info("cook %s started", cook.id)
@@ -137,7 +143,11 @@ class CookService:
                 if snapshot.setpoint is not None and snapshot.setpoint != 150:
                     self._start_cook_phase(session, cook, now)
             previous = session.scalar(
-                select(Sample).where(Sample.cook_id == cook.id).order_by(Sample.ts.desc()).limit(1)
+                select(Sample)
+                .options(selectinload(Sample.channel_readings).selectinload(ChannelReading.channel))
+                .where(Sample.cook_id == cook.id)
+                .order_by(Sample.ts.desc())
+                .limit(1)
             )
             previous_snapshot = self._previous_snapshots.get(cook.id)
             if previous_snapshot is None and previous is not None:
@@ -167,7 +177,7 @@ class CookService:
             ):
                 if gap_detected:
                     logger.info("cook %s Home Assistant data gap ended", cook.id)
-                session.add(self._sample(cook.id, snapshot, now))
+                session.add(self._sample(session, cook, snapshot, now))
             self._advance_phase(session, cook, previous, snapshot, now)
             self._record_time_to_done(session, cook, snapshot, now)
             self._previous_snapshots[cook.id] = snapshot
@@ -271,19 +281,21 @@ class CookService:
         samples = list(
             session.scalars(
                 select(Sample)
+                .options(selectinload(Sample.channel_readings).selectinload(ChannelReading.channel))
                 .where(Sample.cook_id == cook.id, Sample.ts >= cook.startup_ended_at)
                 .order_by(Sample.ts)
             )
         )
         totals: dict[float, float] = {}
         for index, sample in enumerate(samples):
-            if sample.setpoint is None:
+            setpoint = compatibility_values(sample)["setpoint"]
+            if setpoint is None:
                 continue
             next_ts = (
                 samples[index + 1].ts if index + 1 < len(samples) else (cook.cook_ended_at or end)
             )
             seconds = max(0.0, (as_utc(next_ts) - as_utc(sample.ts)).total_seconds())
-            totals[sample.setpoint] = totals.get(sample.setpoint, 0.0) + seconds
+            totals[setpoint] = totals.get(setpoint, 0.0) + seconds
         return max(totals, key=lambda setpoint: totals[setpoint]) if totals else None
 
     def _record_changes(
@@ -380,12 +392,23 @@ class CookService:
                 select(Event.data).where(Event.cook_id == cook.id, Event.kind == "probe_done")
             )
         )
-        for probe, reading, target, connected in (
+        probes: list[tuple[int | str, float | None, float | None, bool]] = [
             (1, snapshot.probe1, snapshot.probe1_target, snapshot.probe1_connected),
             (2, snapshot.probe2, snapshot.probe2_target, snapshot.probe2_connected),
-        ):
+        ]
+        probes.extend(
+            (
+                key.rsplit(".", 1)[-1],
+                snapshot.extra_probes.get(key),
+                snapshot.extra_probe_targets.get(key),
+                snapshot.extra_probes.get(key) is not None,
+            )
+            for key in snapshot.extra_probes.keys() | snapshot.extra_probe_targets.keys()
+        )
+        completed = {data.get("probe") for data in done_probes}
+        for probe, reading, target, connected in probes:
             if (
-                probe not in {data.get("probe") for data in done_probes}
+                probe not in completed
                 and connected
                 and reading is not None
                 and target is not None
@@ -409,9 +432,7 @@ class CookService:
         self, session: Session, cook: Cook, started_at: datetime, gap_seconds: int
     ) -> None:
         summary = session.scalar(
-            select(Event).where(
-                Event.cook_id == cook.id, Event.kind == "data_gap_summary"
-            )
+            select(Event).where(Event.cook_id == cook.id, Event.kind == "data_gap_summary")
         )
         if summary is None:
             summary = Event(
@@ -433,9 +454,9 @@ class CookService:
         )
 
     @staticmethod
-    def _sample(cook_id: int, snapshot: GrillSnapshot, now: datetime) -> Sample:
-        return Sample(
-            cook_id=cook_id,
+    def _sample(session: Session, cook: Cook, snapshot: GrillSnapshot, now: datetime) -> Sample:
+        sample = Sample(
+            cook_id=cook.id,
             ts=now,
             pit_temp=snapshot.pit_temp,
             setpoint=snapshot.setpoint,
@@ -448,19 +469,58 @@ class CookService:
             power_state=snapshot.power_state,
             hvac_mode=snapshot.hvac_mode,
         )
+        values = {
+            "pit": (snapshot.pit_temp, snapshot.setpoint),
+            "probe1": (snapshot.probe1, snapshot.probe1_target),
+            "probe2": (snapshot.probe2, snapshot.probe2_target),
+        }
+        extra_keys = snapshot.extra_probes.keys() | snapshot.extra_probe_targets.keys()
+        values.update(
+            {
+                raw_key.rsplit(".", 1)[-1]: (
+                    snapshot.extra_probes.get(raw_key),
+                    snapshot.extra_probe_targets.get(raw_key),
+                )
+                for raw_key in extra_keys
+            }
+        )
+        channels = {
+            channel.key: channel
+            for channel in session.scalars(
+                select(Channel).where(Channel.equipment_id == cook.equipment_id)
+            )
+        }
+        for key, (value, target) in values.items():
+            if value is None and target is None:
+                continue
+            channel = channels.get(key)
+            if channel is None:
+                logger.debug("ignoring snapshot channel %s with no matching equipment channel", key)
+                continue
+            sample.channel_readings.append(
+                ChannelReading(channel_id=channel.id, value=value, target=target)
+            )
+        return sample
 
     @staticmethod
     def _snapshot_from_sample(sample: Sample) -> GrillSnapshot:
+        values = compatibility_values(sample)
+        channels = {reading.channel.key: reading for reading in sample.channel_readings}
         return GrillSnapshot(
-            pit_temp=sample.pit_temp,
-            setpoint=sample.setpoint,
-            probe1=sample.probe1,
-            probe2=sample.probe2,
-            probe1_connected=sample.probe1 is not None,
-            probe2_connected=sample.probe2 is not None,
-            probe1_target=sample.probe1_target,
-            probe2_target=sample.probe2_target,
-            extra_probes=sample.extra_probes,
+            pit_temp=values["pit_temp"],
+            setpoint=values["setpoint"],
+            probe1=values["probe1"],
+            probe2=values["probe2"],
+            probe1_connected=values["probe1"] is not None,
+            probe2_connected=values["probe2"] is not None,
+            probe1_target=values["probe1_target"],
+            probe2_target=values["probe2_target"],
+            extra_probes=values["extra_probes"],
+            extra_probe_targets={
+                key: reading.target
+                for key, reading in channels.items()
+                if key not in {"pit", "probe1", "probe2"}
+            },
             fire_state=sample.fire_state,
             power_state=sample.power_state,
             hvac_mode=sample.hvac_mode,

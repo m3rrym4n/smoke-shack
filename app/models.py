@@ -10,12 +10,14 @@ from sqlalchemy import (
     Boolean,
     Column,
     Date,
+    Float,
     ForeignKey,
     Index,
     Numeric,
     String,
     Table,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -66,6 +68,7 @@ class Cook(Base):
     meat_id: Mapped[int | None] = mapped_column(ForeignKey("meat.id"))
     pellet_id: Mapped[int | None] = mapped_column(ForeignKey("pellets.id"))
     profile_id: Mapped[int | None] = mapped_column(ForeignKey("profiles.id"))
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey("equipment.id"))
     rotisserie: Mapped[bool] = mapped_column(Boolean, default=False)
     seasonings: Mapped[str | None] = mapped_column(Text)
     sauces: Mapped[str | None] = mapped_column(Text)
@@ -88,6 +91,7 @@ class Cook(Base):
         secondary=cook_spices,
         order_by="Spice.name",
     )
+    equipment: Mapped[Equipment | None] = relationship(back_populates="cooks")
 
     @property
     def startup_duration_seconds(self) -> int | None:
@@ -112,6 +116,43 @@ class Cook(Base):
         return self.aggregate_setpoint
 
 
+class Equipment(Base):
+    __tablename__ = "equipment"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nickname: Mapped[str]
+    maker: Mapped[str | None]
+    model: Mapped[str | None]
+    type: Mapped[str]
+    fuel_type: Mapped[str | None]
+    units: Mapped[str] = mapped_column(String(1), default="F")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)
+    channels: Mapped[list[Channel]] = relationship(
+        back_populates="equipment", cascade="all, delete-orphan", order_by="Channel.position"
+    )
+    cooks: Mapped[list[Cook]] = relationship(back_populates="equipment")
+
+
+class Channel(Base):
+    __tablename__ = "channels"
+    __table_args__ = (
+        UniqueConstraint("equipment_id", "key", name="uq_channels_equipment_key"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    equipment_id: Mapped[int] = mapped_column(
+        ForeignKey("equipment.id", ondelete="CASCADE")
+    )
+    key: Mapped[str]
+    role: Mapped[str]
+    label: Mapped[str]
+    source_entity: Mapped[str]
+    target_entity: Mapped[str | None]
+    calibration_offset: Mapped[float] = mapped_column(Float, default=0)
+    position: Mapped[int]
+    equipment: Mapped[Equipment] = relationship(back_populates="channels")
+    readings: Mapped[list[ChannelReading]] = relationship(back_populates="channel")
+
+
 def _duration(start: datetime | None, end: datetime | None) -> int | None:
     return int((end - start).total_seconds()) if start is not None and end is not None else None
 
@@ -133,6 +174,24 @@ class Sample(Base):
     power_state: Mapped[str | None]
     hvac_mode: Mapped[str | None]
     cook: Mapped[Cook] = relationship(back_populates="samples")
+    channel_readings: Mapped[list[ChannelReading]] = relationship(
+        back_populates="sample", cascade="all, delete-orphan"
+    )
+
+
+class ChannelReading(Base):
+    __tablename__ = "channel_readings"
+    __table_args__ = (
+        UniqueConstraint("sample_id", "channel_id", name="uq_channel_readings_sample_channel"),
+        Index("ix_channel_readings_channel_sample", "channel_id", "sample_id"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sample_id: Mapped[int] = mapped_column(ForeignKey("samples.id", ondelete="CASCADE"))
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"))
+    value: Mapped[float | None]
+    target: Mapped[float | None]
+    sample: Mapped[Sample] = relationship(back_populates="channel_readings")
+    channel: Mapped[Channel] = relationship(back_populates="readings")
 
 
 class Event(Base):
