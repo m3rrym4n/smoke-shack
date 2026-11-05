@@ -24,6 +24,7 @@ from app.backup import build_backup
 from app.config import Settings
 from app.database import make_engine, make_session_factory
 from app.deps import get_session
+from app.grill_profiles import load_grill_profiles
 from app.ha import HAClient, HAStatus, HomeAssistantClient, ingest
 from app.models import Cook, Sample
 from app.restore import restore_backup
@@ -82,6 +83,7 @@ def create_app(
     ha_client: HAClient | None = None,
 ) -> FastAPI:
     config = settings or Settings.from_env()
+    grill_profiles = load_grill_profiles(config.grill_profiles_path)
     factory = sessions or make_session_factory(make_engine(config.database_path))
     service = CookService(
         factory,
@@ -202,6 +204,7 @@ def create_app(
     app.state.photo_dir = Path(config.photo_dir)
     app.state.showcase_dir = Path(config.photo_dir).parent / "showcase"
     app.state.cook_service = service
+    app.state.grill_profiles = grill_profiles
     app.include_router(meat_router)
     app.include_router(meat_groups_router)
     app.include_router(pellets_router)
