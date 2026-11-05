@@ -24,12 +24,14 @@ from app.backup import build_backup
 from app.config import Settings
 from app.database import make_engine, make_session_factory
 from app.deps import get_session
+from app.grill_profiles import load_grill_profiles
 from app.ha import HAClient, HAStatus, HomeAssistantClient, ingest
 from app.models import Cook, Sample
 from app.restore import restore_backup
 from app.routes.cooks import router as cooks_router
 from app.routes.events import router as events_router
 from app.routes.export import router as export_router
+from app.routes.grills import router as grills_router
 from app.routes.meat import router as meat_router
 from app.routes.meat_groups import router as meat_groups_router
 from app.routes.notes import router as notes_router
@@ -82,6 +84,7 @@ def create_app(
     ha_client: HAClient | None = None,
 ) -> FastAPI:
     config = settings or Settings.from_env()
+    grill_profiles = load_grill_profiles(config.grill_profiles_path)
     factory = sessions or make_session_factory(make_engine(config.database_path))
     service = CookService(
         factory,
@@ -202,6 +205,8 @@ def create_app(
     app.state.photo_dir = Path(config.photo_dir)
     app.state.showcase_dir = Path(config.photo_dir).parent / "showcase"
     app.state.cook_service = service
+    app.state.grill_profiles = grill_profiles
+    app.state.ha_client = client
     app.include_router(meat_router)
     app.include_router(meat_groups_router)
     app.include_router(pellets_router)
@@ -214,6 +219,7 @@ def create_app(
     app.include_router(showcase_router)
     app.include_router(stats_router)
     app.include_router(export_router)
+    app.include_router(grills_router)
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> Response:

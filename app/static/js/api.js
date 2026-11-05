@@ -42,6 +42,18 @@ export function getStatus() {
   return getJson("/status");
 }
 
+export function getGrills() {
+  return getJson("/api/grills");
+}
+
+export function connectGrill(grillId) {
+  return sendJson("POST", `/api/grills/${encodeURIComponent(grillId)}/connect`);
+}
+
+export function disconnectGrill(grillId) {
+  return sendJson("POST", `/api/grills/${encodeURIComponent(grillId)}/disconnect`);
+}
+
 export function restoreBackup(file) {
   const body = new FormData();
   body.append("file", file);

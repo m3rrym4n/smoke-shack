@@ -30,10 +30,19 @@ class HAStatus:
     grill_maker: str | None = None
 
 
+@dataclass(frozen=True)
+class HARegistrySnapshot:
+    devices: tuple[dict[str, Any], ...]
+    entities: tuple[dict[str, Any], ...]
+    states: tuple[dict[str, Any], ...]
+
+
 class HAClient(Protocol):
     status: HAStatus
 
     def snapshots(self) -> AsyncIterator[GrillSnapshot]: ...
+
+    async def registry_snapshot(self) -> HARegistrySnapshot: ...
 
 
 async def ingest(
@@ -100,6 +109,45 @@ class HomeAssistantClient:
         self.max_size_bytes = max_size_bytes
         self.coalesce_window_seconds = coalesce_window_seconds
         self.status = HAStatus(configured=bool(url and token))
+
+    async def registry_snapshot(self) -> HARegistrySnapshot:
+        """Read the HA registries and current states without changing HA."""
+        try:
+            async with websockets.connect(
+                self.websocket_url, max_size=self.max_size_bytes
+            ) as socket:
+                await socket.recv()
+                await socket.send(json.dumps({"type": "auth", "access_token": self.token}))
+                auth = json.loads(await socket.recv())
+                if auth.get("type") != "auth_ok":
+                    raise RuntimeError("Home Assistant authentication failed")
+                devices = await self._registry_request(
+                    socket, 1, "config/device_registry/list"
+                )
+                entities = await self._registry_request(
+                    socket, 2, "config/entity_registry/list"
+                )
+                states = await self._registry_request(socket, 3, "get_states")
+                return HARegistrySnapshot(
+                    devices=tuple(item for item in devices if isinstance(item, dict)),
+                    entities=tuple(item for item in entities if isinstance(item, dict)),
+                    states=tuple(item for item in states if isinstance(item, dict)),
+                )
+        except (OSError, websockets.WebSocketException, RuntimeError) as exc:
+            self.status.last_error = self._short_reason(exc)
+            raise RuntimeError(self.status.last_error) from exc
+
+    @staticmethod
+    async def _registry_request(socket: Any, request_id: int, kind: str) -> list[Any]:
+        await socket.send(json.dumps({"id": request_id, "type": kind}))
+        response = json.loads(await socket.recv())
+        if response.get("type") != "result" or not response.get("success"):
+            message = response.get("error", {}).get("message", f"{kind} failed")
+            raise RuntimeError(str(message))
+        result = response.get("result")
+        if not isinstance(result, list):
+            raise RuntimeError(f"Unexpected {kind} response")
+        return result
 
     async def snapshots(self) -> AsyncIterator[GrillSnapshot]:
         delay = 1

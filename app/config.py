@@ -63,6 +63,7 @@ class Settings:
     incomplete_timeout_minutes: int = 90
     tz: str = "America/Los_Angeles"
     entities_path: str = "config/entities.yaml"
+    grill_profiles_path: str = "config/grill_profiles"
     restore_max_bytes: int = 500 * 1024 * 1024
 
     @classmethod
@@ -85,6 +86,7 @@ class Settings:
             incomplete_timeout_minutes=int(os.getenv("INCOMPLETE_TIMEOUT_MINUTES", "90")),
             tz=os.getenv("TZ", "America/Los_Angeles"),
             entities_path=os.getenv("ENTITIES_CONFIG", "config/entities.yaml"),
+            grill_profiles_path=os.getenv("GRILL_PROFILES_CONFIG", "config/grill_profiles"),
             restore_max_bytes=int(os.getenv("RESTORE_MAX_BYTES", str(500 * 1024 * 1024))),
         )
 
