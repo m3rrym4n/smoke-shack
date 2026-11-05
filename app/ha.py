@@ -129,7 +129,10 @@ class HomeAssistantClient:
         return ConnectedEquipment(0, tuple(channels))
 
     def _is_legacy(self, equipment: ConnectedEquipment | None) -> bool:
-        return equipment is not None and equipment.channels == self._legacy_equipment().channels
+        return equipment is not None and any(
+            channel.key == "pit" and channel.source_entity == self.entities.pit_temp
+            for channel in equipment.channels
+        )
 
     def _watch_entity_ids(
         self, equipment: ConnectedEquipment | None, *, legacy: bool
@@ -368,10 +371,18 @@ class HomeAssistantClient:
 
         def channel_target(key: str) -> float | None:
             channel = channels.get(key)
-            if channel is None or channel.target_entity is None:
+            if legacy:
+                target_entity = {
+                    "pit": self.entities.pit_climate,
+                    "probe1": self.entities.probe1_climate,
+                    "probe2": self.entities.probe2_climate,
+                }.get(key)
+            else:
+                target_entity = channel.target_entity if channel is not None else None
+            if target_entity is None:
                 return None
-            attribute = attribute_number(channel.target_entity, "temperature")
-            return attribute if attribute is not None else number(channel.target_entity)
+            attribute = attribute_number(target_entity, "temperature")
+            return attribute if attribute is not None else number(target_entity)
 
         climate = states.get(self.entities.pit_climate, {}) if legacy else {}
         mode = climate.get("state") if legacy else None

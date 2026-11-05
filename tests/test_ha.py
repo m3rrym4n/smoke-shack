@@ -4,14 +4,19 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
+from alembic import command
+from alembic.config import Config
 from conftest import FakeClock
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import EntityConfig
+from app.database import make_engine, make_session_factory
 from app.ha import HAStatus, HomeAssistantClient, ingest, parse_device_template
 from app.models import Channel, Cook, Equipment, Event, Sample
 from app.service import CookService, GrillSnapshot
@@ -190,6 +195,18 @@ def set_connected_channels(
         return equipment.id
 
 
+def migrated_equipment_sessions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, entities: EntityConfig
+) -> sessionmaker[Session]:
+    database = tmp_path / "migrated-equipment.db"
+    entities_path = tmp_path / "entities.yaml"
+    entities_path.write_text(yaml.safe_dump(entities.__dict__))
+    monkeypatch.setenv("DATABASE_PATH", str(database))
+    monkeypatch.setenv("ENTITIES_CONFIG", str(entities_path))
+    command.upgrade(Config("alembic.ini"), "head")
+    return make_session_factory(make_engine(str(database)))
+
+
 def test_connected_masterbuilt_channels_build_snapshot_and_watch_list(
     sessions: sessionmaker[Session],
 ) -> None:
@@ -204,6 +221,7 @@ def test_connected_masterbuilt_channels_build_snapshot_and_watch_list(
     client = HomeAssistantClient("http://ha", "token", entity_config(), sessions=sessions)
 
     assert client.refresh_watch_list()
+    assert not client._is_legacy(client._equipment)
     assert client.entity_ids == {
         entity for _, source, target in channels for entity in (source, target) if entity
     }
@@ -435,7 +453,8 @@ def test_unconfigured_entities_are_dropped_from_full_state_results() -> None:
 
 
 def test_snapshot_reads_connected_yaml_equipment_like_before(
-    sessions: sessionmaker[Session],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     entities = EntityConfig(
         pit_climate="climate.green_mountain_grill",
@@ -466,19 +485,16 @@ def test_snapshot_reads_connected_yaml_equipment_like_before(
         entities.power_state: {"state": "On"},
         entities.warning: {"state": "None"},
     }
-    set_connected_channels(
-        sessions,
-        [
-            ("pit", entities.pit_temp, entities.pit_climate),
-            ("probe1", entities.probe1_temp, entities.probe1_climate),
-            ("probe2", entities.probe2_temp, entities.probe2_climate),
-        ],
-    )
+    sessions = migrated_equipment_sessions(tmp_path, monkeypatch, entities)
     client = HomeAssistantClient("http://ha", "token", entities, sessions=sessions)
     client.refresh_watch_list()
 
     snapshot = client._snapshot(states)
 
+    assert client._is_legacy(client._equipment)
+    assert entities.pit_climate in client.entity_ids
+    assert entities.probe1_climate in client.entity_ids
+    assert entities.probe2_climate in client.entity_ids
     assert snapshot.setpoint == 275
     assert snapshot.grill_name == "Daniel Boone Prime"
     assert snapshot.probe1_target == 203
@@ -486,6 +502,9 @@ def test_snapshot_reads_connected_yaml_equipment_like_before(
     assert snapshot.probe1_connected
     assert not snapshot.probe2_connected
     assert snapshot.probe2 is None
+    assert snapshot.fire_state == "Running"
+    assert snapshot.power_state == "On"
+    assert snapshot.warning == "None"
     assert snapshot.cook_lifecycle_enabled
 
 
