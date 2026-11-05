@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from conftest import FakeClock, FakeHAClient
+import pytest
+from conftest import FakeClock, FakeHAClient, add_channels
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -248,6 +249,34 @@ def test_restart_resumes_active_phase(sessions: sessionmaker[Session], clock: Fa
     assert resumed is not None and resumed.id == cook.id and resumed.status == "cook"
     processed = second.process(snap(setpoint=275))
     assert processed is not None and processed.started_at == cook.started_at
+
+
+@pytest.mark.parametrize(
+    ("probe1", "probe1_connected"),
+    [(None, False), (175, True)],
+)
+def test_restart_does_not_record_unchanged_probe_connection(
+    sessions: sessionmaker[Session],
+    clock: FakeClock,
+    probe1: float | None,
+    probe1_connected: bool,
+) -> None:
+    add_channels(sessions)
+    snapshot = snap(
+        setpoint=275,
+        fire="Running",
+        probe1=probe1,
+        probe1_connected=probe1_connected,
+        probe1_target=203,
+    )
+    cook = CookService(sessions, clock).process(snapshot)
+    assert cook is not None
+
+    clock.advance(seconds=10)
+    CookService(sessions, clock).process(snapshot)
+
+    assert "probe_connected" not in kinds(sessions, cook.id)
+    assert "probe_disconnected" not in kinds(sessions, cook.id)
 
 
 def test_live_start_adopts_oldest_plan_once_and_preserves_fields(
