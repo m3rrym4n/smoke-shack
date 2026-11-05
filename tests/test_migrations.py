@@ -155,7 +155,10 @@ extra_probes:
     command.upgrade(config, "head")
     with engine.connect() as connection:
         equipment = connection.execute(
-            text("SELECT id, nickname, maker, model, type, fuel_type, units FROM equipment")
+            text(
+                "SELECT id, nickname, maker, model, type, fuel_type, units, connected "
+                "FROM equipment"
+            )
         ).one()
         channels = connection.execute(
             text(
@@ -170,7 +173,7 @@ extra_probes:
             text("SELECT cook_id, ts, extra_probes FROM samples")
         ).one()
 
-    assert equipment[1:] == ("Back Patio", None, None, "pellet", "pellets", "F")
+    assert equipment[1:] == ("Back Patio", None, None, "pellet", "pellets", "F", 1)
     assert channels == [
         ("pit", "pit", "Pit", "sensor.grill_pit", None, 0.0, 0),
         ("probe1", "meat", "Probe 1", "sensor.grill_food_one", "climate.grill_probe_one", 0.0, 1),

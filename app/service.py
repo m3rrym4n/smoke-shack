@@ -9,7 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from app.channel_samples import compatibility_values
-from app.equipment import first_equipment_id
+from app.equipment import connected_equipment_id
 from app.models import Channel, ChannelReading, Cook, Event, Sample
 
 logger = logging.getLogger(__name__)
@@ -102,6 +102,9 @@ class CookService:
     def process(self, snapshot: GrillSnapshot, at: datetime | None = None) -> Cook | None:
         now = as_utc(at or self.clock.now()).replace(microsecond=0)
         with self.sessions() as session:
+            equipment_id = connected_equipment_id(session)
+            if equipment_id is None:
+                return None
             cook = session.scalar(
                 select(Cook)
                 .where(Cook.ended_at.is_(None), Cook.status != "planned")
@@ -126,10 +129,12 @@ class CookService:
                     cook = Cook(
                         started_at=now,
                         status="startup",
-                        equipment_id=first_equipment_id(session),
+                        equipment_id=equipment_id,
                     )
                     session.add(cook)
                     session.flush()
+                else:
+                    cook.equipment_id = equipment_id
                 logger.info("cook %s started", cook.id)
                 self._event(session, cook, now, "fire_lit", "Fire lit")
                 self._event(

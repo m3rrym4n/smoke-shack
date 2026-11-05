@@ -48,6 +48,7 @@ def sessions(tmp_path: Path) -> sessionmaker[Session]:
                 type="pellet",
                 fuel_type="pellets",
                 units="F",
+                connected=True,
             )
         )
         session.commit()
