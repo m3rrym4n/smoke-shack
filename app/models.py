@@ -150,6 +150,7 @@ class Channel(Base):
     calibration_offset: Mapped[float] = mapped_column(Float, default=0)
     position: Mapped[int]
     equipment: Mapped[Equipment] = relationship(back_populates="channels")
+    readings: Mapped[list[ChannelReading]] = relationship(back_populates="channel")
 
 
 def _duration(start: datetime | None, end: datetime | None) -> int | None:
@@ -173,6 +174,24 @@ class Sample(Base):
     power_state: Mapped[str | None]
     hvac_mode: Mapped[str | None]
     cook: Mapped[Cook] = relationship(back_populates="samples")
+    channel_readings: Mapped[list[ChannelReading]] = relationship(
+        back_populates="sample", cascade="all, delete-orphan"
+    )
+
+
+class ChannelReading(Base):
+    __tablename__ = "channel_readings"
+    __table_args__ = (
+        UniqueConstraint("sample_id", "channel_id", name="uq_channel_readings_sample_channel"),
+        Index("ix_channel_readings_channel_sample", "channel_id", "sample_id"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sample_id: Mapped[int] = mapped_column(ForeignKey("samples.id", ondelete="CASCADE"))
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"))
+    value: Mapped[float | None]
+    target: Mapped[float | None]
+    sample: Mapped[Sample] = relationship(back_populates="channel_readings")
+    channel: Mapped[Channel] = relationship(back_populates="readings")
 
 
 class Event(Base):

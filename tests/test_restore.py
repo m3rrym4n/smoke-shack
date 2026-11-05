@@ -344,6 +344,18 @@ def test_restore_rejects_active_cook_and_oversized_upload(tmp_path: Path, monkey
 def test_restore_migrates_older_revision(tmp_path: Path, monkeypatch) -> None:
     old_db = tmp_path / "old.db"
     _migrate(old_db, "ef36b629902e")
+    with sqlite3.connect(old_db) as connection:
+        connection.execute(
+            "INSERT INTO cooks "
+            "(started_at, status, rotisserie, has_gap, incomplete, created_at, updated_at) "
+            "VALUES ('2026-10-16T16:57:03Z', 'closed', 0, 0, 0, "
+            "'2026-10-16T16:57:03Z', '2026-10-16T16:57:03Z')"
+        )
+        connection.execute(
+            "INSERT INTO samples (cook_id, ts, pit_temp, setpoint, probe1, extra_probes) "
+            "VALUES (last_insert_rowid(), '2026-10-16T16:58:03Z', 225, 250, 180, "
+            "'{\"sensor.backup_probe\": 155}')"
+        )
     archive = _archive_bytes(
         build_backup(old_db, tmp_path / "old-photos", tmp_path / "old-showcase", "old")
     )
@@ -361,3 +373,13 @@ def test_restore_migrates_older_revision(tmp_path: Path, monkeypatch) -> None:
             "SELECT COUNT(*) FROM pellets WHERE emptied_on IS NOT NULL"
         ).fetchone()[0]
         assert emptied_count == 0
+        readings = connection.execute(
+            "SELECT channels.key, channel_readings.value, channel_readings.target "
+            "FROM channel_readings JOIN channels ON channels.id = channel_readings.channel_id "
+            "ORDER BY channels.key"
+        ).fetchall()
+        assert readings == [
+            ("backup_probe", 155.0, None),
+            ("pit", 225.0, 250.0),
+            ("probe1", 180.0, None),
+        ]
