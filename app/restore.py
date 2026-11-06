@@ -236,6 +236,19 @@ def _rewrite_photo_paths(database: Path, photo_dir: Path) -> None:
                     f"UPDATE {table} SET photo_path = ? WHERE id = ?",
                     (str(new_path), item_id),
                 )
+        equipment = connection.execute(
+            "SELECT id, photo_path, logo_path FROM equipment "
+            "WHERE photo_path IS NOT NULL OR logo_path IS NOT NULL"
+        ).fetchall()
+        for equipment_id, photo_path, logo_path in equipment:
+            for column, old_path in (("photo_path", photo_path), ("logo_path", logo_path)):
+                if old_path is None:
+                    continue
+                new_path = photo_dir / "equipment" / str(equipment_id) / Path(old_path).name
+                connection.execute(
+                    f"UPDATE equipment SET {column} = ? WHERE id = ?",
+                    (str(new_path), equipment_id),
+                )
         connection.commit()
 
 

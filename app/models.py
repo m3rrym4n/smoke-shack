@@ -136,6 +136,8 @@ class Equipment(Base):
     units: Mapped[str] = mapped_column(String(1), default="F")
     connected: Mapped[bool] = mapped_column(default=False)
     stale_after_seconds: Mapped[int | None]
+    photo_path: Mapped[str | None]
+    logo_path: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)
     channels: Mapped[list[Channel]] = relationship(
