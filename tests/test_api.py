@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from conftest import FakeClock, FakeHAClient
+from conftest import FakeClock, FakeHAClient, add_channels
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -179,6 +179,23 @@ def test_status_with_ha_unconfigured(sessions: sessionmaker[Session]) -> None:
     assert status["grill_name"] == "Grill"
     assert status["grill_title"] == "Grill"
     assert status["grill_maker"] is None
+    assert status["channels"] == []
+
+
+def test_status_lists_connected_grill_channels_in_order(
+    sessions: sessionmaker[Session],
+) -> None:
+    add_channels(sessions, ("pit", "probe1", "probe2", "probe3", "probe4"))
+
+    with TestClient(create_app(Settings(), sessions)) as client:
+        channels = client.get("/status").json()["channels"]
+
+    assert [channel["key"] for channel in channels] == [
+        "pit", "probe1", "probe2", "probe3", "probe4"
+    ]
+    assert [channel["role"] for channel in channels] == [
+        "pit", "meat", "meat", "meat", "meat"
+    ]
 
 
 def test_status_with_supervisor_configured(sessions: sessionmaker[Session]) -> None:

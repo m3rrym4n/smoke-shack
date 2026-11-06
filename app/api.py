@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 from starlette.background import BackgroundTask
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -107,6 +107,7 @@ def create_app(
             template_url=connection.template_url,
             host=connection.host,
             sessions=factory,
+            grill_profiles=grill_profiles,
         )
     if client is not None:
         ha_status = client.status
@@ -146,7 +147,11 @@ def create_app(
             .order_by(Cook.started_at.desc())
         )
         last_sample = session.scalar(select(Sample.ts).order_by(Sample.ts.desc()).limit(1))
-        connected_grill = session.scalar(select(Equipment).where(Equipment.connected.is_(True)))
+        connected_grill = session.scalar(
+            select(Equipment)
+            .options(selectinload(Equipment.channels))
+            .where(Equipment.connected.is_(True))
+        )
         if connected_grill is not None:
             grill_name = connected_grill.nickname
             grill_title = connected_grill.model or connected_grill.nickname or ""
@@ -161,18 +166,24 @@ def create_app(
                 if connected_grill.logo_path is not None
                 else None
             )
+            grill_channels = [
+                {"key": channel.key, "label": channel.label, "role": channel.role}
+                for channel in connected_grill.channels
+            ]
         else:
             grill_name = ""
             grill_title = ""
             grill_maker = None
             grill_photo_url = None
             grill_logo_url = None
+            grill_channels = []
         return {
             "grill_name": grill_name,
             "grill_title": grill_title,
             "grill_maker": grill_maker,
             "photo_url": grill_photo_url,
             "logo_url": grill_logo_url,
+            "channels": grill_channels,
             "ha": {
                 "configured": ha_status.configured,
                 "connected": ha_status.connected,

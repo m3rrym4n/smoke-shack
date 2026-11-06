@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 import yaml
@@ -17,7 +18,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import EntityConfig
 from app.database import make_engine, make_session_factory
-from app.ha import HAStatus, HomeAssistantClient, ingest, parse_device_template
+from app.grill_profiles import load_grill_profiles
+from app.ha import HARegistrySnapshot, HAStatus, HomeAssistantClient, ingest, parse_device_template
 from app.models import Channel, ChannelReading, Cook, Equipment, EquipmentEntity, Event, Sample
 from app.service import CookService, GrillSnapshot
 
@@ -296,6 +298,168 @@ def test_connected_equipment_status_entities_are_watched(sessions) -> None:
         "last_reported": "sensor.mb_last_reported",
     }
     assert client._equipment.stale_after_seconds == 600
+
+
+def masterbuilt_registry_snapshot() -> HARegistrySnapshot:
+    entity_specs = (
+        ("sensor.mb_pit", "grill_temp"),
+        ("binary_sensor.mb_power", "power"),
+        ("binary_sensor.mb_heating", "heating"),
+        ("binary_sensor.mb_lid_open", "lid_open"),
+        ("binary_sensor.mb_door_open", "door_open"),
+        ("binary_sensor.mb_problem", "problem"),
+        ("sensor.mb_last_reported", "last_reported"),
+        ("sensor.mb_cook_start", "cook_start"),
+    )
+    return HARegistrySnapshot(
+        devices=(
+            {
+                "id": "masterbuilt-device",
+                "manufacturer": "Masterbuilt",
+                "model": "Gravity Series 800",
+            },
+        ),
+        entities=tuple(
+            {
+                "device_id": "masterbuilt-device",
+                "entity_id": entity_id,
+                "unique_id": f"masterbuilt_{role}",
+            }
+            for entity_id, role in entity_specs
+        ),
+        states=(),
+    )
+
+
+def client_needing_status_backfill(sessions: sessionmaker[Session]) -> HomeAssistantClient:
+    set_connected_channels(sessions, [("pit", "sensor.mb_pit", None)])
+    return HomeAssistantClient(
+        "http://ha",
+        "token",
+        entity_config(),
+        sessions=sessions,
+        grill_profiles=load_grill_profiles("config/grill_profiles"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_refresh_backfills_status_entities_before_building_watch_list_and_starts_cook(
+    sessions: sessionmaker[Session], caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("INFO", logger="app.ha")
+    client = client_needing_status_backfill(sessions)
+    client.registry_snapshot = AsyncMock(return_value=masterbuilt_registry_snapshot())
+
+    assert await client._refresh_watch_list()
+
+    expected_status_entities = {
+        "binary_sensor.mb_power",
+        "binary_sensor.mb_heating",
+        "binary_sensor.mb_lid_open",
+        "binary_sensor.mb_door_open",
+        "binary_sensor.mb_problem",
+        "sensor.mb_last_reported",
+        "sensor.mb_cook_start",
+    }
+    assert expected_status_entities < client.entity_ids
+    with sessions() as session:
+        equipment = session.query(Equipment).one()
+        assert {entity.entity_id for entity in equipment.entities} == expected_status_entities
+        assert equipment.stale_after_seconds == 600
+    assert "Filled status entities for connected equipment" in caplog.text
+
+    reading = client._snapshot(
+        {
+            "sensor.mb_pit": {"entity_id": "sensor.mb_pit", "state": "275"},
+            "binary_sensor.mb_power": {
+                "entity_id": "binary_sensor.mb_power",
+                "state": "on",
+            },
+            "binary_sensor.mb_problem": {
+                "entity_id": "binary_sensor.mb_problem",
+                "state": "off",
+            },
+            "sensor.mb_last_reported": {
+                "entity_id": "sensor.mb_last_reported",
+                "state": datetime.now(UTC).isoformat(),
+            },
+        }
+    )
+    cook = CookService(sessions, sample_interval_seconds=10).process(reading)
+    assert cook is not None
+
+
+@pytest.mark.asyncio
+async def test_status_backfill_retries_after_home_assistant_is_unreachable(sessions) -> None:
+    client = client_needing_status_backfill(sessions)
+    client.registry_snapshot = AsyncMock(side_effect=RuntimeError("connection refused"))
+
+    assert client.refresh_watch_list()
+    await client._backfill_status_entities()
+    with sessions() as session:
+        equipment = session.query(Equipment).one()
+        assert equipment.entities == []
+        assert equipment.stale_after_seconds is None
+
+    client.registry_snapshot = AsyncMock(return_value=masterbuilt_registry_snapshot())
+    await client._refresh_watch_list()
+    assert "binary_sensor.mb_power" in client.entity_ids
+
+
+@pytest.mark.asyncio
+async def test_status_backfill_leaves_existing_and_entities_yaml_equipment_untouched(
+    sessions,
+) -> None:
+    equipment_id = set_connected_channels(sessions, [("pit", "sensor.mb_pit", None)])
+    with sessions() as session:
+        equipment = session.get(Equipment, equipment_id)
+        assert equipment is not None
+        equipment.entities = [
+            EquipmentEntity(role=role, entity_id=f"sensor.saved_{role}")
+            for role in (
+                "power",
+                "heating",
+                "lid_open",
+                "door_open",
+                "error",
+                "last_reported",
+                "cook_start",
+            )
+        ]
+        equipment.stale_after_seconds = 123
+        session.commit()
+    client = HomeAssistantClient(
+        "http://ha",
+        "token",
+        entity_config(),
+        sessions=sessions,
+        grill_profiles=load_grill_profiles("config/grill_profiles"),
+    )
+    client.registry_snapshot = AsyncMock(return_value=masterbuilt_registry_snapshot())
+
+    await client._refresh_watch_list()
+    client.registry_snapshot.assert_not_awaited()
+    with sessions() as session:
+        equipment = session.get(Equipment, equipment_id)
+        assert equipment is not None
+        assert {entity.role: entity.entity_id for entity in equipment.entities}["power"] == (
+            "sensor.saved_power"
+        )
+        assert equipment.stale_after_seconds == 123
+
+    with sessions() as session:
+        equipment = session.get(Equipment, equipment_id)
+        assert equipment is not None
+        equipment.entities = []
+        equipment.channels[0].source_entity = entity_config().pit_temp
+        session.commit()
+    client.registry_snapshot.reset_mock()
+    await client._refresh_watch_list()
+    client.registry_snapshot.assert_not_awaited()
+    with sessions() as session:
+        equipment = session.get(Equipment, equipment_id)
+        assert equipment is not None
+        assert equipment.entities == []
 
 
 def masterbuilt_client(

@@ -126,6 +126,21 @@ def probe_markup(
     return result.stdout
 
 
+def probe_cards_markup(
+    channels: list[dict[str, object]], samples: list[dict[str, object]], active: bool = True
+) -> str:
+    module = Path("app/static/js/views/live.js").resolve().as_uri()
+    arguments = json.dumps([channels, samples, {}, active])
+    script = f'import {{ probeCards }} from "{module}"; console.log(probeCards(...{arguments}))'
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
+
+
 def hero_markup(samples: list[dict[str, object]], active: bool) -> str:
     module = Path("app/static/js/views/live.js").resolve().as_uri()
     cook = {
@@ -432,3 +447,64 @@ def test_active_probe_card_shows_live_temperature_and_target() -> None:
     assert '<div class="probe-temp">180°</div>' in markup
     assert "aiming for 203°" in markup
     assert "probe-progress" in markup
+
+
+def test_masterbuilt_probe_cards_follow_channels_and_readings() -> None:
+    channels = [
+        {"key": "pit", "label": "Pit", "role": "pit"},
+        *[
+            {"key": f"probe{number}", "label": f"Probe {number}", "role": "meat"}
+            for number in range(1, 5)
+        ],
+    ]
+    samples = [{
+        "channels": [
+            {**channel, "value": value, "target": None}
+            for channel, value in zip(channels, [300, 155, None, 165, None], strict=True)
+        ]
+    }]
+
+    markup = probe_cards_markup(channels, samples)
+
+    assert markup.count('class="board probe-board') == 4
+    assert "Probe 1" in markup and "Probe 4" in markup
+    assert '<div class="probe-temp">155°</div>' in markup
+    assert '<div class="probe-temp">165°</div>' in markup
+    assert markup.count("sold out") == 2
+
+
+def test_probe_cards_are_empty_without_meat_channels() -> None:
+    channels = [{"key": "pit", "label": "Pit", "role": "pit"}]
+    assert probe_cards_markup(channels, [{"channels": channels}]).strip() == ""
+
+
+def test_probe_card_count_changes_with_connected_grill_channels() -> None:
+    gmg = [
+        {"key": f"probe{number}", "label": f"Probe {number}", "role": "meat"}
+        for number in range(1, 3)
+    ]
+    masterbuilt = [
+        {"key": f"probe{number}", "label": f"Probe {number}", "role": "meat"}
+        for number in range(1, 5)
+    ]
+
+    assert probe_cards_markup(gmg, []).count('class="board probe-board') == 2
+    assert probe_cards_markup(masterbuilt, []).count('class="board probe-board') == 4
+
+
+def test_chart_shows_all_recorded_probe_channels() -> None:
+    module = Path("app/static/js/components/chart.js").resolve().as_uri()
+    channels = [
+        {"key": f"probe{number}", "label": f"Probe {number}", "role": "meat", "value": 150 + number}
+        for number in range(1, 5)
+    ]
+    samples = [{"elapsed_seconds": 0, "pit_temp": 225, "channels": channels}]
+    arguments = json.dumps([samples, [], {"started_at": "2026-10-25T22:00:00Z"}])
+    script = f'import {{ chartMarkup }} from "{module}"; console.log(chartMarkup(...{arguments}))'
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script], check=True,
+        capture_output=True, text=True,
+    ).stdout
+
+    assert result.count('class="probe-line probe-') == 4
+    assert "Probe 3" in result and "Probe 4" in result
