@@ -71,6 +71,14 @@ def test_units_must_use_database_value() -> None:
         GrillProfile.model_validate({**profile.model_dump(), "units": "fahrenheit"})
 
 
+def test_stale_after_seconds_must_be_positive() -> None:
+    (profile,) = load_grill_profiles(PROFILE_DIRECTORY)
+
+    assert profile.stale_after_seconds == 600
+    with pytest.raises(ValueError, match="greater than 0"):
+        GrillProfile.model_validate({**profile.model_dump(), "stale_after_seconds": 0})
+
+
 def test_docker_image_copies_grill_profiles() -> None:
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
 

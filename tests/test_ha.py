@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import EntityConfig
 from app.database import make_engine, make_session_factory
 from app.ha import HAStatus, HomeAssistantClient, ingest, parse_device_template
-from app.models import Channel, Cook, Equipment, Event, Sample
+from app.models import Channel, ChannelReading, Cook, Equipment, EquipmentEntity, Event, Sample
 from app.service import CookService, GrillSnapshot
 
 
@@ -271,18 +271,380 @@ def test_switching_connected_equipment_refreshes_watch_list(
     assert client.entity_ids == {"sensor.second"}
 
 
+def test_connected_equipment_status_entities_are_watched(sessions) -> None:
+    equipment_id = set_connected_channels(sessions, [("pit", "sensor.mb_pit", None)])
+    with sessions() as session:
+        equipment = session.get(Equipment, equipment_id)
+        assert equipment is not None
+        equipment.stale_after_seconds = 600
+        equipment.entities = [
+            EquipmentEntity(role="power", entity_id="binary_sensor.mb_power"),
+            EquipmentEntity(role="last_reported", entity_id="sensor.mb_last_reported"),
+        ]
+        session.commit()
+    client = HomeAssistantClient("http://ha", "token", entity_config(), sessions=sessions)
+
+    assert client.refresh_watch_list()
+    assert client.entity_ids == {
+        "sensor.mb_pit",
+        "binary_sensor.mb_power",
+        "sensor.mb_last_reported",
+    }
+    assert client._equipment is not None
+    assert client._equipment.status_entities == {
+        "power": "binary_sensor.mb_power",
+        "last_reported": "sensor.mb_last_reported",
+    }
+    assert client._equipment.stale_after_seconds == 600
+
+
+def masterbuilt_client(
+    sessions: sessionmaker[Session], clock: FakeClock | None = None
+) -> tuple[HomeAssistantClient, int]:
+    channels = [
+        ("pit", "sensor.masterbuilt_grill_temp", "sensor.masterbuilt_setpoint"),
+        *(
+            (f"probe{number}", f"sensor.masterbuilt_probe{number}_temp", None)
+            for number in range(1, 5)
+        ),
+    ]
+    equipment_id = set_connected_channels(sessions, channels)
+    with sessions() as session:
+        equipment = session.get(Equipment, equipment_id)
+        assert equipment is not None
+        equipment.entities = [
+            EquipmentEntity(role="power", entity_id="binary_sensor.masterbuilt_power"),
+            EquipmentEntity(role="error", entity_id="binary_sensor.masterbuilt_problem"),
+            EquipmentEntity(role="last_reported", entity_id="sensor.masterbuilt_last_reported"),
+        ]
+        equipment.stale_after_seconds = 600
+        session.commit()
+    client = HomeAssistantClient(
+        "http://ha",
+        "token",
+        entity_config(),
+        sessions=sessions,
+        clock=clock.now if clock is not None else None,
+    )
+    client.refresh_watch_list()
+    return client, equipment_id
+
+
+def masterbuilt_states(
+    power: str, error: str = "off", last_reported: str | None = None
+) -> dict[str, dict[str, Any]]:
+    last_reported = last_reported or datetime.now(UTC).isoformat()
+    values = {
+        "binary_sensor.masterbuilt_power": power,
+        "binary_sensor.masterbuilt_problem": error,
+        "sensor.masterbuilt_last_reported": last_reported,
+        "sensor.masterbuilt_grill_temp": "700",
+        "sensor.masterbuilt_setpoint": "700",
+        **{f"sensor.masterbuilt_probe{number}_temp": str(150 + number) for number in range(1, 5)},
+    }
+    return {entity: {"entity_id": entity, "state": value} for entity, value in values.items()}
+
+
+def test_masterbuilt_stale_snapshot_clears_all_telemetry_and_recovers(
+    sessions: sessionmaker[Session], clock: FakeClock, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("INFO", logger="app.ha")
+    client, _ = masterbuilt_client(sessions, clock)
+
+    states = masterbuilt_states("on", last_reported=clock.now().isoformat())
+    fresh = client._snapshot(states)
+    assert (fresh.pit_temp, fresh.setpoint, fresh.power_state, fresh.warning) == (
+        700,
+        700,
+        "On",
+        "None",
+    )
+
+    clock.advance(seconds=601)
+    stale = client._snapshot(states)
+    assert stale.stale is True
+    assert stale.pit_temp is stale.setpoint is stale.power_state is stale.hvac_mode is None
+    assert stale.fire_state is stale.warning is stale.probe1_target is stale.probe2_target is None
+    assert all(value is None for value in stale.extra_probes.values())
+
+    recovered = client._snapshot(
+        masterbuilt_states("on", last_reported=clock.now().isoformat())
+    )
+    assert recovered.pit_temp == 700
+    assert caplog.text.count("telemetry is stale") == 1
+    assert caplog.text.count("telemetry is fresh") == 1
+
+
+def test_stale_masterbuilt_snapshots_do_not_replace_change_baseline(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    fresh = GrillSnapshot(
+        pit_temp=225,
+        setpoint=225,
+        probe1=150,
+        probe1_connected=True,
+        fire_state="Running",
+        power_state="On",
+        hvac_mode="heat",
+        startup_ends_at_setpoint=True,
+    )
+    cook = service.process(fresh)
+    assert cook is not None
+
+    for _ in range(3):
+        clock.advance(seconds=10)
+        service.process(GrillSnapshot(stale=True, startup_ends_at_setpoint=True))
+    clock.advance(seconds=10)
+    cook = service.process(fresh)
+
+    assert cook is not None and cook.ended_at is None
+    with sessions() as session:
+        change_events = list(
+            session.scalars(
+                select(Event).where(
+                    Event.cook_id == cook.id,
+                    Event.kind.in_(
+                        {
+                            "setpoint_changed",
+                            "mode_changed",
+                            "probe_connected",
+                            "probe_disconnected",
+                        }
+                    ),
+                )
+            )
+        )
+    assert change_events == []
+
+
+def test_fresh_masterbuilt_change_after_stale_snapshots_is_recorded_once(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    fresh = GrillSnapshot(
+        pit_temp=225,
+        setpoint=225,
+        probe1=150,
+        probe1_connected=True,
+        fire_state="Running",
+        power_state="On",
+        hvac_mode="heat",
+        startup_ends_at_setpoint=True,
+    )
+    cook = service.process(fresh)
+    assert cook is not None
+
+    for _ in range(3):
+        clock.advance(seconds=10)
+        service.process(GrillSnapshot(stale=True, startup_ends_at_setpoint=True))
+    clock.advance(seconds=10)
+    service.process(GrillSnapshot(**{**fresh.__dict__, "setpoint": 250}))
+
+    with sessions() as session:
+        events = list(
+            session.scalars(
+                select(Event).where(
+                    Event.cook_id == cook.id,
+                    Event.kind == "setpoint_changed",
+                )
+            )
+        )
+    assert len(events) == 1
+    assert events[0].data == {"from": 225, "to": 250}
+
+
+def test_restart_after_empty_sample_uses_no_change_baseline(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    fresh = GrillSnapshot(
+        pit_temp=225,
+        setpoint=225,
+        probe1=150,
+        probe1_connected=True,
+        fire_state="Running",
+        power_state="On",
+        hvac_mode="heat",
+        startup_ends_at_setpoint=True,
+    )
+    service = CookService(sessions, clock)
+    cook = service.process(fresh)
+    assert cook is not None
+    clock.advance(seconds=10)
+    service.process(GrillSnapshot(stale=True, startup_ends_at_setpoint=True))
+
+    clock.advance(seconds=10)
+    CookService(sessions, clock).process(fresh)
+
+    with sessions() as session:
+        change_events = list(
+            session.scalars(
+                select(Event).where(
+                    Event.cook_id == cook.id,
+                    Event.kind.in_(
+                        {
+                            "setpoint_changed",
+                            "mode_changed",
+                            "probe_connected",
+                            "probe_disconnected",
+                        }
+                    ),
+                )
+            )
+        )
+    assert change_events == []
+
+
+@pytest.mark.parametrize("last_reported", ["unknown", "unavailable"])
+def test_masterbuilt_unknown_last_reported_is_stale(
+    sessions: sessionmaker[Session], clock: FakeClock, last_reported: str
+) -> None:
+    client, _ = masterbuilt_client(sessions, clock)
+    assert client._snapshot(masterbuilt_states("on", last_reported=last_reported)).pit_temp is None
+
+
+def test_masterbuilt_unparseable_last_reported_stays_fresh_and_warns_once(
+    sessions: sessionmaker[Session], clock: FakeClock, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("WARNING", logger="app.ha")
+    client, _ = masterbuilt_client(sessions, clock)
+
+    assert client._snapshot(masterbuilt_states("on", last_reported="not-a-date")).pit_temp == 700
+    assert client._snapshot(masterbuilt_states("on", last_reported="still-bad")).pit_temp == 700
+    assert caplog.text.count("not an ISO timestamp") == 1
+
+
+def test_masterbuilt_without_last_reported_is_never_stale(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    client, _ = masterbuilt_client(sessions, clock)
+    assert client._equipment is not None
+    client._equipment.status_entities.pop("last_reported")
+    clock.advance(hours=24)
+    assert client._snapshot(masterbuilt_states("on")).pit_temp == 700
+
+
+def test_stale_masterbuilt_does_not_change_or_timeout_cook(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    client, _ = masterbuilt_client(sessions, clock)
+    service = CookService(sessions, clock, incomplete_timeout_minutes=1)
+    states = masterbuilt_states("on", last_reported=clock.now().isoformat())
+    cook = service.process(client._snapshot(states))
+    assert cook is not None
+
+    clock.advance(minutes=11)
+    states["binary_sensor.masterbuilt_power"]["state"] = "off"
+    stale = client._snapshot(states)
+    cook = service.process(stale)
+
+    assert cook is not None and cook.ended_at is None and cook.status == "cook"
+    with sessions() as session:
+        samples = list(session.scalars(select(Sample).where(Sample.cook_id == cook.id)))
+        phase_events = list(
+            session.scalars(
+                select(Event).where(Event.cook_id == cook.id, Event.kind == "phase_changed")
+            )
+        )
+    assert len(samples) == 2 and samples[-1].pit_temp is None
+    assert len(phase_events) == 2
+
+
+def test_masterbuilt_staleness_is_rebuilt_on_tick_without_event(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    client, _ = masterbuilt_client(sessions, clock)
+    client._last_states = masterbuilt_states("on", last_reported=clock.now().isoformat())
+    fresh = client._snapshot(client._last_states)
+    assert client.snapshot_on_tick(fresh).pit_temp == 700
+
+    clock.advance(seconds=601)
+    assert client.snapshot_on_tick(fresh).pit_temp is None
+
+
+def test_masterbuilt_power_drives_cook_lifecycle_and_records_equipment(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    client, equipment_id = masterbuilt_client(sessions)
+    service = CookService(sessions, clock)
+
+    assert service.process(client._snapshot(masterbuilt_states("off"))) is None
+    started = service.process(client._snapshot(masterbuilt_states("on", "on")))
+    assert started is not None and started.status == "cook"
+    assert started.equipment_id == equipment_id
+
+    clock.advance(seconds=10)
+    closed = service.process(client._snapshot(masterbuilt_states("off")))
+    assert closed is not None and closed.status == "closed"
+    with sessions() as session:
+        samples = list(session.scalars(select(Sample).where(Sample.cook_id == closed.id)))
+        reading_equipment_ids = set(
+            session.scalars(
+                select(Channel.equipment_id)
+                .join(ChannelReading, ChannelReading.channel_id == Channel.id)
+                .where(ChannelReading.sample_id.in_([sample.id for sample in samples]))
+            )
+        )
+        phase_titles = list(
+            session.scalars(
+                select(Event.title).where(Event.cook_id == closed.id, Event.kind == "phase_changed")
+            )
+        )
+    assert samples[0].pit_temp == 700
+    assert reading_equipment_ids == {equipment_id}
+    assert "Cool down started" in phase_titles
+    assert "Cook closed" in phase_titles
+
+
+@pytest.mark.parametrize("power", ["unknown", "unavailable"])
+def test_unknown_masterbuilt_power_never_starts_or_closes_cook(
+    sessions: sessionmaker[Session], clock: FakeClock, power: str
+) -> None:
+    client, _ = masterbuilt_client(sessions)
+    service = CookService(sessions, clock)
+
+    snapshot = client._snapshot(masterbuilt_states(power))
+    assert snapshot.power_state is snapshot.hvac_mode is snapshot.fire_state is None
+    assert service.process(snapshot) is None
+    cook = service.process(client._snapshot(masterbuilt_states("on")))
+    assert cook is not None
+    clock.advance(seconds=10)
+    cook = service.process(snapshot)
+    assert cook is not None and cook.status == "cook" and cook.ended_at is None
+
+
+def test_masterbuilt_mapping_and_temperature_limits(sessions: sessionmaker[Session]) -> None:
+    client, _ = masterbuilt_client(sessions)
+    snapshot = client._snapshot(masterbuilt_states("on", "on"))
+
+    assert (snapshot.power_state, snapshot.hvac_mode, snapshot.fire_state) == (
+        "On",
+        "heat",
+        "Running",
+    )
+    assert snapshot.warning == "Problem"
+    assert snapshot.cook_lifecycle_enabled
+    assert snapshot.startup_ends_at_setpoint
+    assert (snapshot.max_setpoint, snapshot.max_pit_temperature) == (750, 750)
+    assert snapshot.implausible_reason() is None
+    assert client._snapshot(masterbuilt_states("off")).warning == "None"
+    assert client._snapshot(masterbuilt_states("on", "unknown")).warning is None
+    assert GrillSnapshot(pit_temp=700).implausible_reason() == "pit temperature 700 is invalid"
+    assert GrillSnapshot(setpoint=700).implausible_reason() == "setpoint 700 is outside 100-550"
+
+
 def test_connected_nonlegacy_grill_starts_no_cook_and_logs_once(
     sessions: sessionmaker[Session], clock: FakeClock, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level("INFO", logger="app.service")
     set_connected_channels(sessions, [("pit", "sensor.mb_pit", "sensor.mb_target")])
-    snapshot = GrillSnapshot(
-        pit_temp=250,
-        setpoint=275,
-        fire_state="Running",
-        power_state="On",
-        hvac_mode="heat",
-        cook_lifecycle_enabled=False,
+    client = HomeAssistantClient("http://ha", "token", entity_config(), sessions=sessions)
+    client.refresh_watch_list()
+    snapshot = client._snapshot(
+        {
+            "sensor.mb_pit": {"entity_id": "sensor.mb_pit", "state": "250"},
+            "sensor.mb_target": {"entity_id": "sensor.mb_target", "state": "275"},
+        }
     )
     service = CookService(sessions, clock)
 

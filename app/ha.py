@@ -65,7 +65,12 @@ async def ingest(
                 latest_snapshot is not None,
             )
             if client.status.connected and latest_snapshot is not None:
-                service.process(latest_snapshot)
+                snapshot_on_tick = getattr(client, "snapshot_on_tick", None)
+                service.process(
+                    snapshot_on_tick(latest_snapshot)
+                    if callable(snapshot_on_tick)
+                    else latest_snapshot
+                )
 
     tick_task = asyncio.create_task(sample_on_tick())
     try:
@@ -92,6 +97,7 @@ class HomeAssistantClient:
         template_url: str | None = None,
         host: str | None = None,
         sessions: sessionmaker[Session] | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         if template_url is None:
             parsed = urlsplit(url)
@@ -114,7 +120,11 @@ class HomeAssistantClient:
         self.poll_interval_seconds = poll_interval_seconds
         self.max_size_bytes = max_size_bytes
         self.coalesce_window_seconds = coalesce_window_seconds
+        self.clock = clock or (lambda: datetime.now(UTC).replace(microsecond=0))
         self.status = HAStatus(configured=bool(url and token))
+        self._last_states: dict[str, dict[str, Any]] = {}
+        self._stale: bool | None = None
+        self._invalid_last_reported_warned = False
 
     def _legacy_equipment(self) -> ConnectedEquipment:
         channels = [
@@ -147,6 +157,7 @@ class HomeAssistantClient:
         }
         if legacy:
             ids.update(self.entities.all)
+        ids.update(equipment.status_entities.values())
         return ids
 
     def refresh_watch_list(self) -> bool:
@@ -224,6 +235,8 @@ class HomeAssistantClient:
                 raise RuntimeError("Home Assistant authentication failed")
             self.status.connected = True
             self.status.last_error = None
+            self._stale = None
+            self._invalid_last_reported_warned = False
             logger.info("HA websocket connected to %s", self.host)
             self.refresh_watch_list()
             if self._is_legacy(self._equipment):
@@ -232,6 +245,7 @@ class HomeAssistantClient:
             initial = json.loads(await socket.recv())
             self.status.last_event_at = datetime.now(UTC).replace(microsecond=0)
             states = self._configured_states(initial.get("result", []))
+            self._last_states = states
             self._watch_list_dirty = False
             del initial
             yield self._snapshot(states)
@@ -258,6 +272,7 @@ class HomeAssistantClient:
                     self._watch_list_dirty = False
                 if message.get("type") == "result" and isinstance(message.get("result"), list):
                     states = self._configured_states(message["result"])
+                    self._last_states = states
                     del message
                     yield self._snapshot(states)
                     continue
@@ -269,6 +284,12 @@ class HomeAssistantClient:
                     states[entity_id] = event["new_state"]
                     await self._coalesce_events(socket, states)
                     yield self._snapshot(states)
+
+    def snapshot_on_tick(self, latest_snapshot: GrillSnapshot) -> GrillSnapshot:
+        """Rebuild time-sensitive snapshots from the latest known HA states."""
+        if self._equipment is not None and self._equipment.stale_after_seconds is not None:
+            return self._snapshot(self._last_states)
+        return latest_snapshot
 
     async def _coalesce_events(self, socket: Any, states: dict[str, dict[str, Any]]) -> None:
         deadline = asyncio.get_running_loop().time() + self.coalesce_window_seconds
@@ -387,7 +408,52 @@ class HomeAssistantClient:
         climate = states.get(self.entities.pit_climate, {}) if legacy else {}
         mode = climate.get("state") if legacy else None
         friendly_name = climate.get("attributes", {}).get("friendly_name") if legacy else None
-        return GrillSnapshot(
+        status_entities = equipment.status_entities if equipment is not None else {}
+        power = state(status_entities["power"]) if "power" in status_entities else None
+        mapped_power = power.casefold() if power is not None else None
+        lifecycle = not legacy and "power" in status_entities
+        error = state(status_entities["error"]) if "error" in status_entities else None
+        mapped_error = error.casefold() if error is not None else None
+
+        stale = False
+        last_reported_entity = status_entities.get("last_reported")
+        stale_after = equipment.stale_after_seconds if equipment is not None else None
+        if last_reported_entity is not None and stale_after is not None:
+            last_reported = state(last_reported_entity)
+            if last_reported is not None and last_reported.casefold() in {
+                "unknown",
+                "unavailable",
+            }:
+                stale = True
+            elif last_reported is not None:
+                try:
+                    reported_at = datetime.fromisoformat(last_reported.replace("Z", "+00:00"))
+                    if reported_at.tzinfo is None:
+                        raise ValueError("timestamp has no timezone")
+                    age = self.clock() - reported_at.astimezone(UTC)
+                    stale = age.total_seconds() > stale_after
+                except ValueError:
+                    if not self._invalid_last_reported_warned:
+                        logger.warning(
+                            "HA last_reported for connected grill is not an ISO timestamp: %r",
+                            last_reported,
+                        )
+                        self._invalid_last_reported_warned = True
+
+            if (self._stale is None and stale) or (
+                self._stale is not None and stale != self._stale
+            ):
+                logger.info("HA connected grill telemetry is %s", "stale" if stale else "fresh")
+            self._stale = stale
+
+        def mapped_binary(value: str | None, on: str, off: str) -> str | None:
+            if value == "on":
+                return on
+            if value == "off":
+                return off
+            return None
+
+        snapshot = GrillSnapshot(
             grill_name=(friendly_name.strip() if isinstance(friendly_name, str) else None) or None,
             pit_temp=channel_value("pit"),
             setpoint=channel_target("pit"),
@@ -405,10 +471,24 @@ class HomeAssistantClient:
             ),
             probe1_target=channel_target("probe1"),
             probe2_target=channel_target("probe2"),
-            fire_state=state(self.entities.fire_state) if legacy else None,
-            power_state=state(self.entities.power_state) if legacy else None,
-            warning=state(self.entities.warning) if legacy else None,
-            hvac_mode=cast(str | None, mode),
+            fire_state=(
+                state(self.entities.fire_state)
+                if legacy
+                else mapped_binary(mapped_power, "Running", "Off")
+            ),
+            power_state=(
+                state(self.entities.power_state)
+                if legacy
+                else mapped_binary(mapped_power, "On", "Off")
+            ),
+            warning=(
+                state(self.entities.warning)
+                if legacy
+                else mapped_binary(mapped_error, "Problem", "None")
+            ),
+            hvac_mode=(
+                cast(str | None, mode) if legacy else mapped_binary(mapped_power, "heat", "off")
+            ),
             extra_probes=(
                 {entity: number(entity) for entity in self.entities.extra_probes}
                 if legacy
@@ -427,7 +507,23 @@ class HomeAssistantClient:
                     if key not in {"pit", "probe1", "probe2"}
                 }
             ),
-            cook_lifecycle_enabled=legacy,
+            cook_lifecycle_enabled=legacy or lifecycle,
+            startup_ends_at_setpoint=lifecycle,
+            max_setpoint=750 if lifecycle else 550,
+            max_pit_temperature=750 if lifecycle else 600,
+        )
+        if not stale:
+            return snapshot
+        return GrillSnapshot(
+            probe1_connected=None,
+            probe2_connected=None,
+            extra_probes={key: None for key in snapshot.extra_probes},
+            extra_probe_targets={key: None for key in snapshot.extra_probe_targets},
+            cook_lifecycle_enabled=snapshot.cook_lifecycle_enabled,
+            startup_ends_at_setpoint=snapshot.startup_ends_at_setpoint,
+            max_setpoint=snapshot.max_setpoint,
+            max_pit_temperature=snapshot.max_pit_temperature,
+            stale=True,
         )
 
 

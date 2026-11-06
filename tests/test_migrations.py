@@ -100,9 +100,40 @@ def test_empty_database_upgrades_to_complete_head(
     assert "meat_group_types" in schema.get_table_names()
     assert "equipment" in schema.get_table_names()
     assert "channels" in schema.get_table_names()
+    assert "equipment_entities" in schema.get_table_names()
+    assert "stale_after_seconds" in {column["name"] for column in schema.get_columns("equipment")}
     with create_engine(f"sqlite:///{database}").connect() as connection:
         assert connection.execute(text("SELECT nickname FROM equipment")).scalar_one() == "Grill"
         assert connection.execute(text("SELECT count(*) FROM channels")).scalar_one() == 3
+        assert connection.execute(text("SELECT count(*) FROM equipment_entities")).scalar_one() == 0
+
+
+def test_equipment_entities_migration_upgrades_and_downgrades_existing_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "equipment-entities.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))
+    config = Config("alembic.ini")
+    command.upgrade(config, "7c3e1a4b9f20")
+    engine = create_engine(f"sqlite:///{database}")
+
+    command.upgrade(config, "head")
+
+    schema = inspect(engine)
+    assert "equipment_entities" in schema.get_table_names()
+    assert "stale_after_seconds" in {column["name"] for column in schema.get_columns("equipment")}
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM equipment")).scalar_one() == 1
+        assert connection.execute(text("SELECT count(*) FROM channels")).scalar_one() == 3
+        assert connection.execute(text("SELECT count(*) FROM equipment_entities")).scalar_one() == 0
+
+    command.downgrade(config, "7c3e1a4b9f20")
+
+    schema = inspect(engine)
+    assert "equipment_entities" not in schema.get_table_names()
+    assert "stale_after_seconds" not in {
+        column["name"] for column in schema.get_columns("equipment")
+    }
 
 
 def test_equipment_migration_seeds_channels_and_links_existing_cooks(

@@ -9,9 +9,14 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.deps import get_session
-from app.grill_profiles import DeviceEntity, GrillProfile, resolve_channels
+from app.grill_profiles import (
+    DeviceEntity,
+    GrillProfile,
+    resolve_channels,
+    resolve_status_entities,
+)
 from app.ha import HAClient, HARegistrySnapshot
-from app.models import Channel, Cook, Equipment
+from app.models import Channel, Cook, Equipment, EquipmentEntity
 
 router = APIRouter(prefix="/api/grills", tags=["grills"])
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -46,21 +51,21 @@ async def connect_grill(grill_id: str, request: Request, session: SessionDep) ->
     if grill is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Grill not found")
 
+    device = next(item for item in snapshot.devices if item.get("id") == grill_id)
+    profile = _matching_profile(device, profiles)
+    device_entities = tuple(
+        _device_entity(entity)
+        for entity in snapshot.entities
+        if entity.get("device_id") == grill_id and isinstance(entity.get("entity_id"), str)
+    )
     equipment = session.get(Equipment, grill.equipment_id) if grill.equipment_id else None
     if equipment is None:
-        device = next(item for item in snapshot.devices if item.get("id") == grill_id)
-        profile = _matching_profile(device, profiles)
         if profile is None:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "Grill has no mapping profile",
             )
-        entities = [
-            entity
-            for entity in snapshot.entities
-            if entity.get("device_id") == grill_id and isinstance(entity.get("entity_id"), str)
-        ]
-        resolution = resolve_channels(profile, (_device_entity(item) for item in entities))
+        resolution = resolve_channels(profile, device_entities)
         if resolution.missing_roles:
             missing = ", ".join(resolution.missing_roles)
             raise HTTPException(
@@ -75,6 +80,7 @@ async def connect_grill(grill_id: str, request: Request, session: SessionDep) ->
             fuel_type=profile.fuel_type,
             units=profile.units,
             connected=False,
+            stale_after_seconds=profile.stale_after_seconds,
         )
         equipment.channels = [
             Channel(
@@ -89,6 +95,16 @@ async def connect_grill(grill_id: str, request: Request, session: SessionDep) ->
         ]
         session.add(equipment)
         session.flush()
+
+    if profile is not None:
+        existing_roles = {entity.role for entity in equipment.entities}
+        equipment.entities.extend(
+            EquipmentEntity(role=entity.role, entity_id=entity.entity_id)
+            for entity in resolve_status_entities(profile, device_entities)
+            if entity.role not in existing_roles
+        )
+        if equipment.stale_after_seconds is None:
+            equipment.stale_after_seconds = profile.stale_after_seconds
 
     session.execute(update(Equipment).values(connected=False))
     equipment.connected = True

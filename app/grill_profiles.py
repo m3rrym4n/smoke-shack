@@ -47,6 +47,7 @@ class GrillProfile(BaseModel):
     type: Literal["pellet"]
     fuel_type: str = Field(min_length=1)
     units: Literal["F", "C"]
+    stale_after_seconds: int | None = Field(default=None, gt=0)
     device_match: DeviceMatch
     channels: tuple[ChannelProfile, ...] = Field(min_length=1)
     power: EntityRole
@@ -89,6 +90,12 @@ class ResolvedChannel:
 class Resolution:
     channels: tuple[ResolvedChannel, ...]
     missing_roles: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ResolvedEntity:
+    role: str
+    entity_id: str
 
 
 def load_grill_profiles(directory: str | Path) -> tuple[GrillProfile, ...]:
@@ -140,6 +147,26 @@ def resolve_channels(profile: GrillProfile, entities: Iterable[DeviceEntity]) ->
             )
         )
     return Resolution(tuple(resolved), tuple(missing))
+
+
+def resolve_status_entities(
+    profile: GrillProfile, entities: Iterable[DeviceEntity]
+) -> tuple[ResolvedEntity, ...]:
+    available = tuple(entities)
+    resolved: list[ResolvedEntity] = []
+    for role in (
+        "power",
+        "heating",
+        "lid_open",
+        "door_open",
+        "error",
+        "last_reported",
+        "cook_start",
+    ):
+        entity = _find_entity(getattr(profile, role), available)
+        if entity is not None:
+            resolved.append(ResolvedEntity(role, entity.entity_id))
+    return tuple(resolved)
 
 
 def _find_entity(
