@@ -226,7 +226,7 @@ def _rewrite_photo_paths(database: Path, photo_dir: Path) -> None:
             "UPDATE events SET photo_path = (SELECT path FROM photos "
             "WHERE photos.event_id = events.id LIMIT 1) WHERE photo_path IS NOT NULL"
         )
-        for table, directory in (("meat", "meat"), ("pellets", "pellets"), ("spices", "spices")):
+        for table, directory in (("meat", "meat"), ("fuel", "fuel"), ("spices", "spices")):
             rows = connection.execute(
                 f"SELECT id, photo_path FROM {table} WHERE photo_path IS NOT NULL"
             ).fetchall()

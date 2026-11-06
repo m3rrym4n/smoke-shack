@@ -346,9 +346,14 @@ def test_restore_migrates_older_revision(tmp_path: Path, monkeypatch) -> None:
     _migrate(old_db, "ef36b629902e")
     with sqlite3.connect(old_db) as connection:
         connection.execute(
+            "INSERT INTO pellets (id,vendor,product_name,price_per_pound,purchased_on) "
+            "VALUES (3,'Legacy','Oak',1.5,'2026-10-15')"
+        )
+        connection.execute(
             "INSERT INTO cooks "
-            "(started_at, status, rotisserie, has_gap, incomplete, created_at, updated_at) "
-            "VALUES ('2026-10-16T16:57:03Z', 'closed', 0, 0, 0, "
+            "(started_at, status, pellet_id, rotisserie, has_gap, incomplete, "
+            "created_at, updated_at) "
+            "VALUES ('2026-10-16T16:57:03Z', 'closed', 3, 0, 0, 0, "
             "'2026-10-16T16:57:03Z', '2026-10-16T16:57:03Z')"
         )
         connection.execute(
@@ -367,12 +372,14 @@ def test_restore_migrates_older_revision(tmp_path: Path, monkeypatch) -> None:
     assert response.json()["schema_revision_before"] == "ef36b629902e"
     assert response.json()["schema_revision_after"] != "ef36b629902e"
     with sqlite3.connect(live_db) as connection:
-        columns = {row[1] for row in connection.execute("PRAGMA table_info(pellets)")}
-        assert {"upc", "bag_size_lb", "emptied_on"} <= columns
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(fuel)")}
+        assert {"type", "upc", "bag_size_lb", "emptied_on"} <= columns
         emptied_count = connection.execute(
-            "SELECT COUNT(*) FROM pellets WHERE emptied_on IS NOT NULL"
+            "SELECT COUNT(*) FROM fuel WHERE emptied_on IS NOT NULL"
         ).fetchone()[0]
         assert emptied_count == 0
+        assert connection.execute("SELECT id,type FROM fuel").fetchone() == (3, "pellets")
+        assert connection.execute("SELECT fuel_id FROM cooks").fetchone() == (3,)
         readings = connection.execute(
             "SELECT channels.key, channel_readings.value, channel_readings.target "
             "FROM channel_readings JOIN channels ON channels.id = channel_readings.channel_id "

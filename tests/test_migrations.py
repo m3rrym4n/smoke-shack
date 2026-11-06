@@ -77,9 +77,7 @@ def test_migrations_keep_default_database_path_without_supervisor(
     assert "spices" in inspect(create_engine(f"sqlite:///{database}")).get_table_names()
 
 
-def test_empty_database_upgrades_to_complete_head(
-    tmp_path: Path, monkeypatch: object
-) -> None:
+def test_empty_database_upgrades_to_complete_head(tmp_path: Path, monkeypatch: object) -> None:
     database = tmp_path / "empty-to-head.db"
     monkeypatch.setenv("DATABASE_PATH", str(database))  # type: ignore[attr-defined]
     config = Config("alembic.ini")
@@ -91,10 +89,12 @@ def test_empty_database_upgrades_to_complete_head(
     assert "cook_spices" in schema.get_table_names()
     assert "cooked" in {column["name"] for column in schema.get_columns("meat")}
     assert "photo_path" in {column["name"] for column in schema.get_columns("meat")}
-    assert "photo_path" in {column["name"] for column in schema.get_columns("pellets")}
-    assert "upc" in {column["name"] for column in schema.get_columns("pellets")}
-    assert "bag_size_lb" in {column["name"] for column in schema.get_columns("pellets")}
-    assert "emptied_on" in {column["name"] for column in schema.get_columns("pellets")}
+    assert "pellets" not in schema.get_table_names()
+    assert "photo_path" in {column["name"] for column in schema.get_columns("fuel")}
+    assert "upc" in {column["name"] for column in schema.get_columns("fuel")}
+    assert "bag_size_lb" in {column["name"] for column in schema.get_columns("fuel")}
+    assert "emptied_on" in {column["name"] for column in schema.get_columns("fuel")}
+    assert "type" in {column["name"] for column in schema.get_columns("fuel")}
     assert "photo_path" in {column["name"] for column in schema.get_columns("spices")}
     assert "meat_groups" in schema.get_table_names()
     assert "meat_group_types" in schema.get_table_names()
@@ -197,12 +197,8 @@ extra_probes:
                 "position FROM channels ORDER BY position"
             )
         ).all()
-        cook = connection.execute(
-            text("SELECT equipment_id, started_at, status FROM cooks")
-        ).one()
-        sample = connection.execute(
-            text("SELECT cook_id, ts, extra_probes FROM samples")
-        ).one()
+        cook = connection.execute(text("SELECT equipment_id, started_at, status FROM cooks")).one()
+        sample = connection.execute(text("SELECT cook_id, ts, extra_probes FROM samples")).one()
 
     assert equipment[1:] == ("Back Patio", None, None, "pellet", "pellets", "F", 1)
     assert channels == [
@@ -340,9 +336,12 @@ def test_channel_readings_migration_failure_rolls_back_schema_and_data(
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
             "9d08aa7d2f1b"
         )
-        assert connection.execute(
-            text("SELECT COUNT(*) FROM channels WHERE key = 'new_probe'")
-        ).scalar_one() == 0
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM channels WHERE key = 'new_probe'")
+            ).scalar_one()
+            == 0
+        )
         assert connection.execute(text("SELECT pit_temp FROM samples")).scalar_one() == 225
 
 
@@ -361,9 +360,7 @@ def test_meat_groups_migration_seeds_all_types_idempotently(
         groups = connection.execute(text("SELECT name FROM meat_groups ORDER BY name")).scalars()
         types = connection.execute(text("SELECT type_key FROM meat_group_types")).scalars()
         group_count = connection.execute(text("SELECT count(*) FROM meat_groups")).scalar_one()
-        type_count = connection.execute(
-            text("SELECT count(*) FROM meat_group_types")
-        ).scalar_one()
+        type_count = connection.execute(text("SELECT count(*) FROM meat_group_types")).scalar_one()
 
     assert list(groups) == ["Beef ribs", "Leg roasts", "Pork ribs", "Pork shoulder"]
     assert set(types) == {
@@ -402,9 +399,7 @@ def test_upgrade_from_previous_head_preserves_existing_cooks(
     command.upgrade(config, "head")
 
     started = next(
-        column
-        for column in inspect(engine).get_columns("cooks")
-        if column["name"] == "started_at"
+        column for column in inspect(engine).get_columns("cooks") if column["name"] == "started_at"
     )
     with engine.connect() as connection:
         row = connection.execute(text("SELECT started_at, status FROM cooks")).one()
@@ -488,10 +483,10 @@ def test_pellet_fields_migration_preserves_existing_rows(
 
     command.upgrade(config, "head")
 
-    columns = {column["name"]: column for column in inspect(engine).get_columns("pellets")}
+    columns = {column["name"]: column for column in inspect(engine).get_columns("fuel")}
     with engine.connect() as connection:
         row = connection.execute(
-            text("SELECT vendor, product_name, upc, bag_size_lb FROM pellets")
+            text("SELECT vendor, product_name, upc, bag_size_lb FROM fuel")
         ).one()
     assert columns["upc"]["nullable"] is True
     assert columns["bag_size_lb"]["nullable"] is True
@@ -516,8 +511,43 @@ def test_pellet_emptied_on_migration_preserves_existing_rows(
 
     command.upgrade(config, "head")
 
-    columns = {column["name"]: column for column in inspect(engine).get_columns("pellets")}
+    columns = {column["name"]: column for column in inspect(engine).get_columns("fuel")}
     with engine.connect() as connection:
-        emptied_on = connection.execute(text("SELECT emptied_on FROM pellets")).scalar_one()
+        emptied_on = connection.execute(text("SELECT emptied_on FROM fuel")).scalar_one()
     assert columns["emptied_on"]["nullable"] is True
     assert emptied_on is None
+
+
+def test_fuel_migration_preserves_linked_pellet_on_upgrade_and_downgrade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "fuel.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))
+    config = Config("alembic.ini")
+    command.upgrade(config, "f5c8d2a9146e")
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO pellets (id,vendor,product_name,price_per_pound,purchased_on) "
+                "VALUES (7,'Bear Mountain','Oak',1.25,'2026-10-16')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO cooks (id,started_at,status,pellet_id,rotisserie,has_gap,incomplete,"
+                "exclude_from_stats,created_at,updated_at) VALUES "
+                "(9,'2026-10-16T16:57:03Z','closed',7,0,0,0,0,"
+                "'2026-10-16T16:57:03Z','2026-10-16T16:57:03Z')"
+            )
+        )
+
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT id,type FROM fuel")).one() == (7, "pellets")
+        assert connection.execute(text("SELECT fuel_id FROM cooks WHERE id=9")).scalar_one() == 7
+
+    command.downgrade(config, "f5c8d2a9146e")
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT id FROM pellets")).scalar_one() == 7
+        assert connection.execute(text("SELECT pellet_id FROM cooks WHERE id=9")).scalar_one() == 7

@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import get_session
-from app.models import Cook, Pellet
+from app.models import Cook, Fuel
 from app.pantry_photos import delete_photo, photo_response, save_photo
 from app.schemas import PelletCreate, PelletResponse, PelletUpdate, clean_upc
 
@@ -17,9 +17,9 @@ router = APIRouter(prefix="/api/pellets", tags=["pellets"])
 SessionDep = Annotated[Session, Depends(get_session)]
 
 
-def _get_pellet(pellet_id: int, session: Session) -> Pellet:
-    item = session.get(Pellet, pellet_id)
-    if item is None:
+def _get_pellet(pellet_id: int, session: Session) -> Fuel:
+    item = session.get(Fuel, pellet_id)
+    if item is None or item.type != "pellets":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pellet not found")
     return item
 
@@ -27,22 +27,24 @@ def _get_pellet(pellet_id: int, session: Session) -> Pellet:
 @router.get("", response_model=list[PelletResponse])
 def list_pellets(
     session: SessionDep, upc: str | None = None, include_empty: bool = False
-) -> list[Pellet]:
-    query = select(Pellet).order_by(Pellet.vendor, Pellet.product_name, Pellet.id)
+) -> list[Fuel]:
+    query = (
+        select(Fuel).where(Fuel.type == "pellets").order_by(Fuel.vendor, Fuel.product_name, Fuel.id)
+    )
     if not include_empty:
-        query = query.where(Pellet.emptied_on.is_(None))
+        query = query.where(Fuel.emptied_on.is_(None))
     if upc is not None:
         try:
             cleaned_upc = clean_upc(upc)
         except ValueError as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
-        query = query.where(Pellet.upc == cleaned_upc)
+        query = query.where(Fuel.upc == cleaned_upc)
     return list(session.scalars(query))
 
 
 @router.post("", response_model=PelletResponse, status_code=status.HTTP_201_CREATED)
-def create_pellet(payload: PelletCreate, session: SessionDep) -> Pellet:
-    item = Pellet(**payload.model_dump())
+def create_pellet(payload: PelletCreate, session: SessionDep) -> Fuel:
+    item = Fuel(**payload.model_dump())
     session.add(item)
     session.commit()
     session.refresh(item)
@@ -50,12 +52,12 @@ def create_pellet(payload: PelletCreate, session: SessionDep) -> Pellet:
 
 
 @router.get("/{pellet_id}", response_model=PelletResponse)
-def get_pellet(pellet_id: int, session: SessionDep) -> Pellet:
+def get_pellet(pellet_id: int, session: SessionDep) -> Fuel:
     return _get_pellet(pellet_id, session)
 
 
 @router.patch("/{pellet_id}", response_model=PelletResponse)
-def update_pellet(pellet_id: int, payload: PelletUpdate, session: SessionDep) -> Pellet:
+def update_pellet(pellet_id: int, payload: PelletUpdate, session: SessionDep) -> Fuel:
     item = _get_pellet(pellet_id, session)
     changes = payload.model_dump(exclude_unset=True)
     purchased_on = changes.get("purchased_on", item.purchased_on)
@@ -83,7 +85,7 @@ async def upload_pellet_photo(
     request: Request,
     session: SessionDep,
     file: Annotated[UploadFile, File()],
-) -> Pellet:
+) -> Fuel:
     item = _get_pellet(pellet_id, session)
     item.photo_path = await save_photo(
         file, request.app.state.photo_dir, "pellets", item.id, item.photo_path

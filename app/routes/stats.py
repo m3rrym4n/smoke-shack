@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_session
-from app.models import Cook, Meat, MeatGroupType, Pellet
+from app.models import Cook, Fuel, Meat, MeatGroupType
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -46,6 +46,9 @@ def cook_stats(
     setpoint: float | None = None,
     setpoint_tolerance: float = Query(default=10, ge=0),
     rotisserie: bool | None = None,
+    fuel_id: int | None = None,
+    fuel_vendor: str | None = None,
+    fuel_product: str | None = None,
     pellet_id: int | None = None,
     pellet_vendor: str | None = None,
     pellet_product: str | None = None,
@@ -78,17 +81,20 @@ def cook_stats(
         )
     if rotisserie is not None:
         query = query.where(Cook.rotisserie == rotisserie)
-    if pellet_id is not None:
-        query = query.where(Cook.pellet_id == pellet_id)
-    if pellet_vendor is not None or pellet_product is not None:
-        query = query.join(Pellet, Cook.pellet_id == Pellet.id)
-        if pellet_vendor is not None:
+    requested_fuel_id = fuel_id if fuel_id is not None else pellet_id
+    requested_vendor = fuel_vendor if fuel_vendor is not None else pellet_vendor
+    requested_product = fuel_product if fuel_product is not None else pellet_product
+    if requested_fuel_id is not None:
+        query = query.where(Cook.fuel_id == requested_fuel_id)
+    if requested_vendor is not None or requested_product is not None:
+        query = query.join(Fuel, Cook.fuel_id == Fuel.id)
+        if requested_vendor is not None:
             query = query.where(
-                func.lower(Pellet.vendor).contains(pellet_vendor.lower(), autoescape=True)
+                func.lower(Fuel.vendor).contains(requested_vendor.lower(), autoescape=True)
             )
-        if pellet_product is not None:
+        if requested_product is not None:
             query = query.where(
-                func.lower(Pellet.product_name).contains(pellet_product.lower(), autoescape=True)
+                func.lower(Fuel.product_name).contains(requested_product.lower(), autoescape=True)
             )
     if since is not None:
         query = query.where(Cook.started_at >= _utc_boundary(since))

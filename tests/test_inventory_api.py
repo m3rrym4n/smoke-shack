@@ -11,6 +11,33 @@ from app.config import Settings
 from app.models import Cook
 
 
+def test_fuel_crud_types_and_filter(sessions: sessionmaker[Session]) -> None:
+    with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
+        base = {
+            "vendor": "Local",
+            "product_name": "Fuel",
+            "price_per_pound": 1.25,
+            "purchased_on": "2026-10-16",
+        }
+        created = [
+            client.post("/api/fuel", json={**base, "type": fuel_type})
+            for fuel_type in ("pellets", "charcoal", "wood")
+        ]
+        assert [response.status_code for response in created] == [201, 201, 201]
+        assert {row["type"] for row in client.get("/api/fuel").json()} == {
+            "pellets",
+            "charcoal",
+            "wood",
+        }
+        charcoal = created[1].json()
+        edited = client.patch(f"/api/fuel/{charcoal['id']}", json={"product_name": "Lump"})
+        assert edited.json()["product_name"] == "Lump"
+        assert client.get("/api/fuel?type=charcoal").json() == [edited.json()]
+        assert [row["type"] for row in client.get("/api/pellets").json()] == ["pellets"]
+        assert client.get(f"/api/pellets/{charcoal['id']}").status_code == 404
+        assert client.post("/api/fuel", json={**base, "type": "gas"}).status_code == 422
+
+
 def test_meat_crud_filter_and_sort(sessions: sessionmaker[Session]) -> None:
     with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
         older = client.post(
@@ -64,9 +91,7 @@ def test_meat_crud_filter_and_sort(sessions: sessionmaker[Session]) -> None:
         assert uncooked.json()["cooked"] is False
 
         assert client.delete(f"/api/meat/{newer.json()['id']}").status_code == 204
-        assert client.get(f"/api/meat/{newer.json()['id']}").json() == {
-            "detail": "Meat not found"
-        }
+        assert client.get(f"/api/meat/{newer.json()['id']}").json() == {"detail": "Meat not found"}
 
 
 def test_meat_defaults_validation_and_referenced_delete(sessions: sessionmaker[Session]) -> None:
@@ -224,22 +249,28 @@ def test_create_pellet_validates_empty_date(sessions: sessionmaker[Session]) -> 
     base = {"vendor": "Neighbor", "product_name": "Blend", "price_per_pound": 0}
     with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
         pellet_id = client.post("/api/pellets", json=base).json()["id"]
-        assert client.post(
-            "/api/pellets",
-            json={
-                **base,
-                "purchased_on": date.today().isoformat(),
-                "emptied_on": (date.today() + timedelta(days=1)).isoformat(),
-            },
-        ).status_code == 422
-        assert client.post(
-            "/api/pellets",
-            json={
-                **base,
-                "purchased_on": date.today().isoformat(),
-                "emptied_on": (date.today() - timedelta(days=1)).isoformat(),
-            },
-        ).status_code == 422
+        assert (
+            client.post(
+                "/api/pellets",
+                json={
+                    **base,
+                    "purchased_on": date.today().isoformat(),
+                    "emptied_on": (date.today() + timedelta(days=1)).isoformat(),
+                },
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                "/api/pellets",
+                json={
+                    **base,
+                    "purchased_on": date.today().isoformat(),
+                    "emptied_on": (date.today() - timedelta(days=1)).isoformat(),
+                },
+            ).status_code
+            == 422
+        )
 
         for upc in ("1234567", "123456789012345", "1234567A"):
             response = client.post("/api/pellets", json={**base, "upc": upc})
