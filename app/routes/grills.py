@@ -93,6 +93,7 @@ async def connect_grill(grill_id: str, request: Request, session: SessionDep) ->
     session.execute(update(Equipment).values(connected=False))
     equipment.connected = True
     session.commit()
+    _refresh_watch_list(request)
     grill.equipment_id = equipment.id
     grill.connection_status = "connected"
     return grill
@@ -112,8 +113,16 @@ async def disconnect_grill(grill_id: str, request: Request, session: SessionDep)
         if equipment is not None:
             equipment.connected = False
             session.commit()
+            _refresh_watch_list(request)
     grill.connection_status = "disconnected"
     return grill
+
+
+def _refresh_watch_list(request: Request) -> None:
+    client = request.app.state.ha_client
+    refresh = getattr(client, "refresh_watch_list", None)
+    if refresh is not None:
+        refresh()
 
 
 async def _registry_snapshot(request: Request) -> HARegistrySnapshot:

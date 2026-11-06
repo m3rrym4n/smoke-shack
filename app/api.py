@@ -104,6 +104,7 @@ def create_app(
             config.ha_ws_max_size_bytes,
             template_url=connection.template_url,
             host=connection.host,
+            sessions=factory,
         )
     if client is not None:
         ha_status = client.status

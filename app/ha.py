@@ -11,8 +11,10 @@ from typing import Any, Protocol, cast
 from urllib.parse import urlsplit, urlunsplit
 
 import websockets
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import EntityConfig
+from app.equipment import ConnectedEquipment, WatchedChannel, connected_equipment
 from app.service import CookService, GrillSnapshot
 
 logger = logging.getLogger(__name__)
@@ -89,6 +91,7 @@ class HomeAssistantClient:
         *,
         template_url: str | None = None,
         host: str | None = None,
+        sessions: sessionmaker[Session] | None = None,
     ) -> None:
         if template_url is None:
             parsed = urlsplit(url)
@@ -104,11 +107,59 @@ class HomeAssistantClient:
             self.host = host or urlsplit(url).hostname or urlsplit(url).netloc
         self.token = token
         self.entities = entities
-        self.entity_ids = entities.all
+        self.sessions = sessions
+        self._equipment: ConnectedEquipment | None = self._legacy_equipment()
+        self._watch_list_dirty = False
+        self.entity_ids = self._watch_entity_ids(self._equipment, legacy=True)
         self.poll_interval_seconds = poll_interval_seconds
         self.max_size_bytes = max_size_bytes
         self.coalesce_window_seconds = coalesce_window_seconds
         self.status = HAStatus(configured=bool(url and token))
+
+    def _legacy_equipment(self) -> ConnectedEquipment:
+        channels = [
+            WatchedChannel("pit", self.entities.pit_temp, self.entities.pit_climate),
+            WatchedChannel("probe1", self.entities.probe1_temp, self.entities.probe1_climate),
+            WatchedChannel("probe2", self.entities.probe2_temp, self.entities.probe2_climate),
+        ]
+        channels.extend(
+            WatchedChannel(entity.rsplit(".", 1)[-1], entity, None)
+            for entity in self.entities.extra_probes
+        )
+        return ConnectedEquipment(0, tuple(channels))
+
+    def _is_legacy(self, equipment: ConnectedEquipment | None) -> bool:
+        return equipment is not None and any(
+            channel.key == "pit" and channel.source_entity == self.entities.pit_temp
+            for channel in equipment.channels
+        )
+
+    def _watch_entity_ids(
+        self, equipment: ConnectedEquipment | None, *, legacy: bool
+    ) -> set[str]:
+        if equipment is None:
+            return set()
+        ids = {
+            entity
+            for channel in equipment.channels
+            for entity in (channel.source_entity, channel.target_entity)
+            if entity
+        }
+        if legacy:
+            ids.update(self.entities.all)
+        return ids
+
+    def refresh_watch_list(self) -> bool:
+        """Reload connected channels; return whether the watched equipment changed."""
+        if self.sessions is None:
+            return False
+        with self.sessions() as session:
+            equipment = connected_equipment(session)
+        changed = equipment != self._equipment
+        self._equipment = equipment
+        self.entity_ids = self._watch_entity_ids(equipment, legacy=self._is_legacy(equipment))
+        self._watch_list_dirty = self._watch_list_dirty or changed
+        return changed
 
     async def registry_snapshot(self) -> HARegistrySnapshot:
         """Read the HA registries and current states without changing HA."""
@@ -174,11 +225,14 @@ class HomeAssistantClient:
             self.status.connected = True
             self.status.last_error = None
             logger.info("HA websocket connected to %s", self.host)
-            await self._refresh_device_info()
+            self.refresh_watch_list()
+            if self._is_legacy(self._equipment):
+                await self._refresh_device_info()
             await socket.send(json.dumps({"id": 1, "type": "get_states"}))
             initial = json.loads(await socket.recv())
             self.status.last_event_at = datetime.now(UTC).replace(microsecond=0)
             states = self._configured_states(initial.get("result", []))
+            self._watch_list_dirty = False
             del initial
             yield self._snapshot(states)
             await socket.send(
@@ -192,9 +246,16 @@ class HomeAssistantClient:
                     await socket.send(json.dumps({"id": request_id, "type": "get_states"}))
                     request_id += 1
                     raw = await socket.recv()
+                self.refresh_watch_list()
+                watch_changed = self._watch_list_dirty
                 message = json.loads(raw)
                 del raw
                 self.status.last_event_at = datetime.now(UTC).replace(microsecond=0)
+                if watch_changed:
+                    await socket.send(json.dumps({"id": request_id, "type": "get_states"}))
+                    request_id += 1
+                    message = json.loads(await socket.recv())
+                    self._watch_list_dirty = False
                 if message.get("type") == "result" and isinstance(message.get("result"), list):
                     states = self._configured_states(message["result"])
                     del message
@@ -300,24 +361,73 @@ class HomeAssistantClient:
         def connected(entity_id: str) -> bool:
             return (state(entity_id) or "").casefold() == "on"
 
-        climate = states.get(self.entities.pit_climate, {})
-        mode = climate.get("state")
-        friendly_name = climate.get("attributes", {}).get("friendly_name")
+        equipment = self._equipment
+        channels = {channel.key: channel for channel in equipment.channels} if equipment else {}
+        legacy = self._is_legacy(equipment)
+
+        def channel_value(key: str) -> float | None:
+            channel = channels.get(key)
+            return number(channel.source_entity) if channel else None
+
+        def channel_target(key: str) -> float | None:
+            channel = channels.get(key)
+            if legacy:
+                target_entity = {
+                    "pit": self.entities.pit_climate,
+                    "probe1": self.entities.probe1_climate,
+                    "probe2": self.entities.probe2_climate,
+                }.get(key)
+            else:
+                target_entity = channel.target_entity if channel is not None else None
+            if target_entity is None:
+                return None
+            attribute = attribute_number(target_entity, "temperature")
+            return attribute if attribute is not None else number(target_entity)
+
+        climate = states.get(self.entities.pit_climate, {}) if legacy else {}
+        mode = climate.get("state") if legacy else None
+        friendly_name = climate.get("attributes", {}).get("friendly_name") if legacy else None
         return GrillSnapshot(
             grill_name=(friendly_name.strip() if isinstance(friendly_name, str) else None) or None,
-            pit_temp=number(self.entities.pit_temp),
-            setpoint=attribute_number(self.entities.pit_climate, "temperature"),
-            probe1=number(self.entities.probe1_temp),
-            probe2=number(self.entities.probe2_temp),
-            probe1_connected=connected(self.entities.probe1_connection),
-            probe2_connected=connected(self.entities.probe2_connection),
-            probe1_target=attribute_number(self.entities.probe1_climate, "temperature"),
-            probe2_target=attribute_number(self.entities.probe2_climate, "temperature"),
-            fire_state=state(self.entities.fire_state),
-            power_state=state(self.entities.power_state),
-            warning=state(self.entities.warning),
+            pit_temp=channel_value("pit"),
+            setpoint=channel_target("pit"),
+            probe1=channel_value("probe1"),
+            probe2=channel_value("probe2"),
+            probe1_connected=(
+                connected(self.entities.probe1_connection)
+                if legacy
+                else channel_value("probe1") is not None
+            ),
+            probe2_connected=(
+                connected(self.entities.probe2_connection)
+                if legacy
+                else channel_value("probe2") is not None
+            ),
+            probe1_target=channel_target("probe1"),
+            probe2_target=channel_target("probe2"),
+            fire_state=state(self.entities.fire_state) if legacy else None,
+            power_state=state(self.entities.power_state) if legacy else None,
+            warning=state(self.entities.warning) if legacy else None,
             hvac_mode=cast(str | None, mode),
-            extra_probes={entity: number(entity) for entity in self.entities.extra_probes},
+            extra_probes=(
+                {entity: number(entity) for entity in self.entities.extra_probes}
+                if legacy
+                else {
+                    key: channel_value(key)
+                    for key in channels
+                    if key not in {"pit", "probe1", "probe2"}
+                }
+            ),
+            extra_probe_targets=(
+                {}
+                if legacy
+                else {
+                    key: channel_target(key)
+                    for key in channels
+                    if key not in {"pit", "probe1", "probe2"}
+                }
+            ),
+            cook_lifecycle_enabled=legacy,
         )
 
 
