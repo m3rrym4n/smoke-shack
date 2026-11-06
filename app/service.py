@@ -28,8 +28,8 @@ class GrillSnapshot:
     setpoint: float | None = None
     probe1: float | None = None
     probe2: float | None = None
-    probe1_connected: bool = False
-    probe2_connected: bool = False
+    probe1_connected: bool | None = False
+    probe2_connected: bool | None = False
     probe1_target: float | None = None
     probe2_target: float | None = None
     extra_probes: dict[str, float | None] = field(default_factory=dict)
@@ -331,7 +331,7 @@ class CookService:
                 self._event(session, cook, now, "warning", "Grill fire state failed")
             self._record_warning_change(session, cook, current.warning, now)
             return
-        if previous.setpoint != current.setpoint:
+        if current.setpoint is not None and previous.setpoint != current.setpoint:
             new_setpoint = _temperature_text(current.setpoint)
             title = (
                 f"Setpoint changed to {new_setpoint}°F"
@@ -349,7 +349,7 @@ class CookService:
                 {"from": previous.setpoint, "to": current.setpoint},
                 description,
             )
-        if previous.hvac_mode != current.hvac_mode:
+        if current.hvac_mode is not None and previous.hvac_mode != current.hvac_mode:
             self._event(
                 session,
                 cook,
@@ -362,7 +362,7 @@ class CookService:
             ("probe1", previous.probe1_connected, current.probe1_connected),
             ("probe2", previous.probe2_connected, current.probe2_connected),
         ):
-            if old != new:
+            if new is not None and old != new:
                 state = "connected" if new else "disconnected"
                 self._event(
                     session,
@@ -374,7 +374,8 @@ class CookService:
                 )
         if _normalized(previous.fire_state) != "fail" and _normalized(current.fire_state) == "fail":
             self._event(session, cook, now, "warning", "Grill fire state failed")
-        self._record_warning_change(session, cook, current.warning, now)
+        if current.warning is not None:
+            self._record_warning_change(session, cook, current.warning, now)
 
     def _record_warning_change(
         self, session: Session, cook: Cook, warning: str | None, now: datetime
@@ -412,7 +413,7 @@ class CookService:
                 select(Event.data).where(Event.cook_id == cook.id, Event.kind == "probe_done")
             )
         )
-        probes: list[tuple[int | str, float | None, float | None, bool]] = [
+        probes: list[tuple[int | str, float | None, float | None, bool | None]] = [
             (1, snapshot.probe1, snapshot.probe1_target, snapshot.probe1_connected),
             (2, snapshot.probe2, snapshot.probe2_target, snapshot.probe2_connected),
         ]
