@@ -44,6 +44,7 @@ class GrillSnapshot:
     startup_ends_at_setpoint: bool = False
     max_setpoint: float = 550
     max_pit_temperature: float = 600
+    stale: bool = False
 
     def implausible_reason(self) -> str | None:
         if self.setpoint is not None and not 100 <= self.setpoint <= self.max_setpoint:
@@ -179,7 +180,18 @@ class CookService:
             previous_snapshot = self._previous_snapshots.get(cook.id)
             if previous_snapshot is None and previous is not None:
                 previous_snapshot = self._snapshot_from_sample(previous)
-            self._record_changes(session, cook, previous_snapshot, snapshot, now)
+                if all(
+                    value is None
+                    for value in (
+                        previous_snapshot.pit_temp,
+                        previous_snapshot.setpoint,
+                        previous_snapshot.power_state,
+                        previous_snapshot.hvac_mode,
+                    )
+                ):
+                    previous_snapshot = None
+            if not snapshot.stale:
+                self._record_changes(session, cook, previous_snapshot, snapshot, now)
             gap_detected = previous is not None and (
                 resumed_after_invalid or now - as_utc(previous.ts) > self.sample_interval * 3
             )
@@ -207,7 +219,8 @@ class CookService:
                 session.add(self._sample(session, cook, snapshot, now))
             self._advance_phase(session, cook, previous, snapshot, now)
             self._record_time_to_done(session, cook, snapshot, now)
-            self._previous_snapshots[cook.id] = snapshot
+            if not snapshot.stale:
+                self._previous_snapshots[cook.id] = snapshot
             cook.updated_at = now
             session.commit()
             return cook

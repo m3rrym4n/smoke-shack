@@ -523,6 +523,7 @@ class HomeAssistantClient:
             startup_ends_at_setpoint=snapshot.startup_ends_at_setpoint,
             max_setpoint=snapshot.max_setpoint,
             max_pit_temperature=snapshot.max_pit_temperature,
+            stale=True,
         )
 
 

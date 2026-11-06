@@ -362,6 +362,7 @@ def test_masterbuilt_stale_snapshot_clears_all_telemetry_and_recovers(
 
     clock.advance(seconds=601)
     stale = client._snapshot(states)
+    assert stale.stale is True
     assert stale.pit_temp is stale.setpoint is stale.power_state is stale.hvac_mode is None
     assert stale.fire_state is stale.warning is stale.probe1_target is stale.probe2_target is None
     assert all(value is None for value in stale.extra_probes.values())
@@ -372,6 +373,126 @@ def test_masterbuilt_stale_snapshot_clears_all_telemetry_and_recovers(
     assert recovered.pit_temp == 700
     assert caplog.text.count("telemetry is stale") == 1
     assert caplog.text.count("telemetry is fresh") == 1
+
+
+def test_stale_masterbuilt_snapshots_do_not_replace_change_baseline(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    fresh = GrillSnapshot(
+        pit_temp=225,
+        setpoint=225,
+        probe1=150,
+        probe1_connected=True,
+        fire_state="Running",
+        power_state="On",
+        hvac_mode="heat",
+        startup_ends_at_setpoint=True,
+    )
+    cook = service.process(fresh)
+    assert cook is not None
+
+    for _ in range(3):
+        clock.advance(seconds=10)
+        service.process(GrillSnapshot(stale=True, startup_ends_at_setpoint=True))
+    clock.advance(seconds=10)
+    cook = service.process(fresh)
+
+    assert cook is not None and cook.ended_at is None
+    with sessions() as session:
+        change_events = list(
+            session.scalars(
+                select(Event).where(
+                    Event.cook_id == cook.id,
+                    Event.kind.in_(
+                        {
+                            "setpoint_changed",
+                            "mode_changed",
+                            "probe_connected",
+                            "probe_disconnected",
+                        }
+                    ),
+                )
+            )
+        )
+    assert change_events == []
+
+
+def test_fresh_masterbuilt_change_after_stale_snapshots_is_recorded_once(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    fresh = GrillSnapshot(
+        pit_temp=225,
+        setpoint=225,
+        probe1=150,
+        probe1_connected=True,
+        fire_state="Running",
+        power_state="On",
+        hvac_mode="heat",
+        startup_ends_at_setpoint=True,
+    )
+    cook = service.process(fresh)
+    assert cook is not None
+
+    for _ in range(3):
+        clock.advance(seconds=10)
+        service.process(GrillSnapshot(stale=True, startup_ends_at_setpoint=True))
+    clock.advance(seconds=10)
+    service.process(GrillSnapshot(**{**fresh.__dict__, "setpoint": 250}))
+
+    with sessions() as session:
+        events = list(
+            session.scalars(
+                select(Event).where(
+                    Event.cook_id == cook.id,
+                    Event.kind == "setpoint_changed",
+                )
+            )
+        )
+    assert len(events) == 1
+    assert events[0].data == {"from": 225, "to": 250}
+
+
+def test_restart_after_empty_sample_uses_no_change_baseline(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    fresh = GrillSnapshot(
+        pit_temp=225,
+        setpoint=225,
+        probe1=150,
+        probe1_connected=True,
+        fire_state="Running",
+        power_state="On",
+        hvac_mode="heat",
+        startup_ends_at_setpoint=True,
+    )
+    service = CookService(sessions, clock)
+    cook = service.process(fresh)
+    assert cook is not None
+    clock.advance(seconds=10)
+    service.process(GrillSnapshot(stale=True, startup_ends_at_setpoint=True))
+
+    clock.advance(seconds=10)
+    CookService(sessions, clock).process(fresh)
+
+    with sessions() as session:
+        change_events = list(
+            session.scalars(
+                select(Event).where(
+                    Event.cook_id == cook.id,
+                    Event.kind.in_(
+                        {
+                            "setpoint_changed",
+                            "mode_changed",
+                            "probe_connected",
+                            "probe_disconnected",
+                        }
+                    ),
+                )
+            )
+        )
+    assert change_events == []
 
 
 @pytest.mark.parametrize("last_reported", ["unknown", "unavailable"])
