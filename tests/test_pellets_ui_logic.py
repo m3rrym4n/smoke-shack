@@ -100,6 +100,36 @@ def test_split_pellets_separates_stock_and_empty_bags() -> None:
     }
 
 
+def test_fuel_groups_are_ordered_and_omit_empty_types() -> None:
+    expression = (
+        "const result=groupPelletsByType(["
+        "{id:1,type:'wood'},{id:2,type:'pellets'},{id:3,type:'charcoal'},"
+        "{id:4,type:'pellets'}]);console.log(JSON.stringify(result))"
+    )
+    assert run_logic(expression, "groupPelletsByType") == [
+        {
+            "type": "pellets",
+            "label": "Pellets",
+            "items": [{"id": 2, "type": "pellets"}, {"id": 4, "type": "pellets"}],
+        },
+        {
+            "type": "charcoal",
+            "label": "Charcoal",
+            "items": [{"id": 3, "type": "charcoal"}],
+        },
+        {"type": "wood", "label": "Wood", "items": [{"id": 1, "type": "wood"}]},
+    ]
+
+    no_charcoal = (
+        "console.log(JSON.stringify(groupPelletsByType(["
+        "{id:1,type:'wood'},{id:2,type:'pellets'}])))"
+    )
+    assert [group["type"] for group in run_logic(no_charcoal, "groupPelletsByType")] == [
+        "pellets",
+        "wood",
+    ]
+
+
 def test_pantry_loads_empty_bags_and_order_pad_uses_default_filter() -> None:
     pantry = Path("app/static/js/views/pellets.js").read_text()
     live = Path("app/static/js/views/live.js").read_text()
@@ -119,7 +149,9 @@ def test_fuel_page_has_required_type_forms_filter_and_all_types() -> None:
     assert price_input in pantry
     assert 'name="type_filter"' in pantry
     assert '["pellets", "charcoal", "wood"]' in pantry
-    assert "item.type[0].toUpperCase()" in pantry
+    assert "groupPelletsByType(groups.inStock)" in pantry
+    assert '<section class="fuel-type"><h2>${group.label}</h2>' in pantry
+    assert "escapeHtml(item.type" not in pantry
     assert "Mark empty" in pantry
     assert "Undo" in pantry
     assert "Empty bags" in pantry

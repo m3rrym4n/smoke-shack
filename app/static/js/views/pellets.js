@@ -3,7 +3,9 @@ import {
 } from "../api.js";
 import { confirmDelete, formatDate, formatMoney, renderApiError } from "../components/ui.js";
 import { bindItemPhoto, itemPhotoMarkup } from "../components/item-photo.js";
-import { bagCostDisplay, cleanUpc, splitPellets, validatePellet, validateUpc } from "../pellets-logic.js";
+import {
+  bagCostDisplay, cleanUpc, groupPelletsByType, splitPellets, validatePellet, validateUpc,
+} from "../pellets-logic.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -70,7 +72,7 @@ function purchaseRow(item, cook) {
     : '<button class="cc mark-empty" type="button">Mark empty</button>';
   return `<article class="pellet-row${item.is_empty ? " is-empty" : ""}" data-id="${item.id}">
     <div class="pellet-summary">
-      <div class="pellet-title-line"><strong>${escapeHtml(item.vendor)}</strong><span>${escapeHtml(item.product_name)}</span><span>${escapeHtml(item.type[0].toUpperCase() + item.type.slice(1))}</span>${badge}</div>
+      <div class="pellet-title-line"><strong>${escapeHtml(item.vendor)}</strong><span>${escapeHtml(item.product_name)}</span>${badge}</div>
       <div class="ld pellet-details"><span>${item.price_per_pound == null ? "—" : `${formatMoney(item.price_per_pound)}/lb`}</span><i></i>${bagSize}${bagCost ? `<span>${escapeHtml(bagCost)}</span><i></i>` : ""}${upc}<span>${formatDate(item.purchased_on)}</span>${emptyDate}</div>
       ${itemPhotoMarkup(item)}
       <div class="row-actions">${stockAction}<button class="cc edit-pellet" type="button">Edit</button><button class="cc delete-pellet" type="button">Delete</button></div>
@@ -166,7 +168,10 @@ export function mountPelletsView(container) {
       const cookById = new Map(items.map((item, index) => [item.id, cooks[index][0]]));
       const groups = splitPellets(items);
       const rows = (group) => group.map((item) => purchaseRow(item, cookById.get(item.id))).join("");
-      list.innerHTML = `${rows(groups.inStock)}${groups.empty.length ? `<section class="empty-pellets"><h2>Empty bags</h2>${rows(groups.empty)}</section>` : ""}`;
+      const stockSections = groupPelletsByType(groups.inStock)
+        .map((group) => `<section class="fuel-type"><h2>${group.label}</h2>${rows(group.items)}</section>`)
+        .join("");
+      list.innerHTML = `${stockSections}${groups.empty.length ? `<section class="empty-pellets"><h2>Empty bags</h2>${rows(groups.empty)}</section>` : ""}`;
       pantryMessage.textContent = items.length ? "" : (upc ? "No fuel matches that UPC." : "The pantry is bare.");
       bindRows();
     } catch (error) {

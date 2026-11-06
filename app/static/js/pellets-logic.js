@@ -30,6 +30,16 @@ export function splitPellets(items) {
   };
 }
 
+export function groupPelletsByType(items) {
+  return ["pellets", "charcoal", "wood"]
+    .map((type) => ({
+      type,
+      label: type[0].toUpperCase() + type.slice(1),
+      items: items.filter((item) => item.type === type),
+    }))
+    .filter((group) => group.items.length);
+}
+
 export function validatePellet(values) {
   const errors = {};
   if (!["pellets", "charcoal", "wood"].includes(values.type)) errors.type = "Choose a fuel type.";
