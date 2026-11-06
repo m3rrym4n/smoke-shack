@@ -107,6 +107,7 @@ def create_app(
             template_url=connection.template_url,
             host=connection.host,
             sessions=factory,
+            grill_profiles=grill_profiles,
         )
     if client is not None:
         ha_status = client.status
