@@ -150,9 +150,9 @@ export function orderPadMarkup(cook, meat, pellets, cooks = [], config = {}) {
       <label class="paper-field"><span>Seasonings</span><input name="seasonings"${disabled("seasonings")} value="${escapeHtml(model.seasonings)}"></label>
       <label class="paper-field"><span>Sauces</span><input name="sauces"${disabled("sauces")} value="${escapeHtml(model.sauces)}"></label>
       <label class="paper-field"><span>Prep time</span><span class="input-suffix"><input name="prep_time_minutes" type="number" min="0" step="1"${disabled("prep_time_minutes")} value="${model.prep_time_minutes ?? ""}"><b>minutes</b></span></label>
-      <label class="paper-field"><span>Pellets</span><select name="pellet_id"${disabled("pellet_id")}><option value="">Not selected</option>${options(pellets, model.pellet_id, pelletOptionLabel)}<option value="add">${pelletEmpty ? "Nothing in the pantry yet, add some" : "+ Add new..."}</option></select></label>
-      <label class="paper-field"><span>Pellets used</span><span class="input-suffix"><input name="pellets_used_lb" type="number" min="0" step="0.01" value="${model.pellets_used_lb ?? ""}"><b>lb</b></span></label>
-      <div class="paper-field"><span>Pellet cost</span><output name="pellet_cost">${money(model.cost?.pellet_cost)}</output></div>
+      <label class="paper-field"><span>Fuel</span><select name="pellet_id"${disabled("pellet_id")}><option value="">Not selected</option>${options(pellets, model.pellet_id, pelletOptionLabel)}<option value="add">${pelletEmpty ? "Nothing in the pantry yet, add some" : "+ Add new..."}</option></select></label>
+      <label class="paper-field"><span>Fuel used</span><span class="input-suffix"><input name="pellets_used_lb" type="number" min="0" step="0.01" value="${model.pellets_used_lb ?? ""}"><b>lb</b></span></label>
+      <div class="paper-field"><span>Fuel cost</span><output name="pellet_cost">${money(model.cost?.pellet_cost)}</output></div>
       <label class="paper-field"><span>Profile used</span><input readonly value="${escapeHtml(model.profile_name || "None")}"></label>
       <fieldset class="paper-field rotisserie"${disabled("rotisserie")}><legend>Rotisserie</legend><label><input type="radio" name="rotisserie" value="true"${model.rotisserie ? " checked" : ""}${disabled("rotisserie")}> Yes</label><label><input type="radio" name="rotisserie" value="false"${model.rotisserie ? "" : " checked"}${disabled("rotisserie")}> No</label></fieldset>
       ${mode === "history" ? `<label class="paper-field exclude-from-stats"><span>Statistics</span><span><input name="exclude_from_stats" type="checkbox"${model.exclude_from_stats ? " checked" : ""}> Exclude from stats (dry run / test)</span><small class="exclude-stats-message" role="status"></small></label>` : ""}
@@ -341,7 +341,7 @@ export function bindLiveForms(container, { cook, orderCook = cook, events, meat,
     orderForm.elements.weight.value = item ? `${item.pounds} lb` : "—";
   });
   orderForm.elements.pellet_id?.addEventListener("change", () => {
-    if (orderForm.elements.pellet_id.value === "add") window.location.hash = "pellets";
+    if (orderForm.elements.pellet_id.value === "add") window.location.hash = "pantry/fuel";
   });
   orderForm.addEventListener("submit", async (event) => {
     event.preventDefault();

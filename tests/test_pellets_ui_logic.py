@@ -19,7 +19,7 @@ def run_logic(expression: str, imports: str = "validatePellet") -> object:
 
 def test_pellet_validation_accepts_complete_purchase() -> None:
     values = (
-        '{vendor: "Bear Mountain", product_name: "Hickory", '
+        '{type: "pellets", vendor: "Bear Mountain", product_name: "Hickory", '
         'price_per_pound: "0.65", purchased_on: "2026-10-17"}'
     )
     assert run_logic(f"console.log(JSON.stringify(validatePellet({values})))") == {}
@@ -27,17 +27,18 @@ def test_pellet_validation_accepts_complete_purchase() -> None:
 
 def test_pellet_validation_accepts_free_pellets() -> None:
     values = (
-        '{vendor: "Neighbor", product_name: "Competition blend", '
+        '{type: "wood", vendor: "Neighbor", product_name: "Competition blend", '
         'price_per_pound: "0", purchased_on: "2026-10-17"}'
     )
     assert run_logic(f"console.log(JSON.stringify(validatePellet({values})))") == {}
 
 
 def test_pellet_validation_rejects_missing_and_invalid_values() -> None:
-    values = '{vendor: "", product_name: " ", price_per_pound: "-1", purchased_on: ""}'
+    values = '{type: "", vendor: "", product_name: " ", price_per_pound: "-1", purchased_on: ""}'
     errors = run_logic(f"console.log(JSON.stringify(validatePellet({values})))")
     assert errors == {
-        "vendor": "Enter a pellet vendor.",
+        "type": "Choose a fuel type.",
+        "vendor": "Enter a fuel vendor.",
         "product_name": "Enter a product name.",
         "price_per_pound": "Price per pound cannot be negative.",
         "purchased_on": "Choose a purchase date.",
@@ -94,8 +95,17 @@ def test_split_pellets_separates_stock_and_empty_bags() -> None:
 def test_pantry_loads_empty_bags_and_order_pad_uses_default_filter() -> None:
     pantry = Path("app/static/js/views/pellets.js").read_text()
     live = Path("app/static/js/views/live.js").read_text()
-    assert "getPellets(upc, true)" in pantry
-    assert "getPellets()" in live
+    assert "getFuel(typeFilter.value, upc, true)" in pantry
+    assert "getFuel()" in live
+
+
+def test_fuel_page_has_required_type_forms_filter_and_all_types() -> None:
+    pantry = Path("app/static/js/views/pellets.js").read_text()
+    assert '<h1 class="hd">Fuel</h1>' in pantry
+    assert 'name="type" required' in pantry
+    assert 'name="type_filter"' in pantry
+    assert '["pellets", "charcoal", "wood"]' in pantry
+    assert "item.type[0].toUpperCase()" in pantry
     assert "Mark empty" in pantry
     assert "Undo" in pantry
     assert "Empty bags" in pantry
