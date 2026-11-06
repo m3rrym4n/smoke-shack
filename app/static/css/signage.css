@@ -1,4 +1,5 @@
 body{margin:0}
+.cooks-board .cook-columns,.cooks-board .cook-row{grid-template-columns:minmax(160px,.8fr) minmax(180px,1fr) 100px 110px 32px}.cook-row .cook-summary{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.cook-grill{overflow-wrap:anywhere}@media(max-width:900px){.cooks-board .cook-columns{display:none}.cooks-board .cook-row{grid-template-columns:1fr auto;gap:4px 14px}.cooks-board .cook-grill,.cooks-board .cook-summary{grid-column:1/-1}.cooks-board .cook-row>span.cook-grill::before{content:none}.cooks-board .cook-setpoint::before{content:"Setpoint: ";color:#b9c3b5}.cooks-board .cook-total::before{content:"Total: ";color:#b9c3b5}.cooks-board .cook-arrow{display:none}}@media(max-width:600px){.cooks-board .cook-row{padding:14px 4px}.cooks-board .cook-row>.cook-total::before{content:"Total: ";color:#b9c3b5}}
 .chart-hour-tick{stroke:#b9c3b5;stroke-width:2}.chart-hour-label{fill:#b9c3b5;font-family:'Patrick Hand',cursive;font-size:16px;text-anchor:middle}.chart-hour-label.chart-hour-label-end{text-anchor:end}.chart-axis.chart-axis-start{text-anchor:start}
 button{font-family:inherit;cursor:pointer}
 input,textarea,select{font-family:inherit}

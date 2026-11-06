@@ -19,9 +19,9 @@ from app.models import (
     ChannelReading,
     Cook,
     Event,
+    Fuel,
     Meat,
     Note,
-    Pellet,
     Photo,
     Profile,
     ProfileStep,
@@ -118,15 +118,15 @@ def cooks_csv(
     status_filter: str | None = Query(default=None, alias="status"),
 ) -> StreamingResponse:
     query = (
-        select(Cook, Meat, Pellet, Profile)
+        select(Cook, Meat, Fuel, Profile)
         .outerjoin(Meat, Cook.meat_id == Meat.id)
-        .outerjoin(Pellet, Cook.pellet_id == Pellet.id)
+        .outerjoin(Fuel, Cook.fuel_id == Fuel.id)
         .outerjoin(Profile, Cook.profile_id == Profile.id)
     )
     if meat_id is not None:
         query = query.where(Cook.meat_id == meat_id)
     if pellet_id is not None:
-        query = query.where(Cook.pellet_id == pellet_id)
+        query = query.where(Cook.fuel_id == pellet_id)
     if status_filter is not None:
         query = query.where(Cook.status == status_filter)
     else:
@@ -301,7 +301,7 @@ def _all_json(session: Session) -> dict[str, Any]:
     return {
         "cooks": cooks,
         "meat": list(session.scalars(select(Meat).order_by(Meat.id))),
-        "pellets": list(session.scalars(select(Pellet).order_by(Pellet.id))),
+        "fuel": list(session.scalars(select(Fuel).order_by(Fuel.id))),
         "profiles": profiles,
         "notes": list(session.scalars(select(Note).order_by(Note.id))),
     }

@@ -57,7 +57,10 @@ def test_upload_and_serve_each_pantry_kind(
         )
         assert uploaded.status_code == 200
         assert uploaded.json()["has_photo"] is True
-        assert uploaded.json()["photo_url"].startswith(f"/api/{kind}/{item_id}/photo?v=")
+        photo_kind = "fuel" if kind == "pellets" else kind
+        assert uploaded.json()["photo_url"].startswith(
+            f"/api/{photo_kind}/{item_id}/photo?v="
+        )
         stored = photo_dir / kind / f"{item_id}{suffix}"
         assert stored.read_bytes() == contents
         assert not (tmp_path / "escape.exe").exists()

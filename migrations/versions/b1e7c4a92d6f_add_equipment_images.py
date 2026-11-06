@@ -1,7 +1,7 @@
 """add equipment images
 
 Revision ID: b1e7c4a92d6f
-Revises: f5c8d2a9146e
+Revises: 2f4b1a6c9d30
 """
 
 import shutil
@@ -13,7 +13,7 @@ from alembic import op
 from app.config import Settings
 
 revision = "b1e7c4a92d6f"
-down_revision = "f5c8d2a9146e"
+down_revision = "2f4b1a6c9d30"
 branch_labels = None
 depends_on = None
 

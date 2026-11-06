@@ -1,4 +1,4 @@
-import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getMeat, getNotes, getPellets, getPlannedCooks, getRecentCooks, getStatus, listSpices, updateCook, withBase } from "../api.js";
+import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getFuel, getMeat, getNotes, getPlannedCooks, getRecentCooks, getStatus, listSpices, updateCook, withBase } from "../api.js";
 import { chartMarkup } from "../components/chart.js";
 import { cookLogMarkup } from "../components/cook-log.js";
 import { cookNotesMarkup } from "../components/cook-notes.js";
@@ -30,6 +30,12 @@ function duration(seconds) {
 
 function leader(label, value, active = false, total = false) {
   return `<div class="ld phase-row ${active ? "active" : ""} ${total ? "total" : ""}"><span>${label}</span><i></i><strong>${value}</strong></div>`;
+}
+
+function fuelLabel(item) {
+  if (!item) return "Not selected";
+  const type = item.type ? item.type[0].toUpperCase() + item.type.slice(1) : "Pellets";
+  return `${item.vendor} ${item.product_name} (${type})`;
 }
 
 export function probeBoard(name, probe, samples, cook, active) {
@@ -64,7 +70,7 @@ export function heroMarkup(cook, samples, active, historical, showcase, grillIde
   const setpoint = sample?.setpoint ?? cook.effective_setpoint ?? 0;
   const meat = cook.meat?.type || "Mystery smoke";
   const weight = cook.meat?.pounds ? `<span>${escapeHtml(cook.meat.pounds)} lb</span>` : "";
-  const details = [setpoint ? `${temp(setpoint)} setpoint` : null, cook.pellet ? `${cook.pellet.vendor} ${cook.pellet.product_name}` : null, cook.profile_name].filter(Boolean).map(escapeHtml).join(" · ");
+  const details = [setpoint ? `${temp(setpoint)} setpoint` : null, cook.pellet ? fuelLabel(cook.pellet) : null, cook.profile_name].filter(Boolean).map(escapeHtml).join(" · ");
   return `<div class="live-hero">
     <section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">${active ? escapeHtml(cook.status) : "fire's out"}</span></div>${gaugeSvg(active ? sample?.pit_temp : 0, setpoint, showcase?.logo_url)}${showcaseMarkup(showcase, grillIdentity, window.innerWidth, !historical)}</section>
     <div class="live-details">
@@ -105,14 +111,14 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
     const notes = await getNotes("this_cook", cook.id);
     if (!isCurrent()) return;
     updateSmoke(null, null);
-    container.innerHTML = `<div class="cook-detail"><div class="detail-actions"><a class="back-link cc" href="#cooks">← All cooks</a><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><section class="order-pad planned-summary"><span class="tape" aria-hidden="true"></span><div class="order-heading"><h2>PLANNED ORDER</h2><span>No. ${String(cook.id).padStart(4, "0")}</span></div><p><b>Meat:</b> ${escapeHtml(cook.meat?.type || "Not selected")}</p><p><b>Pellets:</b> ${escapeHtml(cook.pellet ? `${cook.pellet.vendor} ${cook.pellet.product_name}` : "Not selected")}</p>${rubDetailMarkup(cook)}<p><b>Sauces:</b> ${escapeHtml(cook.sauces || "—")}</p><p><b>Prep time:</b> ${cook.prep_time_minutes ?? "—"}${cook.prep_time_minutes != null ? " minutes" : ""}</p><p><b>Rotisserie:</b> ${cook.rotisserie ? "Yes" : "No"}</p><p><b>How it turned out:</b> ${escapeHtml(cook.results_text || "—")}</p><div class="planned-detail-actions"><button class="paper-button planned-cancel" type="button">Cancel order</button><span class="plan-confirm" hidden></span></div></section></div>`;
+    container.innerHTML = `<div class="cook-detail"><div class="detail-actions"><a class="back-link cc" href="#cooks">← All cooks</a><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><section class="order-pad planned-summary"><span class="tape" aria-hidden="true"></span><div class="order-heading"><h2>PLANNED ORDER</h2><span>No. ${String(cook.id).padStart(4, "0")}</span></div><p><b>Meat:</b> ${escapeHtml(cook.meat?.type || "Not selected")}</p><p><b>Fuel:</b> ${escapeHtml(fuelLabel(cook.pellet))}</p>${rubDetailMarkup(cook)}<p><b>Sauces:</b> ${escapeHtml(cook.sauces || "—")}</p><p><b>Prep time:</b> ${cook.prep_time_minutes ?? "—"}${cook.prep_time_minutes != null ? " minutes" : ""}</p><p><b>Rotisserie:</b> ${cook.rotisserie ? "Yes" : "No"}</p><p><b>How it turned out:</b> ${escapeHtml(cook.results_text || "—")}</p><div class="planned-detail-actions"><button class="paper-button planned-cancel" type="button">Cancel order</button><span class="plan-confirm" hidden></span></div></section></div>`;
     container.querySelector(".planned-summary").insertAdjacentHTML("beforebegin", cookNotesMarkup(notes));
     container.querySelector(".planned-cancel").addEventListener("click", () => confirmDelete(container.querySelector(".plan-confirm"), async () => { await deleteCook(cook.id); window.location.hash = "cooks"; }));
     return;
   }
   if (editing && requestedCook) {
     const [meat, availablePellets, cooks, photos, spices] = await Promise.all([
-      getMeat(), getPellets(), getCookLogCooks(10000), getCookPhotos(requestedCook.id), listSpices(),
+      getMeat(), getFuel(), getCookLogCooks(10000), getCookPhotos(requestedCook.id), listSpices(),
     ]);
     const pellets = requestedCook.pellet && !availablePellets.some((item) => item.id === requestedCook.pellet.id)
       ? [...availablePellets, requestedCook.pellet]
@@ -132,7 +138,7 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
   }
   const [cook, samples, events, meat, pellets, closedCooks, planned, detailPhotos, showcase, notes, spices] = await Promise.all([
     requestedCook || (cookId ? getCook(cookId) : null), cookId ? getCookSamples(cookId) : [], cookId ? getCookEvents(cookId) : [],
-    liveForms ? getMeat() : [], liveForms ? getPellets() : [], liveForms ? getRecentCooks(10000) : [], liveForms ? getPlannedCooks() : [],
+    liveForms ? getMeat() : [], liveForms ? getFuel() : [], liveForms ? getRecentCooks(10000) : [], liveForms ? getPlannedCooks() : [],
     !liveForms && cookId ? getCookPhotos(cookId) : [],
     status,
     !liveForms && cookId ? getNotes("this_cook", cookId) : [],
