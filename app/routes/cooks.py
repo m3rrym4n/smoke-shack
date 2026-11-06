@@ -15,6 +15,7 @@ from app.equipment import first_equipment_id
 from app.models import (
     ChannelReading,
     Cook,
+    Equipment,
     Event,
     Fuel,
     Meat,
@@ -44,6 +45,9 @@ def _get_cook(cook_id: int, session: Session) -> Cook:
 
 
 def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> dict[str, Any]:
+    equipment = (
+        session.get(Equipment, cook.equipment_id) if cook.equipment_id is not None else None
+    )
     meat = session.get(Meat, cook.meat_id) if cook.meat_id is not None else None
     fuel = session.get(Fuel, cook.fuel_id) if cook.fuel_id is not None else None
     profile = session.get(Profile, cook.profile_id) if cook.profile_id is not None else None
@@ -74,6 +78,8 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
         "fuel_id": cook.fuel_id,
         "pellet_id": cook.fuel_id,
         "profile_id": cook.profile_id,
+        "grill_manufacturer": equipment.maker if equipment is not None else None,
+        "grill_model": equipment.model if equipment is not None else None,
         "rotisserie": cook.rotisserie,
         "seasonings": cook.seasonings,
         "spices": [

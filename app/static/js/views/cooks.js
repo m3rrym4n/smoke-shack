@@ -12,8 +12,9 @@ function cookDate(value) {
   return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(new Date(value));
 }
 
-function row(cook, now) {
+export function cookRowMarkup(cook, now = new Date()) {
   const meat = cook.meat?.type || "Cook details not set";
+  const grill = [cook.grill_manufacturer, cook.grill_model].filter(Boolean).join(" ");
   const setpointValue = isLiveCook(cook) ? cook.current_setpoint : cook.effective_setpoint;
   const setpoint = setpointValue !== null && setpointValue !== undefined && Number.isFinite(Number(setpointValue)) ? `${Math.round(setpointValue)}°` : "—";
   const planned = cook.state === "planned";
@@ -21,14 +22,14 @@ function row(cook, now) {
   const tagMarkup = tag ? `<span class="cook-tag ${tag === "Test" ? "test-tag" : planned ? "planned-tag" : tag === "Incomplete" ? "incomplete" : "progress-tag"}">${tag}</span>` : "";
   const seconds = isLiveCook(cook) ? elapsedSeconds(cook, now) : cook.grill_duration_seconds;
   const rubs = seasoningText(cook);
-  return `<a class="cook-row${planned ? " planned" : ""}" href="#cooks/${cook.id}"><div><span class="cook-date">${cookDate(cook.started_at)}</span><strong>${escapeHtml(meat)}</strong>${rubs ? `<small class="cook-row-rubs">${escapeHtml(rubs)}</small>` : ""}${tagMarkup}</div><span>${planned ? "—" : setpoint}</span><span>${planned ? "—" : formatDuration(seconds)}</span><span class="cook-arrow" aria-hidden="true">›</span></a>`;
+  return `<a class="cook-row${planned ? " planned" : ""}" href="#cooks/${cook.id}"><span class="cook-grill">${escapeHtml(grill)}</span><div class="cook-summary"><span class="cook-date">${cookDate(cook.started_at)}</span><strong>${escapeHtml(meat)}</strong>${rubs ? `<small class="cook-row-rubs">${escapeHtml(rubs)}</small>` : ""}${tagMarkup}</div><span class="cook-setpoint">${planned ? "—" : setpoint}</span><span class="cook-total">${planned ? "—" : formatDuration(seconds)}</span><span class="cook-arrow" aria-hidden="true">›</span></a>`;
 }
 
 export function mountCookList(container) {
   let disposed = false;
   let requestedClosed = PAGE_SIZE;
   let loading = false;
-  container.innerHTML = `<section class="board cooks-board"><h1 class="hd">Cook Log</h1><div class="cook-columns mut"><span>Date &amp; meat</span><span>Setpoint</span><span>Total time</span><span></span></div><div id="cook-rows"></div><button class="cc load-more" type="button">Load more</button><p class="mut cooks-message" role="status"></p></section>`;
+  container.innerHTML = `<section class="board cooks-board"><h1 class="hd">Cook Log</h1><div class="cook-columns mut"><span>GRILL</span><span>Date &amp; meat</span><span>Setpoint</span><span>Total time</span><span></span></div><div id="cook-rows"></div><button class="cc load-more" type="button">Load more</button><p class="mut cooks-message" role="status"></p></section>`;
   const rows = container.querySelector("#cook-rows");
   const button = container.querySelector(".load-more");
   const message = container.querySelector(".cooks-message");
@@ -43,7 +44,7 @@ export function mountCookList(container) {
       if (disposed) return;
       const closedCount = allCooks.filter((cook) => cook.state !== "planned" && !isLiveCook(cook)).length;
       const now = new Date();
-      rows.innerHTML = orderCookLogRows(allCooks).map((cook) => row(cook, now)).join("");
+      rows.innerHTML = orderCookLogRows(allCooks).map((cook) => cookRowMarkup(cook, now)).join("");
       button.hidden = closedCount < requestedClosed;
       message.textContent = allCooks.length ? "" : "No cooks in the book yet.";
     } catch (error) {
