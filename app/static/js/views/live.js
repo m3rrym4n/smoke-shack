@@ -38,11 +38,23 @@ function fuelLabel(item) {
   return `${item.vendor} ${item.product_name} (${type})`;
 }
 
+function channelReading(sample, key) {
+  const channel = sample?.channels?.find((item) => item.key === key);
+  if (channel) return channel;
+  const number = /^probe(\d+)$/.exec(key)?.[1];
+  if (!number) return { value: null, target: null };
+  return {
+    value: sample?.[`probe${number}`] ?? sample?.extra_probes?.[key],
+    target: sample?.[`probe${number}_target`] ?? sample?.extra_probe_targets?.[key],
+  };
+}
+
 export function probeBoard(name, probe, samples, cook, active) {
   if (!active) return `<section class="board probe-board unplugged"><h2 class="hd">${name}</h2><div class="sold-out"><b>×</b><span>sold out<br>(unplugged)</span></div></section>`;
   const latest = samples.at(-1);
-  const reading = latest?.[`probe${probe}`];
-  const currentTarget = Number(latest?.[`probe${probe}_target`]);
+  const channel = channelReading(latest, typeof probe === "string" ? probe : `probe${probe}`);
+  const reading = channel.value;
+  const currentTarget = Number(channel.target);
   const target = Number.isFinite(currentTarget) && currentTarget > 0 ? currentTarget : null;
   const connected = reading !== null && reading !== undefined;
   if (!connected) return `<section class="board probe-board unplugged"><h2 class="hd">${name}</h2><div class="sold-out"><b>×</b><span>sold out<br>(unplugged)</span></div></section>`;
@@ -55,6 +67,13 @@ export function probeBoard(name, probe, samples, cook, active) {
     <div class="probe-target">${target == null ? "no target set" : `aiming for ${temp(target)}`}</div>
     ${progress}
   </section>`;
+}
+
+export function probeCards(channels, samples, cook, active) {
+  return channels
+    .filter((channel) => channel.role === "meat")
+    .map((channel) => probeBoard(escapeHtml(channel.label), channel.key, samples, cook, active))
+    .join("");
 }
 
 function rubDetailMarkup(cook) {
@@ -71,6 +90,8 @@ export function heroMarkup(cook, samples, active, historical, showcase, grillIde
   const meat = cook.meat?.type || "Mystery smoke";
   const weight = cook.meat?.pounds ? `<span>${escapeHtml(cook.meat.pounds)} lb</span>` : "";
   const details = [setpoint ? `${temp(setpoint)} setpoint` : null, cook.pellet ? fuelLabel(cook.pellet) : null, cook.profile_name].filter(Boolean).map(escapeHtml).join(" · ");
+  const channels = historical ? cook.channels || [] : grillIdentity?.channels || [];
+  const probes = probeCards(channels, samples, cook, active);
   return `<div class="live-hero">
     <section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">${active ? escapeHtml(cook.status) : "fire's out"}</span></div>${gaugeSvg(active ? sample?.pit_temp : 0, setpoint, showcase?.logo_url)}${showcaseMarkup(showcase, grillIdentity, window.innerWidth, !historical)}</section>
     <div class="live-details">
@@ -79,7 +100,7 @@ export function heroMarkup(cook, samples, active, historical, showcase, grillIde
         <div class="phase-bar" aria-label="Cook phase progress"><span class="startup" style="width:${widths.startup}%"></span><span class="cooking" style="width:${widths.cook}%"></span><span class="cooldown" style="width:${widths.cooldown}%"></span></div>
         <div class="phase-list">${leader("Startup", duration(times.startup), active && cook.status === "startup")}${leader("Cook", duration(times.cook), active && cook.status === "cook")}${leader("Cool down", duration(times.cooldown), active && cook.status === "cooldown")}${leader("Total grill time", duration(times.total), false, true)}</div>
       </section>
-      <div class="probe-grid">${probeBoard("Probe 1", 1, samples, cook, active)}${probeBoard("Probe 2", 2, samples, cook, active)}</div>
+      ${probes ? `<div class="probe-grid">${probes}</div>` : ""}
     </div>
   </div>`;
 }

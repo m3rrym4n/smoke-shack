@@ -27,15 +27,30 @@ export function downsample(samples, maximum = MAX_POINTS) {
   return result;
 }
 
-function finiteValues(samples, target) {
-  const temperatures = samples.flatMap((sample) => [sample.pit_temp, sample.probe1, sample.probe2]).map(numberOrNull).filter((value) => value !== null);
+function probeChannels(samples) {
+  for (let index = samples.length - 1; index >= 0; index -= 1) {
+    const channels = samples[index].channels?.filter((channel) => channel.role === "meat");
+    if (channels?.length) return channels.map(({ key, label }) => ({ key, label }));
+  }
+  return [1, 2]
+    .filter((probe) => samples.some((sample) => Object.hasOwn(sample, `probe${probe}`)))
+    .map((probe) => ({ key: `probe${probe}`, label: `Probe ${probe}` }));
+}
+
+function channelValue(sample, key) {
+  const channel = sample.channels?.find((item) => item.key === key);
+  return channel ? channel.value : sample[key] ?? sample.extra_probes?.[key];
+}
+
+function finiteValues(samples, target, probes) {
+  const temperatures = samples.flatMap((sample) => [sample.pit_temp, ...probes.map((probe) => channelValue(sample, probe.key))]).map(numberOrNull).filter((value) => value !== null);
   return target === null ? temperatures : [...temperatures, target.value];
 }
 
 function linePath(samples, field, x, y) {
   let drawing = false;
   return samples.map((sample) => {
-    const value = numberOrNull(sample[field]);
+    const value = numberOrNull(field === "pit_temp" ? sample[field] : channelValue(sample, field));
     if (value === null) {
       drawing = false;
       return "";
@@ -62,10 +77,11 @@ function startLabel(startedAtIso) {
 export function chartMarkup(samples, events, cook) {
   if (!samples.length) return `<section class="board chart-board"><h2 class="hd">Chalked up: this cook</h2><p class="mut">No temperature samples yet.</p></section>`;
   const points = downsample(samples);
+  const probes = probeChannels(samples);
   const target = finalTarget(samples);
   const reached = reachedTarget(samples, target);
   const lastElapsed = Math.max(1, ...samples.map((sample) => Number(sample.elapsed_seconds) || 0));
-  const values = finiteValues(samples, target);
+  const values = finiteValues(samples, target, probes);
   const minTemp = Math.max(0, Math.floor((Math.min(...values, 0) - 10) / 25) * 25);
   const maxTemp = Math.max(100, Math.ceil((Math.max(...values, 100) + 10) / 25) * 25);
   const plotWidth = WIDTH - PLOT.left - PLOT.right;
@@ -116,7 +132,7 @@ export function chartMarkup(samples, events, cook) {
     ? Math.min(WIDTH - PLOT.right - 8, x(reached.elapsed) - 16)
     : WIDTH - PLOT.right - 8;
   return `<section class="board chart-board">
-    <div class="chart-heading"><h2 class="hd">Chalked up: this cook</h2><div class="chart-legend"><span class="pit-key">Pit</span><span class="probe-key">Probe 1</span><span class="probe-key probe-two-key">Probe 2</span>${target === null ? "" : '<span class="target-key">Target</span>'}</div></div>
+    <div class="chart-heading"><h2 class="hd">Chalked up: this cook</h2><div class="chart-legend"><span class="pit-key">Pit</span>${probes.map((probe, index) => `<span class="probe-key probe-${index + 1}-key">${escapeHtml(probe.label)}</span>`).join("")}${target === null ? "" : '<span class="target-key">Target</span>'}</div></div>
     <div class="chart-scroll" tabindex="0" aria-label="Temperature chart; scroll horizontally on small screens">
       <svg class="temperature-chart" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="Pit and probe temperatures over ${elapsedLabel(lastElapsed)}">
         <defs><filter id="chalk-displacement"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="7" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="2.5"/></filter></defs>
@@ -125,7 +141,7 @@ export function chartMarkup(samples, events, cook) {
         ${hourGrid}
         ${finalTickMarkup}
         ${target === null ? "" : `<line class="target-line" x1="${PLOT.left}" x2="${WIDTH - PLOT.right}" y1="${targetY}" y2="${targetY}"/><text class="target-label" x="${targetLabelX}" y="${doneLabelY}">done at ${Math.round(target.value)}°${reached === null ? " (not reached)" : ""}</text>`}
-        <g class="chalk-lines" filter="url(#chalk-displacement)"><path class="pit-line" d="${linePath(points, "pit_temp", x, y)}"/><path class="probe-line" d="${linePath(points, "probe1", x, y)}"/><path class="probe-line probe-two" d="${linePath(points, "probe2", x, y)}"/></g>
+        <g class="chalk-lines" filter="url(#chalk-displacement)"><path class="pit-line" d="${linePath(points, "pit_temp", x, y)}"/>${probes.map((probe, index) => `<path class="probe-line probe-${index + 1}" d="${linePath(points, probe.key, x, y)}"/>`).join("")}</g>
         ${reachedMarker}
         ${pins}
         <text class="chart-axis chart-axis-start" x="${PLOT.left}" y="${HEIGHT - 12}">${escapeHtml(startLabel(cook.started_at))}</text>
