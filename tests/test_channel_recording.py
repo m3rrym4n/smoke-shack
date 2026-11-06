@@ -55,7 +55,7 @@ def test_masterbuilt_snapshot_records_five_channels(
 
     with sessions() as session:
         assert readings_by_key(session) == {
-            "pit": (275, 300),
+            "pit": (300, 300),
             "probe1": (155, 195),
             "probe2": (160, 200),
             "probe3": (165, 205),

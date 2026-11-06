@@ -508,6 +508,7 @@ class HomeAssistantClient:
                 }
             ),
             cook_lifecycle_enabled=legacy or lifecycle,
+            startup_ends_at_setpoint=lifecycle,
             max_setpoint=750 if lifecycle else 550,
             max_pit_temperature=750 if lifecycle else 600,
         )
@@ -519,6 +520,7 @@ class HomeAssistantClient:
             extra_probes={key: None for key in snapshot.extra_probes},
             extra_probe_targets={key: None for key in snapshot.extra_probe_targets},
             cook_lifecycle_enabled=snapshot.cook_lifecycle_enabled,
+            startup_ends_at_setpoint=snapshot.startup_ends_at_setpoint,
             max_setpoint=snapshot.max_setpoint,
             max_pit_temperature=snapshot.max_pit_temperature,
         )

@@ -503,6 +503,7 @@ def test_masterbuilt_mapping_and_temperature_limits(sessions: sessionmaker[Sessi
     )
     assert snapshot.warning == "Problem"
     assert snapshot.cook_lifecycle_enabled
+    assert snapshot.startup_ends_at_setpoint
     assert (snapshot.max_setpoint, snapshot.max_pit_temperature) == (750, 750)
     assert snapshot.implausible_reason() is None
     assert client._snapshot(masterbuilt_states("off")).warning == "None"

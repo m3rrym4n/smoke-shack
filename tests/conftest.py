@@ -64,7 +64,7 @@ def clock() -> FakeClock:
 def masterbuilt_gravity_800_snapshot() -> GrillSnapshot:
     """Reusable five-channel snapshot for Smoke Shack and grill-sim scenarios."""
     return GrillSnapshot(
-        pit_temp=275,
+        pit_temp=300,
         setpoint=300,
         probe1=155,
         probe2=160,
@@ -75,6 +75,7 @@ def masterbuilt_gravity_800_snapshot() -> GrillSnapshot:
         fire_state="Running",
         power_state="On",
         hvac_mode="heat",
+        startup_ends_at_setpoint=True,
     )
 
 

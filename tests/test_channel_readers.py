@@ -51,11 +51,11 @@ def test_gravity_channels_drive_api_stats_and_csv(
 
     assert sample_response.status_code == 200
     latest = sample_response.json()[-1]
-    assert latest["pit_temp"] == 275
+    assert latest["pit_temp"] == 300
     assert latest["probe1"] == 155
     assert latest["extra_probes"] == {"probe3": 205, "probe4": 171}
     assert latest["channels"] == [
-        {"key": "pit", "label": "Pit", "role": "pit", "value": 275, "target": 300},
+        {"key": "pit", "label": "Pit", "role": "pit", "value": 300, "target": 300},
         {
             "key": "probe1",
             "label": "Probe1",
@@ -89,7 +89,7 @@ def test_gravity_channels_drive_api_stats_and_csv(
 
     rows = list(csv.DictReader(StringIO(csv_response.text)))
     assert list(rows[-1])[-2:] == ["probe3", "probe4"]
-    assert rows[-1]["pit_temp"] == "275.0"
+    assert rows[-1]["pit_temp"] == "300.0"
     assert rows[-1]["probe3"] == "205.0"
 
     with sessions() as session:

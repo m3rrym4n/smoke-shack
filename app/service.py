@@ -14,6 +14,8 @@ from app.models import Channel, ChannelReading, Cook, Event, Sample
 
 logger = logging.getLogger(__name__)
 
+STARTUP_TIMEOUT = timedelta(minutes=60)
+
 
 def as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
@@ -39,6 +41,7 @@ class GrillSnapshot:
     hvac_mode: str | None = None
     warning: str | None = None
     cook_lifecycle_enabled: bool = True
+    startup_ends_at_setpoint: bool = False
     max_setpoint: float = 550
     max_pit_temperature: float = 600
 
@@ -160,7 +163,11 @@ class CookService:
                     "Startup started",
                     {"to": "startup"},
                 )
-                if snapshot.setpoint is not None and snapshot.setpoint != 150:
+                if (
+                    not snapshot.startup_ends_at_setpoint
+                    and snapshot.setpoint is not None
+                    and snapshot.setpoint != 150
+                ):
                     self._start_cook_phase(session, cook, now)
             previous = session.scalar(
                 select(Sample)
@@ -249,8 +256,18 @@ class CookService:
         mode = _normalized(snapshot.hvac_mode)
         fire = _normalized(snapshot.fire_state)
         power = _normalized(snapshot.power_state)
-        if cook.status == "startup" and snapshot.setpoint is not None and snapshot.setpoint != 150:
-            self._start_cook_phase(session, cook, now)
+        if cook.status == "startup":
+            if snapshot.startup_ends_at_setpoint:
+                if cook.started_at is not None and now - as_utc(cook.started_at) >= STARTUP_TIMEOUT:
+                    self._start_cook_phase(session, cook, now, reason="startup_timeout")
+                elif (
+                    snapshot.setpoint is not None
+                    and snapshot.pit_temp is not None
+                    and snapshot.pit_temp >= snapshot.setpoint - 10
+                ):
+                    self._start_cook_phase(session, cook, now)
+            elif snapshot.setpoint is not None and snapshot.setpoint != 150:
+                self._start_cook_phase(session, cook, now)
         previous_fire = _normalized(previous.fire_state) if previous is not None else None
         cooldown_started = mode == "off" or (fire == "cool down" and previous_fire == "cool down")
         if cook.status in {"startup", "cook"} and cooldown_started:
@@ -269,13 +286,18 @@ class CookService:
             elif cook.cook_ended_at and now - as_utc(cook.cook_ended_at) >= self.incomplete_timeout:
                 self._close(session, cook, now, incomplete=True)
 
-    def _start_cook_phase(self, session: Session, cook: Cook, now: datetime) -> None:
+    def _start_cook_phase(
+        self, session: Session, cook: Cook, now: datetime, reason: str | None = None
+    ) -> None:
         if cook.status != "startup":
             return
         cook.startup_ended_at = now
         cook.status = "cook"
         logger.info("cook %s phase startup -> cook", cook.id)
-        self._event(session, cook, now, "phase_changed", "Cook started", {"to": "cook"})
+        data: dict[str, object] = {"to": "cook"}
+        if reason is not None:
+            data["reason"] = reason
+        self._event(session, cook, now, "phase_changed", "Cook started", data)
 
     def _close(self, session: Session, cook: Cook, now: datetime, incomplete: bool) -> None:
         cook.cooldown_ended_at = now
