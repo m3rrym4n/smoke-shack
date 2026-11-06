@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import EntityConfig
 from app.database import make_engine, make_session_factory
 from app.ha import HAStatus, HomeAssistantClient, ingest, parse_device_template
-from app.models import Channel, Cook, Equipment, Event, Sample
+from app.models import Channel, ChannelReading, Cook, Equipment, EquipmentEntity, Event, Sample
 from app.service import CookService, GrillSnapshot
 
 
@@ -272,8 +272,6 @@ def test_switching_connected_equipment_refreshes_watch_list(
 
 
 def test_connected_equipment_status_entities_are_watched(sessions) -> None:
-    from app.models import EquipmentEntity
-
     equipment_id = set_connected_channels(sessions, [("pit", "sensor.mb_pit", None)])
     with sessions() as session:
         equipment = session.get(Equipment, equipment_id)
@@ -300,18 +298,121 @@ def test_connected_equipment_status_entities_are_watched(sessions) -> None:
     assert client._equipment.stale_after_seconds == 600
 
 
+def masterbuilt_client(sessions: sessionmaker[Session]) -> tuple[HomeAssistantClient, int]:
+    channels = [
+        ("pit", "sensor.masterbuilt_grill_temp", "sensor.masterbuilt_setpoint"),
+        *(
+            (f"probe{number}", f"sensor.masterbuilt_probe{number}_temp", None)
+            for number in range(1, 5)
+        ),
+    ]
+    equipment_id = set_connected_channels(sessions, channels)
+    with sessions() as session:
+        equipment = session.get(Equipment, equipment_id)
+        assert equipment is not None
+        equipment.entities = [
+            EquipmentEntity(role="power", entity_id="binary_sensor.masterbuilt_power"),
+            EquipmentEntity(role="error", entity_id="binary_sensor.masterbuilt_problem"),
+        ]
+        session.commit()
+    client = HomeAssistantClient("http://ha", "token", entity_config(), sessions=sessions)
+    client.refresh_watch_list()
+    return client, equipment_id
+
+
+def masterbuilt_states(power: str, error: str = "off") -> dict[str, dict[str, Any]]:
+    values = {
+        "binary_sensor.masterbuilt_power": power,
+        "binary_sensor.masterbuilt_problem": error,
+        "sensor.masterbuilt_grill_temp": "700",
+        "sensor.masterbuilt_setpoint": "700",
+        **{f"sensor.masterbuilt_probe{number}_temp": str(150 + number) for number in range(1, 5)},
+    }
+    return {entity: {"entity_id": entity, "state": value} for entity, value in values.items()}
+
+
+def test_masterbuilt_power_drives_cook_lifecycle_and_records_equipment(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    client, equipment_id = masterbuilt_client(sessions)
+    service = CookService(sessions, clock)
+
+    assert service.process(client._snapshot(masterbuilt_states("off"))) is None
+    started = service.process(client._snapshot(masterbuilt_states("on", "on")))
+    assert started is not None and started.status == "cook"
+    assert started.equipment_id == equipment_id
+
+    clock.advance(seconds=10)
+    closed = service.process(client._snapshot(masterbuilt_states("off")))
+    assert closed is not None and closed.status == "closed"
+    with sessions() as session:
+        samples = list(session.scalars(select(Sample).where(Sample.cook_id == closed.id)))
+        reading_equipment_ids = set(
+            session.scalars(
+                select(Channel.equipment_id)
+                .join(ChannelReading, ChannelReading.channel_id == Channel.id)
+                .where(ChannelReading.sample_id.in_([sample.id for sample in samples]))
+            )
+        )
+        phase_titles = list(
+            session.scalars(
+                select(Event.title).where(Event.cook_id == closed.id, Event.kind == "phase_changed")
+            )
+        )
+    assert samples[0].pit_temp == 700
+    assert reading_equipment_ids == {equipment_id}
+    assert "Cool down started" in phase_titles
+    assert "Cook closed" in phase_titles
+
+
+@pytest.mark.parametrize("power", ["unknown", "unavailable"])
+def test_unknown_masterbuilt_power_never_starts_or_closes_cook(
+    sessions: sessionmaker[Session], clock: FakeClock, power: str
+) -> None:
+    client, _ = masterbuilt_client(sessions)
+    service = CookService(sessions, clock)
+
+    snapshot = client._snapshot(masterbuilt_states(power))
+    assert snapshot.power_state is snapshot.hvac_mode is snapshot.fire_state is None
+    assert service.process(snapshot) is None
+    cook = service.process(client._snapshot(masterbuilt_states("on")))
+    assert cook is not None
+    clock.advance(seconds=10)
+    cook = service.process(snapshot)
+    assert cook is not None and cook.status == "cook" and cook.ended_at is None
+
+
+def test_masterbuilt_mapping_and_temperature_limits(sessions: sessionmaker[Session]) -> None:
+    client, _ = masterbuilt_client(sessions)
+    snapshot = client._snapshot(masterbuilt_states("on", "on"))
+
+    assert (snapshot.power_state, snapshot.hvac_mode, snapshot.fire_state) == (
+        "On",
+        "heat",
+        "Running",
+    )
+    assert snapshot.warning == "Problem"
+    assert snapshot.cook_lifecycle_enabled
+    assert (snapshot.max_setpoint, snapshot.max_pit_temperature) == (750, 750)
+    assert snapshot.implausible_reason() is None
+    assert client._snapshot(masterbuilt_states("off")).warning == "None"
+    assert client._snapshot(masterbuilt_states("on", "unknown")).warning is None
+    assert GrillSnapshot(pit_temp=700).implausible_reason() == "pit temperature 700 is invalid"
+    assert GrillSnapshot(setpoint=700).implausible_reason() == "setpoint 700 is outside 100-550"
+
+
 def test_connected_nonlegacy_grill_starts_no_cook_and_logs_once(
     sessions: sessionmaker[Session], clock: FakeClock, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level("INFO", logger="app.service")
     set_connected_channels(sessions, [("pit", "sensor.mb_pit", "sensor.mb_target")])
-    snapshot = GrillSnapshot(
-        pit_temp=250,
-        setpoint=275,
-        fire_state="Running",
-        power_state="On",
-        hvac_mode="heat",
-        cook_lifecycle_enabled=False,
+    client = HomeAssistantClient("http://ha", "token", entity_config(), sessions=sessions)
+    client.refresh_watch_list()
+    snapshot = client._snapshot(
+        {
+            "sensor.mb_pit": {"entity_id": "sensor.mb_pit", "state": "250"},
+            "sensor.mb_target": {"entity_id": "sensor.mb_target", "state": "275"},
+        }
     )
     service = CookService(sessions, clock)
 

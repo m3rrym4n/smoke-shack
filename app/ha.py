@@ -388,6 +388,20 @@ class HomeAssistantClient:
         climate = states.get(self.entities.pit_climate, {}) if legacy else {}
         mode = climate.get("state") if legacy else None
         friendly_name = climate.get("attributes", {}).get("friendly_name") if legacy else None
+        status_entities = equipment.status_entities if equipment is not None else {}
+        power = state(status_entities["power"]) if "power" in status_entities else None
+        mapped_power = power.casefold() if power is not None else None
+        lifecycle = not legacy and "power" in status_entities
+        error = state(status_entities["error"]) if "error" in status_entities else None
+        mapped_error = error.casefold() if error is not None else None
+
+        def mapped_binary(value: str | None, on: str, off: str) -> str | None:
+            if value == "on":
+                return on
+            if value == "off":
+                return off
+            return None
+
         return GrillSnapshot(
             grill_name=(friendly_name.strip() if isinstance(friendly_name, str) else None) or None,
             pit_temp=channel_value("pit"),
@@ -406,10 +420,24 @@ class HomeAssistantClient:
             ),
             probe1_target=channel_target("probe1"),
             probe2_target=channel_target("probe2"),
-            fire_state=state(self.entities.fire_state) if legacy else None,
-            power_state=state(self.entities.power_state) if legacy else None,
-            warning=state(self.entities.warning) if legacy else None,
-            hvac_mode=cast(str | None, mode),
+            fire_state=(
+                state(self.entities.fire_state)
+                if legacy
+                else mapped_binary(mapped_power, "Running", "Off")
+            ),
+            power_state=(
+                state(self.entities.power_state)
+                if legacy
+                else mapped_binary(mapped_power, "On", "Off")
+            ),
+            warning=(
+                state(self.entities.warning)
+                if legacy
+                else mapped_binary(mapped_error, "Problem", "None")
+            ),
+            hvac_mode=(
+                cast(str | None, mode) if legacy else mapped_binary(mapped_power, "heat", "off")
+            ),
             extra_probes=(
                 {entity: number(entity) for entity in self.entities.extra_probes}
                 if legacy
@@ -428,7 +456,9 @@ class HomeAssistantClient:
                     if key not in {"pit", "probe1", "probe2"}
                 }
             ),
-            cook_lifecycle_enabled=legacy,
+            cook_lifecycle_enabled=legacy or lifecycle,
+            max_setpoint=750 if lifecycle else 550,
+            max_pit_temperature=750 if lifecycle else 600,
         )
 
 

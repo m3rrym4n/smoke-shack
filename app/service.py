@@ -39,10 +39,12 @@ class GrillSnapshot:
     hvac_mode: str | None = None
     warning: str | None = None
     cook_lifecycle_enabled: bool = True
+    max_setpoint: float = 550
+    max_pit_temperature: float = 600
 
     def implausible_reason(self) -> str | None:
-        if self.setpoint is not None and not 100 <= self.setpoint <= 550:
-            return f"setpoint {self.setpoint} is outside 100-550"
+        if self.setpoint is not None and not 100 <= self.setpoint <= self.max_setpoint:
+            return f"setpoint {self.setpoint} is outside 100-{self.max_setpoint:g}"
         for name, value in (
             ("pit temperature", self.pit_temp),
             ("probe 1 temperature", self.probe1),
@@ -52,7 +54,8 @@ class GrillSnapshot:
                 for name, value in self.extra_probes.items()
             ),
         ):
-            if value is not None and (value > 600 or value == 65535):
+            maximum = self.max_pit_temperature if name == "pit temperature" else 600
+            if value is not None and (value > maximum or value == 65535):
                 return f"{name} {value} is invalid"
         if _normalized(self.warning) == "unknown":
             return "warning is unknown"
