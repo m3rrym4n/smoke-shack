@@ -7,12 +7,13 @@ from pathlib import Path
 import pytest
 from conftest import FakeClock, FakeHAClient
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api import create_app
 from app.config import Settings
 from app.ha import HAStatus
-from app.models import Cook, Event
+from app.models import Cook, Equipment, Event
 from app.service import CookService, GrillSnapshot
 
 
@@ -175,8 +176,8 @@ def test_status_with_ha_unconfigured(sessions: sessionmaker[Session]) -> None:
     assert status["ingest"]["sample_interval_seconds"] == 10
     assert status["ingest"]["data_gap_event_min_seconds"] == 120
     assert status["version"] == "dev"
-    assert status["grill_name"] == "My grill"
-    assert status["grill_title"] == "My grill"
+    assert status["grill_name"] == "Grill"
+    assert status["grill_title"] == "Grill"
     assert status["grill_maker"] is None
 
 
@@ -195,18 +196,18 @@ def test_status_grill_name_fallback_and_cached_ha_name(
     fake = FakeHAClient()
     app = create_app(Settings(grill_name="Backyard grill"), sessions, fake)
     with TestClient(app) as client:
-        assert client.get("/status").json()["grill_name"] == "Backyard grill"
+        assert client.get("/status").json()["grill_name"] == "Grill"
         fake.status.grill_name = "Daniel Boone"
         fake.status.connected = False
         status = client.get("/status").json()
-        assert status["grill_name"] == "Daniel Boone"
-        assert status["grill_title"] == "Daniel Boone"
+        assert status["grill_name"] == "Grill"
+        assert status["grill_title"] == "Grill"
         fake.status.grill_title = "Backyard Beast"
         fake.status.grill_maker = "Green Mountain Grills"
         status = client.get("/status").json()
-        assert status["grill_name"] == "Daniel Boone"
-        assert status["grill_title"] == "Backyard Beast"
-        assert status["grill_maker"] == "Green Mountain Grills"
+        assert status["grill_name"] == "Grill"
+        assert status["grill_title"] == "Grill"
+        assert status["grill_maker"] is None
 
 
 def test_status_does_not_report_planned_cook(sessions: sessionmaker[Session]) -> None:
@@ -216,6 +217,34 @@ def test_status_does_not_report_planned_cook(sessions: sessionmaker[Session]) ->
 
     with TestClient(create_app(Settings(), sessions)) as client:
         assert client.get("/status").json()["active_cook"] is None
+
+
+def test_status_uses_connected_equipment_identity_and_pictures(
+    sessions: sessionmaker[Session], tmp_path: Path
+) -> None:
+    photo = tmp_path / "grill.jpg"
+    logo = tmp_path / "logo.png"
+    photo.write_bytes(b"photo")
+    logo.write_bytes(b"logo")
+    with sessions() as session:
+        grill = session.scalar(select(Equipment).where(Equipment.connected.is_(True)))
+        assert grill is not None
+        grill.nickname = "Patio Grill"
+        grill.maker = "Masterbuilt"
+        grill.model = "Gravity Series 800"
+        grill.photo_path = str(photo)
+        grill.logo_path = str(logo)
+        session.commit()
+
+    app = create_app(Settings(), sessions)
+    with TestClient(app) as client:
+        status = client.get("/status").json()
+
+    assert status["grill_title"] == "Gravity Series 800"
+    assert status["grill_maker"] == "Masterbuilt"
+    assert status["photo_url"] == "/api/equipment/1/photo"
+    assert status["logo_url"] == "/api/equipment/1/logo"
+    assert "My grill" not in status.values()
 
 
 def test_status_after_simulated_connect(sessions: sessionmaker[Session]) -> None:

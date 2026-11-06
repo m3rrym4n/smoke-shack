@@ -1,4 +1,4 @@
-import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getMeat, getNotes, getPellets, getPlannedCooks, getRecentCooks, getShowcase, getStatus, listSpices, updateCook, withBase } from "../api.js";
+import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getMeat, getNotes, getPellets, getPlannedCooks, getRecentCooks, getStatus, listSpices, updateCook, withBase } from "../api.js";
 import { chartMarkup } from "../components/chart.js";
 import { cookLogMarkup } from "../components/cook-log.js";
 import { cookNotesMarkup } from "../components/cook-notes.js";
@@ -134,7 +134,7 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
     requestedCook || (cookId ? getCook(cookId) : null), cookId ? getCookSamples(cookId) : [], cookId ? getCookEvents(cookId) : [],
     liveForms ? getMeat() : [], liveForms ? getPellets() : [], liveForms ? getRecentCooks(10000) : [], liveForms ? getPlannedCooks() : [],
     !liveForms && cookId ? getCookPhotos(cookId) : [],
-    getShowcase(),
+    status,
     !liveForms && cookId ? getNotes("this_cook", cookId) : [],
     liveForms ? listSpices() : [],
   ]);

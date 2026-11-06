@@ -1,5 +1,6 @@
-import { connectGrill, disconnectGrill, getGrills } from "../api.js";
+import { connectGrill, deleteEquipmentImage, disconnectGrill, getGrills, uploadEquipmentImage } from "../api.js";
 import { renderGrills } from "../settings-logic.js";
+import { validateShowcaseFile } from "../live-logic.js";
 
 export function mountSettingsView(container) {
   let disposed = false;
@@ -44,6 +45,28 @@ export function mountSettingsView(container) {
 
   refresh.addEventListener("click", loadGrills);
   list.addEventListener("click", async (event) => {
+    const imageButton = event.target.closest(".upload-grill-image, .remove-grill-image");
+    if (imageButton) {
+      const card = imageButton.closest(".grill-card");
+      const field = imageButton.closest(".grill-image-field");
+      const equipmentId = card.querySelector(".grill-images").dataset.equipmentId;
+      const kind = field.dataset.imageKind;
+      const message = field.querySelector(".grill-image-message");
+      const file = field.querySelector("input").files[0];
+      if (!equipmentId) { message.textContent = "Connect this grill before adding pictures."; return; }
+      if (imageButton.classList.contains("upload-grill-image")) {
+        const validation = validateShowcaseFile(file, kind);
+        if (validation) { message.textContent = validation; return; }
+      }
+      imageButton.disabled = true;
+      try {
+        await (imageButton.classList.contains("upload-grill-image")
+          ? uploadEquipmentImage(equipmentId, kind, file)
+          : deleteEquipmentImage(equipmentId, kind));
+        await loadGrills();
+      } catch (error) { message.textContent = error.message || "Could not update image."; imageButton.disabled = false; }
+      return;
+    }
     const button = event.target.closest(".grill-control");
     if (!button || busy) return;
     const card = button.closest(".grill-card");
@@ -64,6 +87,10 @@ export function mountSettingsView(container) {
     } finally {
       busy = false;
     }
+  });
+  list.addEventListener("change", (event) => {
+    if (!event.target.matches(".grill-image-field input")) return;
+    event.target.closest(".grill-image-field").querySelector(".upload-grill-image").disabled = !event.target.files[0];
   });
   loadGrills();
   return () => { disposed = true; };

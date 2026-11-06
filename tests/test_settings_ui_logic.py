@@ -39,14 +39,31 @@ def test_grills_show_statuses_and_the_right_control() -> None:
     ])
     expression = f"console.log(JSON.stringify(logic.renderGrills({grills})))"
     markup = run_logic(expression)
-    assert "Patio Grill" in markup
     assert "Masterbuilt · Gravity 800" in markup
+    assert "Patio Grill" not in markup
+    assert '<p class="mut">' not in markup
     assert "Available" in markup
     assert "Connected" in markup
     assert 'data-action="disconnect">Disconnect</button>' in markup
     assert "Not available" in markup
     assert "Disconnected" in markup
     assert 'data-action="connect">Connect</button>' in markup
+    assert "Garage Grill" in markup
+
+
+def test_grill_picture_controls_show_existing_previews() -> None:
+    grills = json.dumps([{
+        "id": "one", "name": "Patio Grill", "maker": "Masterbuilt",
+        "model": "Gravity Series 800", "device_status": "available",
+        "connection_status": "connected", "equipment_id": 7,
+        "photo_url": "/api/equipment/7/photo", "logo_url": "/api/equipment/7/logo",
+    }])
+    markup = run_logic(f"console.log(JSON.stringify(logic.renderGrills({grills})))")
+    assert 'data-image-kind="photo"' in markup
+    assert 'src="/api/equipment/7/photo"' in markup
+    assert 'data-image-kind="logo"' in markup
+    assert 'src="/api/equipment/7/logo"' in markup
+    assert markup.count(">Remove</button>") == 2
 
 
 def test_server_message_is_rendered_next_to_its_grill() -> None:
