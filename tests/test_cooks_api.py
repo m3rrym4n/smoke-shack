@@ -9,7 +9,19 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api import create_app
 from app.config import Settings
-from app.models import Cook, Event, Meat, Note, Pellet, Photo, Profile, Sample, Spice, cook_spices
+from app.models import (
+    Cook,
+    Equipment,
+    Event,
+    Meat,
+    Note,
+    Pellet,
+    Photo,
+    Profile,
+    Sample,
+    Spice,
+    cook_spices,
+)
 
 
 def _cook(started_at: datetime, **values: object) -> Cook:
@@ -177,6 +189,44 @@ def test_list_cooks_filters_and_paginates(sessions: sessionmaker[Session]) -> No
 
     assert all_cooks[0]["id"] == active_id
     assert all_cooks[0]["current_setpoint"] == 275
+
+
+def test_cook_list_includes_each_grill_and_allows_missing_equipment(
+    sessions: sessionmaker[Session],
+) -> None:
+    started = datetime(2026, 10, 16, 12, 0, tzinfo=UTC)
+    with sessions() as session:
+        gmg = session.query(Equipment).one()
+        gmg.maker = "Green Mountain Grills"
+        gmg.model = "Daniel Boone"
+        masterbuilt = Equipment(
+            nickname="Patio Grill",
+            maker="Masterbuilt",
+            model="Gravity Series 800",
+            type="charcoal",
+            fuel_type="charcoal",
+            units="F",
+            connected=False,
+        )
+        session.add(masterbuilt)
+        session.flush()
+        session.add_all(
+            [
+                _cook(started, equipment_id=gmg.id),
+                _cook(started + timedelta(hours=1), equipment_id=masterbuilt.id),
+                _cook(started + timedelta(hours=2), equipment_id=None),
+            ]
+        )
+        session.commit()
+
+    with TestClient(create_app(Settings(), sessions)) as client:
+        cooks = client.get("/api/cooks").json()
+
+    assert [(cook["grill_manufacturer"], cook["grill_model"]) for cook in cooks] == [
+        (None, None),
+        ("Masterbuilt", "Gravity Series 800"),
+        ("Green Mountain Grills", "Daniel Boone"),
+    ]
 
 
 def test_delete_cook_rejects_active_and_removes_children(
