@@ -147,6 +147,7 @@ class HomeAssistantClient:
         }
         if legacy:
             ids.update(self.entities.all)
+        ids.update(equipment.status_entities.values())
         return ids
 
     def refresh_watch_list(self) -> bool:

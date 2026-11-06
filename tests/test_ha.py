@@ -271,6 +271,35 @@ def test_switching_connected_equipment_refreshes_watch_list(
     assert client.entity_ids == {"sensor.second"}
 
 
+def test_connected_equipment_status_entities_are_watched(sessions) -> None:
+    from app.models import EquipmentEntity
+
+    equipment_id = set_connected_channels(sessions, [("pit", "sensor.mb_pit", None)])
+    with sessions() as session:
+        equipment = session.get(Equipment, equipment_id)
+        assert equipment is not None
+        equipment.stale_after_seconds = 600
+        equipment.entities = [
+            EquipmentEntity(role="power", entity_id="binary_sensor.mb_power"),
+            EquipmentEntity(role="last_reported", entity_id="sensor.mb_last_reported"),
+        ]
+        session.commit()
+    client = HomeAssistantClient("http://ha", "token", entity_config(), sessions=sessions)
+
+    assert client.refresh_watch_list()
+    assert client.entity_ids == {
+        "sensor.mb_pit",
+        "binary_sensor.mb_power",
+        "sensor.mb_last_reported",
+    }
+    assert client._equipment is not None
+    assert client._equipment.status_entities == {
+        "power": "binary_sensor.mb_power",
+        "last_reported": "sensor.mb_last_reported",
+    }
+    assert client._equipment.stale_after_seconds == 600
+
+
 def test_connected_nonlegacy_grill_starts_no_cook_and_logs_once(
     sessions: sessionmaker[Session], clock: FakeClock, caplog: pytest.LogCaptureFixture
 ) -> None:

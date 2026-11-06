@@ -4,6 +4,7 @@ model: Gravity 800
 type: pellet
 fuel_type: charcoal
 units: F
+stale_after_seconds: 600
 device_match:
   manufacturer: Masterbuilt
   model: Gravity Series 800

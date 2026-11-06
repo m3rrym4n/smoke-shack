@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.api import create_app
 from app.config import Settings
 from app.ha import HARegistrySnapshot, HAStatus
-from app.models import ChannelReading, Cook, Equipment, Sample
+from app.models import ChannelReading, Cook, Equipment, EquipmentEntity, Sample
 from app.service import GrillSnapshot
 
 
@@ -28,7 +28,9 @@ class RegistryHAClient:
         return self.snapshot
 
 
-def registry_snapshot(*, unavailable: bool = False) -> HARegistrySnapshot:
+def registry_snapshot(
+    *, unavailable: bool = False, include_problem: bool = True
+) -> HARegistrySnapshot:
     state = "unavailable" if unavailable else "unknown"
     return HARegistrySnapshot(
         devices=(
@@ -88,6 +90,34 @@ def registry_snapshot(*, unavailable: bool = False) -> HARegistrySnapshot:
                     "original_name": f"Probe{number} Target",
                 }
                 for number in range(1, 5)
+            ),
+            *tuple(
+                {
+                    "entity_id": f"{domain}.mb_{role}",
+                    "device_id": "masterbuilt-device",
+                    "unique_id": f"mock_masterbuilt_gravity_series_800_1_{suffix}",
+                    "original_name": suffix.replace("_", " "),
+                }
+                for role, domain, suffix in (
+                    ("power", "binary_sensor", "power"),
+                    ("heating", "binary_sensor", "heating"),
+                    ("lid_open", "binary_sensor", "lid_open"),
+                    ("door_open", "binary_sensor", "door_open"),
+                    ("last_reported", "sensor", "last_reported"),
+                    ("cook_start", "sensor", "cook_start"),
+                )
+            ),
+            *(
+                (
+                    {
+                        "entity_id": "binary_sensor.mb_problem",
+                        "device_id": "masterbuilt-device",
+                        "unique_id": "mock_masterbuilt_gravity_series_800_1_problem",
+                        "original_name": "Problem",
+                    },
+                )
+                if include_problem
+                else ()
             ),
             {
                 "entity_id": "light.kitchen",
@@ -236,6 +266,16 @@ def test_connect_creates_profile_equipment_and_switches_atomically(sessions) -> 
             "probe3",
             "probe4",
         ]
+        assert equipment[1].stale_after_seconds == 600
+        assert {entity.role: entity.entity_id for entity in equipment[1].entities} == {
+            "power": "binary_sensor.mb_power",
+            "heating": "binary_sensor.mb_heating",
+            "lid_open": "binary_sensor.mb_lid_open",
+            "door_open": "binary_sensor.mb_door_open",
+            "error": "binary_sensor.mb_problem",
+            "last_reported": "sensor.mb_last_reported",
+            "cook_start": "sensor.mb_cook_start",
+        }
 
     cook = app.state.cook_service.process(
         GrillSnapshot(
@@ -252,6 +292,28 @@ def test_connect_creates_profile_equipment_and_switches_atomically(sessions) -> 
     assert cook is not None and cook.equipment_id == 2
     with sessions() as session:
         assert len(session.scalars(select(ChannelReading)).all()) == 5
+
+
+def test_reconnect_does_not_duplicate_status_entities_and_missing_problem_is_ok(
+    sessions,
+) -> None:
+    app = create_app(
+        Settings(), sessions, RegistryHAClient(registry_snapshot(include_problem=False))
+    )
+
+    with TestClient(app) as client:
+        first = client.post("/api/grills/masterbuilt-device/connect")
+        second = client.post("/api/grills/masterbuilt-device/connect")
+
+    assert first.status_code == second.status_code == 200
+    with sessions() as session:
+        equipment = session.scalars(select(Equipment).where(Equipment.model == "Gravity 800")).one()
+        entities = session.scalars(
+            select(EquipmentEntity).where(EquipmentEntity.equipment_id == equipment.id)
+        ).all()
+        assert len(entities) == 6
+        assert "error" not in {entity.role for entity in entities}
+        assert equipment.stale_after_seconds == 600
 
 
 def test_connect_and_disconnect_are_blocked_during_active_cook(sessions) -> None:

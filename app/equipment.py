@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -17,6 +17,8 @@ class WatchedChannel:
 class ConnectedEquipment:
     id: int
     channels: tuple[WatchedChannel, ...]
+    status_entities: dict[str, str] = field(default_factory=dict)
+    stale_after_seconds: int | None = None
 
 
 def first_equipment_id(session: Session) -> int:
@@ -30,7 +32,7 @@ def connected_equipment_id(session: Session) -> int | None:
 def connected_equipment(session: Session) -> ConnectedEquipment | None:
     equipment = session.scalar(
         select(Equipment)
-        .options(selectinload(Equipment.channels))
+        .options(selectinload(Equipment.channels), selectinload(Equipment.entities))
         .where(Equipment.connected.is_(True))
     )
     if equipment is None:
@@ -41,4 +43,6 @@ def connected_equipment(session: Session) -> ConnectedEquipment | None:
             WatchedChannel(channel.key, channel.source_entity, channel.target_entity)
             for channel in equipment.channels
         ),
+        status_entities={entity.role: entity.entity_id for entity in equipment.entities},
+        stale_after_seconds=equipment.stale_after_seconds,
     )

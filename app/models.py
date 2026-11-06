@@ -135,10 +135,14 @@ class Equipment(Base):
     fuel_type: Mapped[str | None]
     units: Mapped[str] = mapped_column(String(1), default="F")
     connected: Mapped[bool] = mapped_column(default=False)
+    stale_after_seconds: Mapped[int | None]
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)
     channels: Mapped[list[Channel]] = relationship(
         back_populates="equipment", cascade="all, delete-orphan", order_by="Channel.position"
+    )
+    entities: Mapped[list[EquipmentEntity]] = relationship(
+        back_populates="equipment", cascade="all, delete-orphan"
     )
     cooks: Mapped[list[Cook]] = relationship(back_populates="equipment")
 
@@ -161,6 +165,18 @@ class Channel(Base):
     position: Mapped[int]
     equipment: Mapped[Equipment] = relationship(back_populates="channels")
     readings: Mapped[list[ChannelReading]] = relationship(back_populates="channel")
+
+
+class EquipmentEntity(Base):
+    __tablename__ = "equipment_entities"
+    __table_args__ = (
+        UniqueConstraint("equipment_id", "role", name="uq_equipment_entities_equipment_role"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    equipment_id: Mapped[int] = mapped_column(ForeignKey("equipment.id", ondelete="CASCADE"))
+    role: Mapped[str]
+    entity_id: Mapped[str]
+    equipment: Mapped[Equipment] = relationship(back_populates="entities")
 
 
 def _duration(start: datetime | None, end: datetime | None) -> int | None:
