@@ -178,6 +178,8 @@ def test_lists_profile_match_and_existing_equipment(sessions) -> None:
         "profile_id": "masterbuilt-gravity-800",
         "device_status": "available",
         "equipment_id": None,
+        "photo_url": None,
+        "logo_url": None,
         "connection_status": "disconnected",
     }
     assert grills[1]["id"] == "gmg-device"
@@ -204,7 +206,9 @@ def test_profile_device_is_not_available_when_all_main_entities_are_unavailable(
             "model": "Gravity Series 800",
             "profile_id": "masterbuilt-gravity-800",
             "device_status": "not_available",
-            "equipment_id": None,
+                "equipment_id": None,
+                "photo_url": None,
+                "logo_url": None,
             "connection_status": "disconnected",
         }
     ]

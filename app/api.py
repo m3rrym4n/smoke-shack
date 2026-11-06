@@ -26,9 +26,10 @@ from app.database import make_engine, make_session_factory
 from app.deps import get_session
 from app.grill_profiles import load_grill_profiles
 from app.ha import HAClient, HAStatus, HomeAssistantClient, ingest
-from app.models import Cook, Sample
+from app.models import Cook, Equipment, Sample
 from app.restore import restore_backup
 from app.routes.cooks import router as cooks_router
+from app.routes.equipment import router as equipment_router
 from app.routes.events import router as events_router
 from app.routes.export import router as export_router
 from app.routes.fuel import router as fuel_router
@@ -145,11 +146,33 @@ def create_app(
             .order_by(Cook.started_at.desc())
         )
         last_sample = session.scalar(select(Sample.ts).order_by(Sample.ts.desc()).limit(1))
-        fallback_name = ha_status.grill_name or config.grill_name.strip() or "My grill"
+        connected_grill = session.scalar(select(Equipment).where(Equipment.connected.is_(True)))
+        if connected_grill is not None:
+            grill_name = connected_grill.nickname
+            grill_title = connected_grill.model or connected_grill.nickname or ""
+            grill_maker = connected_grill.maker
+            grill_photo_url = (
+                f"/api/equipment/{connected_grill.id}/photo"
+                if connected_grill.photo_path is not None
+                else None
+            )
+            grill_logo_url = (
+                f"/api/equipment/{connected_grill.id}/logo"
+                if connected_grill.logo_path is not None
+                else None
+            )
+        else:
+            grill_name = ""
+            grill_title = ""
+            grill_maker = None
+            grill_photo_url = None
+            grill_logo_url = None
         return {
-            "grill_name": fallback_name,
-            "grill_title": ha_status.grill_title or fallback_name,
-            "grill_maker": ha_status.grill_maker,
+            "grill_name": grill_name,
+            "grill_title": grill_title,
+            "grill_maker": grill_maker,
+            "photo_url": grill_photo_url,
+            "logo_url": grill_logo_url,
             "ha": {
                 "configured": ha_status.configured,
                 "connected": ha_status.connected,
@@ -216,6 +239,7 @@ def create_app(
     app.include_router(spices_router)
     app.include_router(notes_router)
     app.include_router(events_router)
+    app.include_router(equipment_router)
     app.include_router(profiles_router)
     app.include_router(cooks_router)
     app.include_router(photos_router)

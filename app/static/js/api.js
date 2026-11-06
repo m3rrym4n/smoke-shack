@@ -54,24 +54,20 @@ export function disconnectGrill(grillId) {
   return sendJson("POST", `/api/grills/${encodeURIComponent(grillId)}/disconnect`);
 }
 
+export function uploadEquipmentImage(equipmentId, kind, file) {
+  const body = new FormData();
+  body.append("file", file);
+  return requestJson(`/api/equipment/${equipmentId}/${kind}`, { method: "POST", body });
+}
+
+export function deleteEquipmentImage(equipmentId, kind) {
+  return requestJson(`/api/equipment/${equipmentId}/${kind}`, { method: "DELETE" });
+}
+
 export function restoreBackup(file) {
   const body = new FormData();
   body.append("file", file);
   return requestJson("/api/restore", { method: "POST", body });
-}
-
-export function getShowcase() {
-  return getJson("/api/showcase");
-}
-
-export function uploadShowcaseImage(kind, file) {
-  const body = new FormData();
-  body.append("file", file);
-  return requestJson(`/api/showcase/${kind}`, { method: "PUT", body });
-}
-
-export function deleteShowcaseImage(kind) {
-  return requestJson(`/api/showcase/${kind}`, { method: "DELETE" });
 }
 
 export function getCook(cookId) {

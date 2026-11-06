@@ -64,10 +64,15 @@ def test_restore_round_trip_rewrites_paths_and_creates_safety_copy(
     _migrate(source_db)
     cook_photo = source_photos / "1" / "cook.jpg"
     meat_photo = source_photos / "meat" / "1.jpg"
+    equipment_photo = source_photos / "equipment" / "1" / "photo.webp"
+    equipment_logo = source_photos / "equipment" / "1" / "logo.png"
     cook_photo.parent.mkdir(parents=True)
     meat_photo.parent.mkdir(parents=True)
+    equipment_photo.parent.mkdir(parents=True)
     cook_photo.write_bytes(b"cook-photo")
     meat_photo.write_bytes(b"meat-photo")
+    equipment_photo.write_bytes(b"equipment-photo")
+    equipment_logo.write_bytes(b"equipment-logo")
     now = "2026-10-31T12:00:00Z"
     with sqlite3.connect(source_db) as connection:
         connection.execute(
@@ -91,6 +96,10 @@ def test_restore_round_trip_rewrites_paths_and_creates_safety_copy(
         connection.execute(
             "INSERT INTO photos (id,cook_id,event_id,path) VALUES (1,1,1,?)",
             (str(cook_photo),),
+        )
+        connection.execute(
+            "UPDATE equipment SET photo_path = ?, logo_path = ? WHERE id = 1",
+            (str(equipment_photo), str(equipment_logo)),
         )
         connection.commit()
     archive = _archive_bytes(
@@ -118,7 +127,7 @@ def test_restore_round_trip_rewrites_paths_and_creates_safety_copy(
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["tables"]["cooks"] == 1
-    assert result["photo_count"] == 2
+    assert result["photo_count"] == 4
     assert result["schema_revision_before"] == result["schema_revision_after"]
     assert (live_db.parent / result["safety_copy"]).is_file()
     assert not (live_photos / "obsolete.jpg").exists()
@@ -133,6 +142,16 @@ def test_restore_round_trip_rewrites_paths_and_creates_safety_copy(
         assert connection.execute("SELECT photo_path FROM meat").fetchone() == (
             str(live_photos / "meat" / "1.jpg"),
         )
+        assert connection.execute(
+            "SELECT photo_path, logo_path FROM equipment WHERE id = 1"
+        ).fetchone() == (
+            str(live_photos / "equipment" / "1" / "photo.webp"),
+            str(live_photos / "equipment" / "1" / "logo.png"),
+        )
+    assert (live_photos / "equipment" / "1" / "photo.webp").read_bytes() == (
+        b"equipment-photo"
+    )
+    assert (live_photos / "equipment" / "1" / "logo.png").read_bytes() == b"equipment-logo"
 
 
 def test_restore_keeps_fuel_photos_in_their_stored_folders(tmp_path: Path, monkeypatch) -> None:

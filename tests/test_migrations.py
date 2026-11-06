@@ -102,10 +102,60 @@ def test_empty_database_upgrades_to_complete_head(tmp_path: Path, monkeypatch: o
     assert "channels" in schema.get_table_names()
     assert "equipment_entities" in schema.get_table_names()
     assert "stale_after_seconds" in {column["name"] for column in schema.get_columns("equipment")}
+    assert {"photo_path", "logo_path"} <= {
+        column["name"] for column in schema.get_columns("equipment")
+    }
     with create_engine(f"sqlite:///{database}").connect() as connection:
         assert connection.execute(text("SELECT nickname FROM equipment")).scalar_one() == "Grill"
         assert connection.execute(text("SELECT count(*) FROM channels")).scalar_one() == 3
         assert connection.execute(text("SELECT count(*) FROM equipment_entities")).scalar_one() == 0
+
+
+def test_equipment_images_migration_converts_legacy_showcase(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "smoke.db"
+    photos = tmp_path / "photos"
+    showcase = tmp_path / "showcase"
+    showcase.mkdir()
+    (showcase / "photo.jpg").write_bytes(b"legacy-photo")
+    (showcase / "logo.png").write_bytes(b"legacy-logo")
+    monkeypatch.setenv("DATABASE_PATH", str(database))
+    monkeypatch.setenv("PHOTO_DIR", str(photos))
+    command.upgrade(migration_config(), "f5c8d2a9146e")
+
+    command.upgrade(migration_config(), "head")
+
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.connect() as connection:
+        photo_path, logo_path = connection.execute(
+            text("SELECT photo_path, logo_path FROM equipment")
+        ).one()
+    assert Path(photo_path).read_bytes() == b"legacy-photo"
+    assert Path(logo_path).read_bytes() == b"legacy-logo"
+    assert (showcase / "photo.jpg").is_file()
+    assert (showcase / "logo.png").is_file()
+
+    command.downgrade(migration_config(), "f5c8d2a9146e")
+    assert {"photo_path", "logo_path"}.isdisjoint(
+        column["name"] for column in inspect(engine).get_columns("equipment")
+    )
+
+
+def test_equipment_images_migration_with_no_showcase_creates_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "smoke.db"
+    photos = tmp_path / "photos"
+    monkeypatch.setenv("DATABASE_PATH", str(database))
+    monkeypatch.setenv("PHOTO_DIR", str(photos))
+    command.upgrade(migration_config(), "head")
+
+    with create_engine(f"sqlite:///{database}").connect() as connection:
+        assert connection.execute(
+            text("SELECT photo_path, logo_path FROM equipment")
+        ).one() == (None, None)
+    assert not (photos / "equipment").exists()
 
 
 def test_equipment_entities_migration_upgrades_and_downgrades_existing_database(

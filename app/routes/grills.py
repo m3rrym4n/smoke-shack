@@ -30,6 +30,8 @@ class GrillResponse(BaseModel):
     profile_id: str | None
     device_status: Literal["available", "not_available"]
     equipment_id: int | None
+    photo_url: str | None
+    logo_url: str | None
     connection_status: Literal["connected", "disconnected"]
 
 
@@ -248,6 +250,16 @@ def _visible_grills(
                 profile_id=profile.id if profile else None,
                 device_status="available" if available else "not_available",
                 equipment_id=matched_equipment.id if matched_equipment else None,
+                photo_url=(
+                    f"/api/equipment/{matched_equipment.id}/photo"
+                    if matched_equipment is not None and matched_equipment.photo_path is not None
+                    else None
+                ),
+                logo_url=(
+                    f"/api/equipment/{matched_equipment.id}/logo"
+                    if matched_equipment is not None and matched_equipment.logo_path is not None
+                    else None
+                ),
                 connection_status=(
                     "connected"
                     if matched_equipment is not None and matched_equipment.connected
