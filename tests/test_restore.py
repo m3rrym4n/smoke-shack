@@ -135,6 +135,82 @@ def test_restore_round_trip_rewrites_paths_and_creates_safety_copy(
         )
 
 
+def test_restore_keeps_fuel_photos_in_their_stored_folders(tmp_path: Path, monkeypatch) -> None:
+    source_db = tmp_path / "source.db"
+    source_photos = tmp_path / "source-photos"
+    _migrate(source_db)
+    stored_photos = {
+        1: source_photos / "pellets" / "1.jpg",
+        2: source_photos / "fuel" / "2.jpg",
+    }
+    for item_id, photo in stored_photos.items():
+        photo.parent.mkdir(parents=True, exist_ok=True)
+        photo.write_bytes(f"fuel-photo-{item_id}".encode())
+    with sqlite3.connect(source_db) as connection:
+        connection.executemany(
+            "INSERT INTO fuel "
+            "(id,type,vendor,product_name,price_per_pound,purchased_on,photo_path) "
+            "VALUES (?,'pellets','Vendor',?,1.5,'2026-10-15',?)",
+            [(item_id, f"Fuel {item_id}", str(photo)) for item_id, photo in stored_photos.items()],
+        )
+        connection.commit()
+    archive = _archive_bytes(
+        build_backup(source_db, source_photos, tmp_path / "source-showcase", "test")
+    )
+
+    live_db = tmp_path / "live.db"
+    live_photos = tmp_path / "live-photos"
+    _migrate(live_db)
+    with _client(live_db, live_photos, monkeypatch) as client:
+        response = client.post("/api/restore", files={"file": ("backup.zip", archive)})
+
+        assert response.status_code == 200, response.text
+        for item_id, source_photo in stored_photos.items():
+            restored_photo = live_photos / source_photo.parent.name / source_photo.name
+            assert restored_photo.is_file()
+            assert client.get(f"/api/fuel/{item_id}/photo").content == source_photo.read_bytes()
+
+    with sqlite3.connect(live_db) as connection:
+        assert connection.execute("SELECT id,photo_path FROM fuel ORDER BY id").fetchall() == [
+            (1, str(live_photos / "pellets" / "1.jpg")),
+            (2, str(live_photos / "fuel" / "2.jpg")),
+        ]
+
+
+def test_restore_migrates_old_pellet_photo_in_pellets_folder(tmp_path: Path, monkeypatch) -> None:
+    old_db = tmp_path / "old.db"
+    old_photos = tmp_path / "old-photos"
+    old_photo = old_photos / "pellets" / "3.jpg"
+    old_photo.parent.mkdir(parents=True)
+    old_photo.write_bytes(b"legacy-pellet-photo")
+    _migrate(old_db, "f5c8d2a9146e")
+    with sqlite3.connect(old_db) as connection:
+        connection.execute(
+            "INSERT INTO pellets "
+            "(id,vendor,product_name,price_per_pound,purchased_on,photo_path) "
+            "VALUES (3,'Legacy','Oak',1.5,'2026-10-15',?)",
+            (str(old_photo),),
+        )
+        connection.commit()
+    archive = _archive_bytes(build_backup(old_db, old_photos, tmp_path / "old-showcase", "old"))
+
+    live_db = tmp_path / "live.db"
+    live_photos = tmp_path / "live-photos"
+    _migrate(live_db)
+    with _client(live_db, live_photos, monkeypatch) as client:
+        response = client.post("/api/restore", files={"file": ("old.zip", archive)})
+
+        assert response.status_code == 200, response.text
+        restored_photo = live_photos / "pellets" / "3.jpg"
+        assert restored_photo.is_file()
+        assert client.get("/api/fuel/3/photo").content == b"legacy-pellet-photo"
+
+    with sqlite3.connect(live_db) as connection:
+        assert connection.execute("SELECT photo_path FROM fuel WHERE id = 3").fetchone() == (
+            str(live_photos / "pellets" / "3.jpg"),
+        )
+
+
 def test_restore_round_trip_includes_showcase_images(tmp_path: Path, monkeypatch) -> None:
     source_root = tmp_path / "source"
     source_root.mkdir()
@@ -346,9 +422,14 @@ def test_restore_migrates_older_revision(tmp_path: Path, monkeypatch) -> None:
     _migrate(old_db, "ef36b629902e")
     with sqlite3.connect(old_db) as connection:
         connection.execute(
+            "INSERT INTO pellets (id,vendor,product_name,price_per_pound,purchased_on) "
+            "VALUES (3,'Legacy','Oak',1.5,'2026-10-15')"
+        )
+        connection.execute(
             "INSERT INTO cooks "
-            "(started_at, status, rotisserie, has_gap, incomplete, created_at, updated_at) "
-            "VALUES ('2026-10-16T16:57:03Z', 'closed', 0, 0, 0, "
+            "(started_at, status, pellet_id, rotisserie, has_gap, incomplete, "
+            "created_at, updated_at) "
+            "VALUES ('2026-10-16T16:57:03Z', 'closed', 3, 0, 0, 0, "
             "'2026-10-16T16:57:03Z', '2026-10-16T16:57:03Z')"
         )
         connection.execute(
@@ -367,12 +448,14 @@ def test_restore_migrates_older_revision(tmp_path: Path, monkeypatch) -> None:
     assert response.json()["schema_revision_before"] == "ef36b629902e"
     assert response.json()["schema_revision_after"] != "ef36b629902e"
     with sqlite3.connect(live_db) as connection:
-        columns = {row[1] for row in connection.execute("PRAGMA table_info(pellets)")}
-        assert {"upc", "bag_size_lb", "emptied_on"} <= columns
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(fuel)")}
+        assert {"type", "upc", "bag_size_lb", "emptied_on"} <= columns
         emptied_count = connection.execute(
-            "SELECT COUNT(*) FROM pellets WHERE emptied_on IS NOT NULL"
+            "SELECT COUNT(*) FROM fuel WHERE emptied_on IS NOT NULL"
         ).fetchone()[0]
         assert emptied_count == 0
+        assert connection.execute("SELECT id,type FROM fuel").fetchone() == (3, "pellets")
+        assert connection.execute("SELECT fuel_id FROM cooks").fetchone() == (3,)
         readings = connection.execute(
             "SELECT channels.key, channel_readings.value, channel_readings.target "
             "FROM channel_readings JOIN channels ON channels.id = channel_readings.channel_id "

@@ -73,10 +73,13 @@ def test_cook_list_and_detail_include_journal_and_linked_summaries(
     }
     assert listed["pellet"] == {
         "id": pellet.id,
+        "type": "pellets",
         "vendor": "Bear Mountain",
         "product_name": "Hickory",
         "price_per_pound": 1.4,
     }
+    assert listed["fuel"] == listed["pellet"]
+    assert listed["fuel_id"] == pellet.id
     assert listed["profile_name"] == "Pulled Pork"
     assert listed["rotisserie"] is True
     assert listed["seasonings"] == "Salt"

@@ -204,7 +204,7 @@ def test_all_json_shape_excludes_samples_and_photo_binaries(
     assert response.status_code == 200
     assert "smoke-stack-" in response.headers["content-disposition"]
     exported = response.json()
-    assert set(exported) == {"cooks", "meat", "pellets", "profiles", "notes"}
+    assert set(exported) == {"cooks", "meat", "fuel", "profiles", "notes"}
     assert "samples" not in exported["cooks"][0]
     assert exported["cooks"][0]["exclude_from_stats"] is True
     assert exported["cooks"][0]["events"][0]["elapsed_seconds"] == 300

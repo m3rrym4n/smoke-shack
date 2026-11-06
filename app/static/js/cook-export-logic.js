@@ -15,7 +15,8 @@ export function cookStatusBadgeMarkup(cook) {
 
 export function pelletLine(pellet) {
   const name = [clean(pellet?.vendor), clean(pellet?.product_name)].filter(Boolean).join(" ");
-  return name ? `${name} Pellets` : "";
+  const type = clean(pellet?.type || "pellets");
+  return name ? `${name} (${type[0].toUpperCase() + type.slice(1)})` : "";
 }
 
 export function weightText(pounds) {

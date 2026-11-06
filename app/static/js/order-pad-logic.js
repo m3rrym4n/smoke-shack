@@ -11,10 +11,11 @@ export function meatOptionLabel(item) {
 }
 
 export function pelletOptionLabel(item) {
-  return `${item.vendor}, ${item.product_name}`;
+  const type = item.type ? item.type[0].toUpperCase() + item.type.slice(1) : "Pellets";
+  return `${item.vendor}, ${item.product_name} (${type})`;
 }
 
 export function validatePelletsUsed(value) {
   if (value === "") return "";
-  return Number.isFinite(Number(value)) && Number(value) >= 0 ? "" : "Pellets used must be zero or greater.";
+  return Number.isFinite(Number(value)) && Number(value) >= 0 ? "" : "Fuel used must be zero or greater.";
 }

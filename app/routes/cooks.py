@@ -16,9 +16,9 @@ from app.models import (
     ChannelReading,
     Cook,
     Event,
+    Fuel,
     Meat,
     Note,
-    Pellet,
     Photo,
     Profile,
     Sample,
@@ -45,7 +45,7 @@ def _get_cook(cook_id: int, session: Session) -> Cook:
 
 def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> dict[str, Any]:
     meat = session.get(Meat, cook.meat_id) if cook.meat_id is not None else None
-    pellet = session.get(Pellet, cook.pellet_id) if cook.pellet_id is not None else None
+    fuel = session.get(Fuel, cook.fuel_id) if cook.fuel_id is not None else None
     profile = session.get(Profile, cook.profile_id) if cook.profile_id is not None else None
     latest_sample = session.scalar(
         select(Sample)
@@ -71,7 +71,8 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
         "status": cook.status,
         "state": cook.status,
         "meat_id": cook.meat_id,
-        "pellet_id": cook.pellet_id,
+        "fuel_id": cook.fuel_id,
+        "pellet_id": cook.fuel_id,
         "profile_id": cook.profile_id,
         "rotisserie": cook.rotisserie,
         "seasonings": cook.seasonings,
@@ -102,14 +103,15 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
             if meat is not None
             else None
         ),
-        "pellet": (
+        "fuel": (
             {
-                "id": pellet.id,
-                "vendor": pellet.vendor,
-                "product_name": pellet.product_name,
-                "price_per_pound": float(pellet.price_per_pound),
+                "id": fuel.id,
+                "type": fuel.type,
+                "vendor": fuel.vendor,
+                "product_name": fuel.product_name,
+                "price_per_pound": float(fuel.price_per_pound),
             }
-            if pellet is not None
+            if fuel is not None
             else None
         ),
         "profile_name": profile.name if profile is not None else None,
@@ -129,15 +131,17 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
     }
     if include_cost:
         meat_cost = meat.pounds * meat.price_per_pound if meat is not None else None
-        pellet_cost = (
-            Decimal(str(cook.pellets_used_lb)) * pellet.price_per_pound
-            if pellet is not None and cook.pellets_used_lb is not None
+        fuel_cost = (
+            Decimal(str(cook.pellets_used_lb)) * fuel.price_per_pound
+            if fuel is not None and cook.pellets_used_lb is not None
             else None
         )
         result["cost"] = {
             "meat_cost": float(round(meat_cost, 2)) if meat_cost is not None else None,
-            "pellet_cost": float(round(pellet_cost, 2)) if pellet_cost is not None else None,
+            "pellet_cost": float(round(fuel_cost, 2)) if fuel_cost is not None else None,
         }
+    # Pellet fields remain until the pantry UI moves to the fuel API.
+    result["pellet"] = result["fuel"] if fuel is not None and fuel.type == "pellets" else None
     return result
 
 
@@ -145,6 +149,7 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
 def list_cooks(
     session: SessionDep,
     meat_id: int | None = None,
+    fuel_id: int | None = None,
     pellet_id: int | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
     state: str | None = None,
@@ -154,8 +159,9 @@ def list_cooks(
     query = select(Cook)
     if meat_id is not None:
         query = query.where(Cook.meat_id == meat_id)
-    if pellet_id is not None:
-        query = query.where(Cook.pellet_id == pellet_id)
+    requested_fuel_id = fuel_id if fuel_id is not None else pellet_id
+    if requested_fuel_id is not None:
+        query = query.where(Cook.fuel_id == requested_fuel_id)
     requested_state = state if state is not None else status_filter
     if requested_state is not None:
         query = query.where(Cook.status == requested_state)
@@ -170,7 +176,7 @@ def list_cooks(
 def _validate_references(changes: dict[str, Any], session: Session) -> None:
     references = (
         ("meat_id", Meat, "Meat"),
-        ("pellet_id", Pellet, "Pellet"),
+        ("fuel_id", Fuel, "Fuel"),
         ("profile_id", Profile, "Profile"),
     )
     for field, model, label in references:
@@ -190,6 +196,9 @@ def _get_spices(spice_ids: list[int], session: Session) -> list[Spice]:
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_planned_cook(payload: PlannedCookCreate, session: SessionDep) -> dict[str, Any]:
     values = payload.model_dump(exclude={"state", "spice_ids"})
+    legacy_fuel_id = values.pop("pellet_id", None)
+    if values.get("fuel_id") is None:
+        values["fuel_id"] = legacy_fuel_id
     _validate_references(values, session)
     cook = Cook(
         started_at=None,
@@ -223,6 +232,9 @@ def get_cook(cook_id: int, session: SessionDep) -> dict[str, Any]:
 def update_cook(cook_id: int, payload: CookUpdate, session: SessionDep) -> dict[str, Any]:
     cook = _get_cook(cook_id, session)
     changes = payload.model_dump(exclude_unset=True)
+    legacy_fuel_id = changes.pop("pellet_id", None)
+    if "fuel_id" not in changes and legacy_fuel_id is not None:
+        changes["fuel_id"] = legacy_fuel_id
     spice_ids = changes.pop("spice_ids", None)
     _validate_references(changes, session)
     for field, value in changes.items():

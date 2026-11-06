@@ -160,6 +160,15 @@ export function getPellets(upc = "", includeEmpty = false) {
   return getJson(`/api/pellets${query ? `?${query}` : ""}`);
 }
 
+export function getFuel(type = "", upc = "", includeEmpty = false) {
+  const params = new URLSearchParams();
+  if (type) params.set("type", type);
+  if (upc) params.set("upc", upc);
+  if (includeEmpty) params.set("include_empty", "true");
+  const query = params.toString();
+  return getJson(`/api/fuel${query ? `?${query}` : ""}`);
+}
+
 export function getCookStats(params = new URLSearchParams()) {
   const query = params.toString();
   return getJson(`/api/stats/cooks${query ? `?${query}` : ""}`);
@@ -204,6 +213,18 @@ export function updatePellet(pelletId, body) {
 
 export function deletePellet(pelletId) {
   return sendJson("DELETE", `/api/pellets/${pelletId}`);
+}
+
+export function createFuel(body) {
+  return sendJson("POST", "/api/fuel", body);
+}
+
+export function updateFuel(fuelId, body) {
+  return sendJson("PATCH", `/api/fuel/${fuelId}`, body);
+}
+
+export function deleteFuel(fuelId) {
+  return sendJson("DELETE", `/api/fuel/${fuelId}`);
 }
 
 export function listSpices() {

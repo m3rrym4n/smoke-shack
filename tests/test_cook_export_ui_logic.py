@@ -91,7 +91,7 @@ def test_share_card_chart_omits_empty_pin_legend() -> None:
 def test_pellet_line_includes_vendor_product_and_suffix() -> None:
     pellet = {"vendor": "Bear Mountain", "product_name": "Hickory"}
     assert run(f"logic.pelletLine({json.dumps(pellet)})") == (
-        "Bear Mountain Hickory Pellets"
+        "Bear Mountain Hickory (Pellets)"
     )
     assert run("logic.pelletLine(null)") == ""
 

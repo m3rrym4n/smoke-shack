@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     Float,
@@ -21,7 +22,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 from sqlalchemy.types import TypeDecorator
 
 from app.database import Base
@@ -67,7 +68,8 @@ class Cook(Base):
     ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     status: Mapped[str] = mapped_column(String(20), default="startup")
     meat_id: Mapped[int | None] = mapped_column(ForeignKey("meat.id"))
-    pellet_id: Mapped[int | None] = mapped_column(ForeignKey("pellets.id"))
+    fuel_id: Mapped[int | None] = mapped_column(ForeignKey("fuel.id"))
+    pellet_id = synonym("fuel_id")
     profile_id: Mapped[int | None] = mapped_column(ForeignKey("profiles.id"))
     equipment_id: Mapped[int | None] = mapped_column(ForeignKey("equipment.id"))
     rotisserie: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -283,9 +285,13 @@ class MeatGroupType(Base):
 Index("uq_meat_groups_name_ci", func.lower(MeatGroup.name), unique=True)
 
 
-class Pellet(Base):
-    __tablename__ = "pellets"
+class Fuel(Base):
+    __tablename__ = "fuel"
+    __table_args__ = (
+        CheckConstraint("type IN ('pellets', 'charcoal', 'wood')", name="ck_fuel_type"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
+    type: Mapped[str] = mapped_column(String(10), nullable=False, default="pellets")
     vendor: Mapped[str]
     product_name: Mapped[str]
     price_per_pound: Mapped[Decimal] = mapped_column(Numeric(8, 2))
@@ -312,7 +318,11 @@ class Pellet(Base):
 
     @property
     def photo_url(self) -> str | None:
-        return _pantry_photo_url("pellets", self.id, self.photo_path)
+        return _pantry_photo_url("fuel", self.id, self.photo_path)
+
+
+# Temporary import compatibility for code that still calls pellet-only APIs.
+Pellet = Fuel
 
 
 class Spice(Base):

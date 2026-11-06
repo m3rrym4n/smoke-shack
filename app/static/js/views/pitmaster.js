@@ -1,6 +1,6 @@
 import {
   createMeatGroup, deleteMeatGroup, getCookStats, getCookStatsMeatTypes, getMeat,
-  getMeatGroups, getPellets, renameMeatGroup, replaceMeatGroupTypes,
+  getFuel, getMeatGroups, renameMeatGroup, replaceMeatGroupTypes,
 } from "../api.js";
 import { renderApiError } from "../components/ui.js";
 import {
@@ -93,7 +93,7 @@ export function mountPitmasterView(container) {
       <label class="fl"><span class="lb">Setpoint °F</span><input class="ci" name="setpoint" type="number" step="1" inputmode="numeric" value="${escapeHtml(filters.setpoint)}"></label>
       <label class="fl"><span class="lb">Plus or minus °F</span><input class="ci" name="tolerance" type="number" min="0" step="1" inputmode="numeric" value="${escapeHtml(filters.tolerance)}"></label>
       <label class="fl"><span class="lb">Rotisserie</span><select class="ci" name="rotisserie">${option("true", "Yes", filters.rotisserie)}${option("false", "No", filters.rotisserie)}</select></label>
-      <label class="fl"><span class="lb">Pellets</span><select class="ci" name="pellet_id"><option value="">Any pellets</option></select></label>
+      <label class="fl"><span class="lb">Fuel</span><select class="ci" name="pellet_id"><option value="">Any fuel</option></select></label>
       <div class="pitmaster-actions"><button class="pbtn" type="submit">Ask the pitmaster</button><a class="cc" href="${filtersToHash({})}">Clear filters</a><button class="cc manage-groups" type="button" aria-expanded="false">Manage groups</button></div>
       <p class="form-message" role="status"></p>
     </form>
@@ -128,10 +128,10 @@ export function mountPitmasterView(container) {
 
   async function load() {
     try {
-      const pellets = await getPellets();
+      const pellets = await getFuel();
       await refreshGroups();
       if (disposed) return;
-      const pelletOptions = pellets.map((item) => [String(item.id), `${item.vendor} - ${item.product_name}`])
+      const pelletOptions = pellets.map((item) => [String(item.id), `${item.vendor} - ${item.product_name} (${item.type[0].toUpperCase() + item.type.slice(1)})`])
         .sort((left, right) => left[1].localeCompare(right[1], undefined, { sensitivity: "base" }));
       form.elements.pellet_id.insertAdjacentHTML("beforeend", pelletOptions.map(([value, label]) => option(value, label, filters.pelletId)).join(""));
       const selectedGroup = groupData.groups.find((group) => String(group.id) === filters.meatGroup);

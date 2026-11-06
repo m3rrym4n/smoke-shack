@@ -217,6 +217,7 @@ def _replace_showcase(source: Path, destination: Path) -> None:
 
 
 def _rewrite_photo_paths(database: Path, photo_dir: Path) -> None:
+    allowed_pantry_directories = {"meat", "pellets", "fuel", "spices"}
     with sqlite3.connect(database) as connection:
         photos = connection.execute("SELECT id, cook_id, path FROM photos").fetchall()
         for photo_id, cook_id, old_path in photos:
@@ -226,12 +227,16 @@ def _rewrite_photo_paths(database: Path, photo_dir: Path) -> None:
             "UPDATE events SET photo_path = (SELECT path FROM photos "
             "WHERE photos.event_id = events.id LIMIT 1) WHERE photo_path IS NOT NULL"
         )
-        for table, directory in (("meat", "meat"), ("pellets", "pellets"), ("spices", "spices")):
+        for table, directory in (("meat", "meat"), ("fuel", "fuel"), ("spices", "spices")):
             rows = connection.execute(
                 f"SELECT id, photo_path FROM {table} WHERE photo_path IS NOT NULL"
             ).fetchall()
             for item_id, old_path in rows:
-                new_path = photo_dir / directory / Path(old_path).name
+                old_path = Path(old_path)
+                stored_directory = old_path.parent.name
+                if stored_directory not in allowed_pantry_directories:
+                    stored_directory = directory
+                new_path = photo_dir / stored_directory / old_path.name
                 connection.execute(
                     f"UPDATE {table} SET photo_path = ? WHERE id = ?",
                     (str(new_path), item_id),

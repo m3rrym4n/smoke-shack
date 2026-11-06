@@ -67,7 +67,11 @@ class MeatResponse(BaseModel):
     cooked: bool
 
 
-class PelletCreate(BaseModel):
+FuelType = Literal["pellets", "charcoal", "wood"]
+
+
+class FuelCreate(BaseModel):
+    type: FuelType
     vendor: NonEmptyStr
     product_name: NonEmptyStr
     price_per_pound: float = Field(ge=0)
@@ -79,7 +83,7 @@ class PelletCreate(BaseModel):
     _clean_upc = field_validator("upc", mode="before")(clean_upc)
 
     @model_validator(mode="after")
-    def validate_emptied_on(self) -> PelletCreate:
+    def validate_emptied_on(self) -> FuelCreate:
         if self.emptied_on is not None:
             if self.emptied_on < self.purchased_on:
                 raise ValueError("Empty date cannot be before purchase date")
@@ -88,7 +92,8 @@ class PelletCreate(BaseModel):
         return self
 
 
-class PelletUpdate(BaseModel):
+class FuelUpdate(BaseModel):
+    type: FuelType | None = None
     vendor: NonEmptyStr | None = None
     product_name: NonEmptyStr | None = None
     price_per_pound: float | None = Field(default=None, ge=0)
@@ -100,10 +105,11 @@ class PelletUpdate(BaseModel):
     _clean_upc = field_validator("upc", mode="before")(clean_upc)
 
 
-class PelletResponse(BaseModel):
+class FuelResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    type: FuelType
     vendor: str
     product_name: str
     price_per_pound: float
@@ -115,6 +121,17 @@ class PelletResponse(BaseModel):
     bag_cost: float | None
     has_photo: bool
     photo_url: str | None
+
+
+class PelletCreate(FuelCreate):
+    type: Literal["pellets"] = "pellets"
+
+
+class PelletUpdate(FuelUpdate):
+    type: Literal["pellets"] | None = None
+
+
+PelletResponse = FuelResponse
 
 
 class SpiceCreate(BaseModel):
@@ -158,6 +175,7 @@ class SpiceResponse(BaseModel):
 
 class CookUpdate(BaseModel):
     meat_id: int | None = None
+    fuel_id: int | None = None
     pellet_id: int | None = None
     profile_id: int | None = None
     rotisserie: bool | None = None
@@ -181,6 +199,7 @@ class CookUpdate(BaseModel):
 class PlannedCookCreate(BaseModel):
     state: Literal["planned"]
     meat_id: int | None = None
+    fuel_id: int | None = None
     pellet_id: int | None = None
     profile_id: int | None = None
     rotisserie: bool = False
