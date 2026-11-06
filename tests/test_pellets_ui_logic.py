@@ -33,6 +33,14 @@ def test_pellet_validation_accepts_free_pellets() -> None:
     assert run_logic(f"console.log(JSON.stringify(validatePellet({values})))") == {}
 
 
+def test_pellet_validation_accepts_missing_price() -> None:
+    values = (
+        '{type: "charcoal", vendor: "Local", product_name: "Lump", '
+        'price_per_pound: "", purchased_on: "2026-10-17"}'
+    )
+    assert run_logic(f"console.log(JSON.stringify(validatePellet({values})))") == {}
+
+
 def test_pellet_validation_rejects_missing_and_invalid_values() -> None:
     values = '{type: "", vendor: "", product_name: " ", price_per_pound: "-1", purchased_on: ""}'
     errors = run_logic(f"console.log(JSON.stringify(validatePellet({values})))")
@@ -103,6 +111,12 @@ def test_fuel_page_has_required_type_forms_filter_and_all_types() -> None:
     pantry = Path("app/static/js/views/pellets.js").read_text()
     assert '<h1 class="hd">Fuel</h1>' in pantry
     assert 'name="type" required' in pantry
+    assert "Price per pound <small>(optional)</small>" in pantry
+    price_input = (
+        'name="price_per_pound" type="number" min="0" step="0.01" '
+        'inputmode="decimal" value='
+    )
+    assert price_input in pantry
     assert 'name="type_filter"' in pantry
     assert '["pellets", "charcoal", "wood"]' in pantry
     assert "item.type[0].toUpperCase()" in pantry

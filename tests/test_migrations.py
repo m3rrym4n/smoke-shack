@@ -568,6 +568,33 @@ def test_pellet_emptied_on_migration_preserves_existing_rows(
     assert emptied_on is None
 
 
+def test_optional_fuel_price_migration_preserves_existing_prices(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    database = tmp_path / "optional-fuel-price.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))  # type: ignore[attr-defined]
+    config = Config("alembic.ini")
+    command.upgrade(config, "b1e7c4a92d6f")
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO fuel (type,vendor,product_name,price_per_pound,purchased_on) "
+                "VALUES ('pellets','Bear Mountain','Oak',1.25,'2026-10-16')"
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    column = next(
+        item for item in inspect(engine).get_columns("fuel") if item["name"] == "price_per_pound"
+    )
+    with engine.connect() as connection:
+        price = connection.execute(text("SELECT price_per_pound FROM fuel")).scalar_one()
+    assert column["nullable"] is True
+    assert price == 1.25
+
+
 def test_fuel_migration_preserves_linked_pellet_on_upgrade_and_downgrade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
