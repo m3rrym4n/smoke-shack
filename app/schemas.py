@@ -174,6 +174,7 @@ class SpiceResponse(BaseModel):
 
 
 class CookUpdate(BaseModel):
+    equipment_id: int | None = None
     meat_id: int | None = None
     fuel_id: int | None = None
     pellet_id: int | None = None

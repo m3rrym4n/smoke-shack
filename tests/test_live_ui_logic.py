@@ -221,6 +221,31 @@ def test_showcase_title_and_maker_rendering_rules() -> None:
     assert "showcase-editor" not in component
 
 
+def test_historical_grill_picker_lists_existing_grills() -> None:
+    module = Path("app/static/js/views/live.js").resolve().as_uri()
+    script = f'''import {{ grillPickerMarkup }} from {json.dumps(module)};
+      console.log(JSON.stringify({{
+        choices: grillPickerMarkup([
+          {{equipment_id: 1, maker: "Masterbuilt", model: "Gravity Series 800"}},
+          {{equipment_id: 2, maker: "Green Mountain Grills", model: "Daniel Boone"}},
+        ]),
+        none: grillPickerMarkup([]),
+        undiscovered: grillPickerMarkup([{{equipment_id: null, name: "Unknown"}}]),
+      }}));'''
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    rendered = json.loads(result.stdout)
+    assert "Choose grill" in rendered["choices"]
+    assert "Masterbuilt Gravity Series 800" in rendered["choices"]
+    assert "Green Mountain Grills Daniel Boone" in rendered["choices"]
+    assert rendered["none"] == ""
+    assert rendered["undiscovered"] == ""
+
+
 def test_showcase_anchor_persistence_clamps_and_defaults() -> None:
     expression = """
       const values = new Map();

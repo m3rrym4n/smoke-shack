@@ -1,4 +1,4 @@
-import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getFuel, getMeat, getNotes, getPlannedCooks, getRecentCooks, getStatus, listSpices, updateCook, withBase } from "../api.js";
+import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getFuel, getGrills, getMeat, getNotes, getPlannedCooks, getRecentCooks, getStatus, listSpices, updateCook, withBase } from "../api.js";
 import { chartMarkup } from "../components/chart.js";
 import { cookLogMarkup } from "../components/cook-log.js";
 import { cookNotesMarkup } from "../components/cook-notes.js";
@@ -105,6 +105,16 @@ export function heroMarkup(cook, samples, active, historical, showcase, grillIde
   </div>`;
 }
 
+export function grillPickerMarkup(grills) {
+  const choices = grills.filter((grill) => grill.equipment_id != null);
+  if (!choices.length) return "";
+  const options = choices.map((grill) => {
+    const label = [grill.maker, grill.model].filter(Boolean).join(" ") || grill.name;
+    return `<option value="${escapeHtml(grill.equipment_id)}">${escapeHtml(label)}</option>`;
+  }).join("");
+  return `<form class="cook-grill-picker"><label>Choose grill<select name="equipment_id" required><option value="">Choose grill</option>${options}</select></label><button class="pbtn" type="submit">Save</button><span role="status"></span></form>`;
+}
+
 async function load(container, onStatus, isCurrent, requestedCookId, editing, refresh, setBusy, setShowcaseCleanup, updateSmoke) {
   let cookId = requestedCookId;
   let active = false;
@@ -157,13 +167,13 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
     });
     return;
   }
-  const [cook, samples, events, meat, pellets, closedCooks, planned, detailPhotos, showcase, notes, spices] = await Promise.all([
+  const [cook, samples, events, meat, pellets, closedCooks, planned, detailPhotos, notes, spices, grills] = await Promise.all([
     requestedCook || (cookId ? getCook(cookId) : null), cookId ? getCookSamples(cookId) : [], cookId ? getCookEvents(cookId) : [],
     liveForms ? getMeat() : [], liveForms ? getFuel() : [], liveForms ? getRecentCooks(10000) : [], liveForms ? getPlannedCooks() : [],
     !liveForms && cookId ? getCookPhotos(cookId) : [],
-    status,
     !liveForms && cookId ? getNotes("this_cook", cookId) : [],
     liveForms ? listSpices() : [],
+    !liveForms && requestedCook?.equipment_id == null ? getGrills() : [],
   ]);
   if (!isCurrent()) return;
   const log = liveForms ? `<div class="log-pin-grid">${cookLogMarkup(events, true)}${pinBoardMarkup()}</div>` : cookLogMarkup(events, false);
@@ -191,15 +201,39 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
   }
   const resultPhotos = !liveForms && cook ? `<section class="order-pad cook-results"><span class="tape" aria-hidden="true"></span>${rubDetailMarkup(cook)}<h2>How it turned out</h2><p>${escapeHtml(cook.results_text || "No write-up yet.")}</p>${photoGalleryMarkup(detailPhotos)}</section>` : "";
   const demo = requestedCookId == null && smokeDemoMode(window.location.hash);
-  const demoPit = `<section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">smoke demo</span></div>${gaugeSvg(null, 0, showcase?.logo_url)}${showcaseMarkup(showcase, status, window.innerWidth)}</section>`;
+  const historical = requestedCookId != null;
+  const grillIdentity = historical ? {
+    grill_title: cook?.grill_model || "",
+    grill_maker: cook?.grill_manufacturer || "",
+    logo_url: cook?.grill_logo_url || null,
+    photo_url: cook?.grill_photo_url || null,
+  } : status;
+  const grillPicker = historical && cook?.equipment_id == null ? grillPickerMarkup(grills) : "";
+  const demoPit = `<section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">smoke demo</span></div>${gaugeSvg(null, 0, status?.logo_url)}${showcaseMarkup(status, status, window.innerWidth)}</section>`;
   const cookIsActive = cook?.ended_at == null;
-  const cookContent = cook ? `${heroMarkup(cook, samples, cookIsActive, requestedCookId != null, showcase, status)}${cookNotesMarkup(notes)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : demo ? demoPit : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
+  const cookContent = cook ? `${heroMarkup(cook, samples, cookIsActive, historical, grillIdentity, grillIdentity)}${grillPicker}${cookNotesMarkup(notes)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : demo ? demoPit : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
   const liveDetail = requestedCookId != null && cook && cook.ended_at == null;
   const backLink = liveDetail
     ? '<a class="back-link cc" href="#live">← Back to live cook</a>'
     : '<a class="back-link cc" href="#cooks">← All cooks</a>';
   const detailActions = requestedCookId == null ? "" : `<div class="detail-actions">${backLink}<div class="detail-action-buttons"><label class="detail-stats-toggle"><input type="checkbox"${cook.exclude_from_stats ? " checked" : ""}> Exclude from stats (dry run / test)</label><span class="detail-stats-message" role="status"></span><button class="pbtn export-cook" type="button">Export PNG</button><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><span class="export-message" role="status" aria-live="polite"></span></div>`;
   container.innerHTML = `<div class="cook-detail">${detailActions}${cookContent}${order}</div>`;
+  const grillForm = container.querySelector(".cook-grill-picker");
+  grillForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = grillForm.querySelector("button");
+    const message = grillForm.querySelector('[role="status"]');
+    const equipmentId = Number(new FormData(grillForm).get("equipment_id"));
+    if (!equipmentId) return;
+    button.disabled = true;
+    try {
+      await updateCook(cook.id, { equipment_id: equipmentId });
+      await refresh();
+    } catch (error) {
+      message.textContent = error.message || "Could not save";
+      button.disabled = false;
+    }
+  });
   const statsToggle = container.querySelector(".detail-stats-toggle input");
   statsToggle?.addEventListener("change", async () => {
     const message = container.querySelector(".detail-stats-message");
@@ -215,7 +249,7 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
     }
   });
   setShowcaseCleanup(bindShowcase(container, {
-    grillIdentity: status,
+    grillIdentity,
     setBusy,
     onLogoChange: (url) => {
       const logo = container.querySelector(".gauge-logo-slot");
@@ -227,7 +261,7 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
   else if (cook) {
     bindPhotoGallery(container.querySelector(".cook-results"), { cookId: cook.id });
     bindCookExport(container.querySelector(".cook-detail"), cook, {
-      notes, resultsText: cook.results_text, samples, events, photos: detailPhotos, showcase, grillIdentity: status,
+      notes, resultsText: cook.results_text, samples, events, photos: detailPhotos, showcase: grillIdentity, grillIdentity,
     });
   }
 }

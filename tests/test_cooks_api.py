@@ -143,6 +143,30 @@ def test_patch_cook_and_reject_unknown_reference(sessions: sessionmaker[Session]
         assert session.get(Cook, cook_id).exclude_from_stats is True
 
 
+def test_patch_cook_records_grill_and_rejects_unknown_grill(
+    sessions: sessionmaker[Session],
+) -> None:
+    started = datetime(2026, 10, 16, 16, 57, 3, tzinfo=UTC)
+    with sessions() as session:
+        grill = session.query(Equipment).one()
+        grill.maker = "Masterbuilt"
+        grill.model = "Gravity Series 800"
+        session.add(cook := _cook(started, equipment_id=None))
+        session.commit()
+        grill_id, cook_id = grill.id, cook.id
+
+    with TestClient(create_app(Settings(), sessions)) as client:
+        saved = client.patch(f"/api/cooks/{cook_id}", json={"equipment_id": grill_id})
+        unknown = client.patch(f"/api/cooks/{cook_id}", json={"equipment_id": 9999})
+
+    assert saved.status_code == 200
+    assert saved.json()["equipment_id"] == grill_id
+    assert saved.json()["grill_manufacturer"] == "Masterbuilt"
+    assert saved.json()["grill_model"] == "Gravity Series 800"
+    assert unknown.status_code == 422
+    assert unknown.json() == {"detail": "Equipment not found"}
+
+
 def test_list_cooks_filters_and_paginates(sessions: sessionmaker[Session]) -> None:
     started = datetime(2026, 10, 16, 12, 0, tzinfo=UTC)
     with sessions() as session:
