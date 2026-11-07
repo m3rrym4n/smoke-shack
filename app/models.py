@@ -296,7 +296,7 @@ class Fuel(Base):
     type: Mapped[str] = mapped_column(String(10), nullable=False, default="pellets")
     vendor: Mapped[str]
     product_name: Mapped[str]
-    price_per_pound: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    price_per_pound: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
     purchased_on: Mapped[date] = mapped_column(Date)
     emptied_on: Mapped[date | None] = mapped_column(Date)
     upc: Mapped[str | None] = mapped_column(String(14))

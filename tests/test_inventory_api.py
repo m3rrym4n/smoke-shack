@@ -38,6 +38,50 @@ def test_fuel_crud_types_and_filter(sessions: sessionmaker[Session]) -> None:
         assert client.post("/api/fuel", json={**base, "type": "gas"}).status_code == 422
 
 
+def test_fuel_price_is_optional_for_all_types_and_can_be_cleared(
+    sessions: sessionmaker[Session],
+) -> None:
+    with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
+        unpriced = [
+            client.post(
+                "/api/fuel",
+                json={"type": fuel_type, "vendor": "Local", "product_name": fuel_type},
+            )
+            for fuel_type in ("pellets", "charcoal", "wood")
+        ]
+        assert [response.status_code for response in unpriced] == [201, 201, 201]
+        assert all(response.json()["price_per_pound"] is None for response in unpriced)
+        assert {item["id"] for item in client.get("/api/fuel").json()} == {
+            response.json()["id"] for response in unpriced
+        }
+
+        charcoal = unpriced[1].json()
+        cook = client.post(
+            "/api/cooks",
+            json={"state": "planned", "fuel_id": charcoal["id"], "pellets_used_lb": 2},
+        )
+        assert cook.status_code == 201
+        assert cook.json()["fuel"]["price_per_pound"] is None
+        assert cook.json()["cost"]["pellet_cost"] is None
+
+        priced = client.post(
+            "/api/fuel",
+            json={
+                "type": "pellets",
+                "vendor": "Bear Mountain",
+                "product_name": "Oak",
+                "price_per_pound": 1.25,
+            },
+        )
+        assert priced.status_code == 201
+        assert priced.json()["price_per_pound"] == 1.25
+        cleared = client.patch(
+            f"/api/fuel/{priced.json()['id']}", json={"price_per_pound": None}
+        )
+        assert cleared.status_code == 200
+        assert cleared.json()["price_per_pound"] is None
+
+
 def test_meat_crud_filter_and_sort(sessions: sessionmaker[Session]) -> None:
     with TestClient(create_app(Settings(), sessions, FakeHAClient())) as client:
         older = client.post(

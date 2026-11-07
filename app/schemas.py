@@ -74,7 +74,7 @@ class FuelCreate(BaseModel):
     type: FuelType
     vendor: NonEmptyStr
     product_name: NonEmptyStr
-    price_per_pound: float = Field(ge=0)
+    price_per_pound: float | None = Field(default=None, ge=0)
     purchased_on: date = Field(default_factory=date.today)
     upc: str | None = None
     bag_size_lb: float | None = Field(default=None, gt=0, le=100)
@@ -112,7 +112,7 @@ class FuelResponse(BaseModel):
     type: FuelType
     vendor: str
     product_name: str
-    price_per_pound: float
+    price_per_pound: float | None
     purchased_on: date
     upc: str | None
     bag_size_lb: float | None

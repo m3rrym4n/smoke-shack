@@ -115,7 +115,9 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
                 "type": fuel.type,
                 "vendor": fuel.vendor,
                 "product_name": fuel.product_name,
-                "price_per_pound": float(fuel.price_per_pound),
+                "price_per_pound": (
+                    float(fuel.price_per_pound) if fuel.price_per_pound is not None else None
+                ),
             }
             if fuel is not None
             else None
@@ -139,7 +141,11 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
         meat_cost = meat.pounds * meat.price_per_pound if meat is not None else None
         fuel_cost = (
             Decimal(str(cook.pellets_used_lb)) * fuel.price_per_pound
-            if fuel is not None and cook.pellets_used_lb is not None
+            if (
+                fuel is not None
+                and fuel.price_per_pound is not None
+                and cook.pellets_used_lb is not None
+            )
             else None
         )
         result["cost"] = {
