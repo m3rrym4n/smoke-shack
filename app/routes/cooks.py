@@ -78,8 +78,19 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
         "fuel_id": cook.fuel_id,
         "pellet_id": cook.fuel_id,
         "profile_id": cook.profile_id,
+        "equipment_id": cook.equipment_id,
         "grill_manufacturer": equipment.maker if equipment is not None else None,
         "grill_model": equipment.model if equipment is not None else None,
+        "grill_photo_url": (
+            f"/api/equipment/{equipment.id}/photo"
+            if equipment is not None and equipment.photo_path is not None
+            else None
+        ),
+        "grill_logo_url": (
+            f"/api/equipment/{equipment.id}/logo"
+            if equipment is not None and equipment.logo_path is not None
+            else None
+        ),
         "rotisserie": cook.rotisserie,
         "seasonings": cook.seasonings,
         "spices": [
@@ -187,6 +198,7 @@ def list_cooks(
 
 def _validate_references(changes: dict[str, Any], session: Session) -> None:
     references = (
+        ("equipment_id", Equipment, "Equipment"),
         ("meat_id", Meat, "Meat"),
         ("fuel_id", Fuel, "Fuel"),
         ("profile_id", Profile, "Profile"),
