@@ -3,6 +3,9 @@ body{margin:0}
 .chart-hour-tick{stroke:#b9c3b5;stroke-width:2}.chart-hour-label{fill:#b9c3b5;font-family:'Patrick Hand',cursive;font-size:16px;text-anchor:middle}.chart-hour-label.chart-hour-label-end{text-anchor:end}.chart-axis.chart-axis-start{text-anchor:start}
 button{font-family:inherit;cursor:pointer}
 input,textarea,select{font-family:inherit}
+select option,select optgroup{color:#23232e;background-color:#f6efdc}
+select option:disabled{color:#6a5640;background-color:#f6efdc}
+select option:checked{color:#17110c;background-color:#f7d65a}
 @keyframes flick{0%,18%,22%,60%,100%{opacity:1}20%,62%{opacity:.78}}
 .neon{animation:flick 5s linear infinite}
 .board{position:relative;background-color:#1f2b25;background-image:radial-gradient(ellipse at 28% 18%,rgba(255,255,255,.08),rgba(255,255,255,0) 60%),radial-gradient(ellipse at 82% 92%,rgba(255,255,255,.06),rgba(255,255,255,0) 55%);border:16px solid #7a4a24;border-radius:8px;box-shadow:inset 0 0 0 3px #4a2d19,inset 0 0 50px rgba(0,0,0,.65),0 10px 0 rgba(0,0,0,.35);color:#f1efe4;font-family:'Patrick Hand',cursive;font-size:19px;min-width:0}
