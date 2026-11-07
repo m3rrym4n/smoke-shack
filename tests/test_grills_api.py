@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 from conftest import add_channels
 from fastapi.testclient import TestClient
@@ -164,8 +165,15 @@ def test_lists_profile_match_and_existing_equipment(sessions) -> None:
     add_channels(sessions)
     app = create_app(Settings(), sessions, RegistryHAClient(registry_snapshot()))
 
+    with sessions() as session:
+        equipment = session.query(Equipment).one()
+        session.add(Cook(started_at=datetime(2026, 10, 16, tzinfo=UTC), equipment_id=equipment.id))
+        session.commit()
+
     with TestClient(app) as client:
         response = client.get("/api/grills")
+        cooks = client.get("/api/cooks").json()
+        status = client.get("/status").json()
 
     assert response.status_code == 200
     grills = response.json()
@@ -187,6 +195,10 @@ def test_lists_profile_match_and_existing_equipment(sessions) -> None:
     assert grills[1]["equipment_id"] == 1
     assert grills[1]["device_status"] == "available"
     assert grills[1]["connection_status"] == "connected"
+    assert cooks[0]["grill_manufacturer"] == "Green Mountain Grills"
+    assert cooks[0]["grill_model"] == "Daniel Boone Prime"
+    assert status["grill_maker"] == "Green Mountain Grills"
+    assert status["grill_title"] == "Daniel Boone Prime"
 
 
 def test_profile_device_is_not_available_when_all_main_entities_are_unavailable(

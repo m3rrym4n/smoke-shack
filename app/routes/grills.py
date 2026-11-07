@@ -9,6 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.deps import get_session
+from app.grill_identity import GrillIdentity, display_grill_identity
 from app.grill_profiles import (
     DeviceEntity,
     GrillProfile,
@@ -41,6 +42,24 @@ async def list_grills(request: Request, session: SessionDep) -> list[GrillRespon
     equipment = _equipment(session)
     profiles: tuple[GrillProfile, ...] = request.app.state.grill_profiles
     return _visible_grills(snapshot, profiles, equipment)
+
+
+async def discovered_equipment_identities(
+    request: Request, session: Session
+) -> dict[int, GrillIdentity]:
+    """Return the device identities Settings displays, keyed by equipment id."""
+    if not callable(getattr(request.app.state.ha_client, "registry_snapshot", None)):
+        return {}
+    try:
+        snapshot = await _registry_snapshot(request)
+    except HTTPException:
+        return {}
+    profiles: tuple[GrillProfile, ...] = request.app.state.grill_profiles
+    return {
+        grill.equipment_id: GrillIdentity(grill.maker, grill.model)
+        for grill in _visible_grills(snapshot, profiles, _equipment(session))
+        if grill.equipment_id is not None
+    }
 
 
 @router.post("/{grill_id}/connect", response_model=GrillResponse)
@@ -238,8 +257,13 @@ def _visible_grills(
         # HA's "unknown" still means the device is present but has not reported yet.
         main_states = [states[entity_id] for entity_id in main_entities if entity_id in states]
         available = any(state != "unavailable" for state in main_states)
-        maker = _text(device.get("manufacturer"))
-        model = _text(device.get("model"))
+        discovered_identity = GrillIdentity(
+            maker=_text(device.get("manufacturer")),
+            model=_text(device.get("model")),
+        )
+        identity = display_grill_identity(matched_equipment, discovered_identity)
+        maker = identity.maker
+        model = identity.model
         name = _text(device.get("name_by_user")) or _text(device.get("name")) or model or device_id
         results.append(
             GrillResponse(

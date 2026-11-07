@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.channel_samples import channel_payload, compatibility_values
 from app.deps import get_session
 from app.equipment import first_equipment_id
+from app.grill_identity import GrillIdentity, display_grill_identity
 from app.models import (
     ChannelReading,
     Cook,
@@ -26,6 +27,7 @@ from app.models import (
     Spice,
 )
 from app.routes.events import event_json
+from app.routes.grills import discovered_equipment_identities
 from app.schemas import CookUpdate, PlannedCookCreate
 from app.service import as_utc
 
@@ -44,9 +46,21 @@ def _get_cook(cook_id: int, session: Session) -> Cook:
     return cook
 
 
-def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> dict[str, Any]:
+def _cook_json(
+    cook: Cook,
+    session: Session,
+    *,
+    include_cost: bool = False,
+    grill_identities: dict[int, GrillIdentity] | None = None,
+) -> dict[str, Any]:
     equipment = (
         session.get(Equipment, cook.equipment_id) if cook.equipment_id is not None else None
+    )
+    identity = display_grill_identity(
+        equipment,
+        grill_identities.get(equipment.id)
+        if equipment is not None and grill_identities is not None
+        else None,
     )
     meat = session.get(Meat, cook.meat_id) if cook.meat_id is not None else None
     fuel = session.get(Fuel, cook.fuel_id) if cook.fuel_id is not None else None
@@ -79,8 +93,8 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
         "pellet_id": cook.fuel_id,
         "profile_id": cook.profile_id,
         "equipment_id": cook.equipment_id,
-        "grill_manufacturer": equipment.maker if equipment is not None else None,
-        "grill_model": equipment.model if equipment is not None else None,
+        "grill_manufacturer": identity.maker,
+        "grill_model": identity.model,
         "grill_photo_url": (
             f"/api/equipment/{equipment.id}/photo"
             if equipment is not None and equipment.photo_path is not None
@@ -169,7 +183,8 @@ def _cook_json(cook: Cook, session: Session, *, include_cost: bool = False) -> d
 
 
 @router.get("")
-def list_cooks(
+async def list_cooks(
+    request: Request,
     session: SessionDep,
     meat_id: int | None = None,
     fuel_id: int | None = None,
@@ -193,7 +208,11 @@ def list_cooks(
         .limit(limit)
         .offset(offset)
     )
-    return [_cook_json(cook, session) for cook in session.scalars(query)]
+    identities = await discovered_equipment_identities(request, session)
+    return [
+        _cook_json(cook, session, grill_identities=identities)
+        for cook in session.scalars(query)
+    ]
 
 
 def _validate_references(changes: dict[str, Any], session: Session) -> None:
@@ -218,7 +237,9 @@ def _get_spices(spice_ids: list[int], session: Session) -> list[Spice]:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_planned_cook(payload: PlannedCookCreate, session: SessionDep) -> dict[str, Any]:
+async def create_planned_cook(
+    payload: PlannedCookCreate, request: Request, session: SessionDep
+) -> dict[str, Any]:
     values = payload.model_dump(exclude={"state", "spice_ids"})
     legacy_fuel_id = values.pop("pellet_id", None)
     if values.get("fuel_id") is None:
@@ -234,26 +255,36 @@ def create_planned_cook(payload: PlannedCookCreate, session: SessionDep) -> dict
     session.add(cook)
     session.commit()
     session.refresh(cook)
-    return _cook_json(cook, session, include_cost=True)
+    identities = await discovered_equipment_identities(request, session)
+    return _cook_json(cook, session, include_cost=True, grill_identities=identities)
 
 
 @router.get("/next")
-def next_planned_cook(session: SessionDep) -> dict[str, Any]:
+async def next_planned_cook(request: Request, session: SessionDep) -> dict[str, Any]:
     cook = session.scalar(
         select(Cook).where(Cook.status == "planned").order_by(Cook.created_at, Cook.id).limit(1)
     )
     if cook is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No planned cook")
-    return _cook_json(cook, session, include_cost=True)
+    identities = await discovered_equipment_identities(request, session)
+    return _cook_json(cook, session, include_cost=True, grill_identities=identities)
 
 
 @router.get("/{cook_id}")
-def get_cook(cook_id: int, session: SessionDep) -> dict[str, Any]:
-    return _cook_json(_get_cook(cook_id, session), session, include_cost=True)
+async def get_cook(cook_id: int, request: Request, session: SessionDep) -> dict[str, Any]:
+    identities = await discovered_equipment_identities(request, session)
+    return _cook_json(
+        _get_cook(cook_id, session),
+        session,
+        include_cost=True,
+        grill_identities=identities,
+    )
 
 
 @router.patch("/{cook_id}")
-def update_cook(cook_id: int, payload: CookUpdate, session: SessionDep) -> dict[str, Any]:
+async def update_cook(
+    cook_id: int, payload: CookUpdate, request: Request, session: SessionDep
+) -> dict[str, Any]:
     cook = _get_cook(cook_id, session)
     changes = payload.model_dump(exclude_unset=True)
     legacy_fuel_id = changes.pop("pellet_id", None)
@@ -267,7 +298,8 @@ def update_cook(cook_id: int, payload: CookUpdate, session: SessionDep) -> dict[
         cook.spices = _get_spices(spice_ids, session)
     session.commit()
     session.refresh(cook)
-    return _cook_json(cook, session, include_cost=True)
+    identities = await discovered_equipment_identities(request, session)
+    return _cook_json(cook, session, include_cost=True, grill_identities=identities)
 
 
 @router.delete("/{cook_id}", status_code=status.HTTP_204_NO_CONTENT)
