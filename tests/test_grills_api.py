@@ -11,6 +11,7 @@ from app.api import create_app
 from app.config import Settings
 from app.ha import HARegistrySnapshot, HAStatus
 from app.models import ChannelReading, Cook, Equipment, EquipmentEntity, Sample
+from app.routes import grills as grill_routes
 from app.service import GrillSnapshot
 
 
@@ -18,12 +19,14 @@ class RegistryHAClient:
     def __init__(self, snapshot: HARegistrySnapshot | None = None) -> None:
         self.status = HAStatus(configured=True)
         self.snapshot = snapshot
+        self.registry_snapshot_calls = 0
 
     async def snapshots(self) -> AsyncIterator[GrillSnapshot]:
         if False:
             yield GrillSnapshot()
 
     async def registry_snapshot(self) -> HARegistrySnapshot:
+        self.registry_snapshot_calls += 1
         if self.snapshot is None:
             raise RuntimeError("connection refused")
         return self.snapshot
@@ -199,6 +202,64 @@ def test_lists_profile_match_and_existing_equipment(sessions) -> None:
     assert cooks[0]["grill_model"] == "Daniel Boone Prime"
     assert status["grill_maker"] == "Green Mountain Grills"
     assert status["grill_title"] == "Daniel Boone Prime"
+
+
+def test_discovered_identity_cache_expires_without_sleeping(sessions, monkeypatch) -> None:
+    add_channels(sessions)
+    ha_client = RegistryHAClient(registry_snapshot())
+    app = create_app(Settings(), sessions, ha_client)
+    now = 100.0
+    monkeypatch.setattr(grill_routes, "monotonic", lambda: now)
+
+    with TestClient(app) as client:
+        assert client.get("/status").status_code == 200
+        assert client.get("/status").status_code == 200
+        assert ha_client.registry_snapshot_calls == 1
+
+        now += 61
+        assert client.get("/status").status_code == 200
+
+    assert ha_client.registry_snapshot_calls == 2
+
+
+def test_discovered_identity_cache_keeps_last_good_value_on_failure(
+    sessions, monkeypatch
+) -> None:
+    add_channels(sessions)
+    ha_client = RegistryHAClient(registry_snapshot())
+    app = create_app(Settings(), sessions, ha_client)
+    now = 100.0
+    monkeypatch.setattr(grill_routes, "monotonic", lambda: now)
+
+    with TestClient(app) as client:
+        first = client.get("/status").json()
+        now += 61
+        ha_client.snapshot = None
+        second = client.get("/status").json()
+        third = client.get("/status").json()
+
+    assert first["grill_title"] == "Daniel Boone Prime"
+    assert second["grill_title"] == third["grill_title"] == first["grill_title"]
+    assert ha_client.registry_snapshot_calls == 2
+
+
+def test_connect_and_disconnect_clear_discovered_identity_cache(sessions) -> None:
+    add_channels(sessions)
+    ha_client = RegistryHAClient(registry_snapshot())
+    app = create_app(Settings(), sessions, ha_client)
+
+    with TestClient(app) as client:
+        client.get("/status")
+        assert app.state.discovered_identity_cache.identities is not None
+
+        assert client.post("/api/grills/masterbuilt-device/connect").status_code == 200
+        assert app.state.discovered_identity_cache.identities is None
+
+        client.get("/status")
+        assert app.state.discovered_identity_cache.identities is not None
+
+        assert client.post("/api/grills/masterbuilt-device/disconnect").status_code == 200
+        assert app.state.discovered_identity_cache.identities is None
 
 
 def test_profile_device_is_not_available_when_all_main_entities_are_unavailable(
