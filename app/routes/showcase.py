@@ -10,6 +10,8 @@ from uuid import uuid4
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 
+from app.pantry_photos import sniff_photo_type
+
 router = APIRouter(prefix="/api/showcase", tags=["showcase"])
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -21,16 +23,6 @@ IMAGE_TYPES = {
 }
 ShowcaseKind = Literal["logo", "photo"]
 SHOWCASE_KINDS: tuple[ShowcaseKind, ...] = ("logo", "photo")
-
-
-def _image_extension(header: bytes) -> str | None:
-    if header.startswith(b"\x89PNG\r\n\x1a\n"):
-        return ".png"
-    if header.startswith(b"\xff\xd8\xff"):
-        return ".jpg"
-    if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP":
-        return ".webp"
-    return None
 
 
 def _validate_svg(content: bytes) -> None:
@@ -107,7 +99,6 @@ async def put_showcase_image(
     directory.mkdir(parents=True, exist_ok=True)
     temporary = directory / f".{kind}-{uuid4()}.upload"
     size = 0
-    header = b""
     try:
         with temporary.open("wb") as output:
             while chunk := await file.read(1024 * 1024):
@@ -117,23 +108,21 @@ async def put_showcase_image(
                         status.HTTP_422_UNPROCESSABLE_ENTITY,
                         "Image exceeds the 5 MB limit",
                     )
-                if len(header) < 16:
-                    header += chunk[: 16 - len(header)]
                 output.write(chunk)
         content = temporary.read_bytes()
-        extension = (
-            ".svg"
-            if kind == "logo" and re.search(rb"<svg\b", content, re.IGNORECASE)
-            else _image_extension(header)
-        )
-        if extension is None:
+        try:
+            _, extension = sniff_photo_type(content)
+        except HTTPException:
+            extension = None
+        if extension is None and kind == "logo" and re.search(rb"<svg\b", content, re.IGNORECASE):
+            _validate_svg(content)
+            extension = ".svg"
+        elif extension is None:
             allowed = "PNG, JPEG, WebP, or SVG" if kind == "logo" else "PNG, JPEG, or WebP"
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 f"Image must be a {allowed} file",
             )
-        if extension == ".svg":
-            _validate_svg(content)
         final_path = directory / f"{kind}{extension}"
         os.replace(temporary, final_path)
         for other_extension in IMAGE_TYPES:

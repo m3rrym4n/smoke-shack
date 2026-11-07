@@ -11,6 +11,7 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"png data"
 JPEG = b"\xff\xd8\xff\xe0" + b"jpeg data"
 WEBP = b"RIFF\x0c\x00\x00\x00WEBP" + b"webp data"
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><path fill="#fff" d="M0 0h10v10z"/></svg>'
+PNG_WITH_SVG_METADATA = PNG + b'<metadata value="<svg" />'
 
 
 def test_showcase_upload_replace_serve_delete_and_persist(
@@ -118,6 +119,23 @@ def test_showcase_accepts_and_serves_safe_svg_logo(
         "default-src 'none'; style-src 'unsafe-inline'; sandbox"
     )
     assert (tmp_path / "showcase" / "logo.svg").read_bytes() == SVG
+
+
+def test_showcase_logo_uses_photo_signature_before_svg_metadata(
+    tmp_path: Path, sessions: sessionmaker[Session]
+) -> None:
+    settings = Settings(photo_dir=str(tmp_path / "photos"))
+    with TestClient(create_app(settings, sessions)) as client:
+        uploaded = client.put(
+            "/api/showcase/logo",
+            files={"file": ("logo.png", PNG_WITH_SVG_METADATA, "image/png")},
+        )
+        served = client.get("/api/showcase/logo")
+
+    assert uploaded.status_code == 200
+    assert served.content == PNG_WITH_SVG_METADATA
+    assert served.headers["content-type"] == "image/png"
+    assert (tmp_path / "showcase" / "logo.png").read_bytes() == PNG_WITH_SVG_METADATA
 
 
 @pytest.mark.parametrize(
