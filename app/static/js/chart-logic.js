@@ -19,12 +19,28 @@ export function finalTarget(samples) {
   return null;
 }
 
+export function finalTargets(samples, probes) {
+  return probes.flatMap((probe, index) => {
+    for (let sampleIndex = samples.length - 1; sampleIndex >= 0; sampleIndex -= 1) {
+      const sample = samples[sampleIndex];
+      const channel = sample.channels?.find((item) => item.key === probe.key);
+      const value = finiteNumber(channel ? channel.target : sample[`${probe.key}_target`]);
+      if (value !== null && value > 0) {
+        return [{ probe: index + 1, key: probe.key, label: probe.label, value }];
+      }
+    }
+    return [];
+  });
+}
+
 export function reachedTarget(samples, target) {
-  if (!target || ![1, 2].includes(target.probe)) return null;
+  if (!target) return null;
   const targetValue = finiteNumber(target.value);
   if (targetValue === null || targetValue <= 0) return null;
   for (const sample of samples) {
-    const temp = finiteNumber(sample[`probe${target.probe}`]);
+    const key = target.key ?? `probe${target.probe}`;
+    const channel = sample.channels?.find((item) => item.key === key);
+    const temp = finiteNumber(channel ? channel.value : sample[key] ?? sample.extra_probes?.[key]);
     const elapsed = finiteNumber(sample.elapsed_seconds);
     if (temp !== null && elapsed !== null && temp >= targetValue) return { elapsed, temp };
   }
