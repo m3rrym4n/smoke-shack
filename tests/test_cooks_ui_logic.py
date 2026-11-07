@@ -58,3 +58,31 @@ def test_tags_and_elapsed_time_formatting() -> None:
 
 def test_empty_cook_log() -> None:
     assert run_logic("console.log(JSON.stringify(logic.orderCookLogRows([]))); ") == []
+
+
+def test_history_rows_offer_delete_only_for_inactive_cooks() -> None:
+    module = Path("app/static/js/views/cooks.js").resolve().as_uri()
+    script = f'''import {{ cookRowMarkup }} from "{module}";
+      console.log(JSON.stringify([
+        cookRowMarkup({{id: 1, state: "closed", ended_at: "2026-10-16T12:00:00Z"}}),
+        cookRowMarkup({{id: 2, state: "cook", ended_at: null}}),
+      ]));'''
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    closed, active = json.loads(result.stdout)
+    assert 'data-cook-id="1"' in closed
+    assert ">Delete</button>" in closed
+    assert "delete-cook" not in active
+
+
+def test_history_and_detail_use_permanent_delete_confirmation() -> None:
+    history = Path("app/static/js/views/cooks.js").read_text()
+    detail = Path("app/static/js/views/live.js").read_text()
+
+    assert "Delete this cook permanently?" in history
+    assert "Delete this cook permanently?" in detail
+    assert "delete-detail-cook" in detail

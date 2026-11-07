@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api import create_app
 from app.config import Settings
 from app.models import (
+    Channel,
+    ChannelReading,
     Cook,
     Equipment,
     Event,
@@ -276,6 +278,17 @@ def test_delete_cook_rejects_active_and_removes_children(
         )
         session.add_all([sample, event])
         session.flush()
+        channel = Channel(
+            equipment_id=session.query(Equipment).one().id,
+            key="pit",
+            role="pit",
+            label="Pit",
+            source_entity="sensor.pit",
+            position=0,
+        )
+        session.add(channel)
+        session.flush()
+        session.add(ChannelReading(sample_id=sample.id, channel_id=channel.id, value=250))
         session.add(Photo(cook_id=finished.id, event_id=event.id, path="photo.jpg"))
         session.add(
             Note(title="Remember", body="Good cook", scope="this_cook", cook_id=finished.id)
@@ -292,11 +305,16 @@ def test_delete_cook_rejects_active_and_removes_children(
     assert deleted.status_code == 204
     with sessions() as session:
         assert session.get(Cook, finished_id) is None
-        for model in (Sample, Event, Photo):
+        for model in (Sample, ChannelReading, Event, Photo, Note):
             assert session.scalar(select(func.count()).select_from(model)) == 0
-        note = session.scalar(select(Note))
-        assert note is not None
-        assert note.cook_id is None
+
+
+def test_delete_missing_cook_returns_404(sessions: sessionmaker[Session]) -> None:
+    with TestClient(create_app(Settings(), sessions)) as client:
+        response = client.delete("/api/cooks/9999")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Cook not found"}
 
 
 def test_planned_cook_create_list_next_unlink_and_delete(
