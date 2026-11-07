@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
+from dataclasses import dataclass, field
+from time import monotonic
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -9,6 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.deps import get_session
+from app.grill_identity import GrillIdentity, display_grill_identity
 from app.grill_profiles import (
     DeviceEntity,
     GrillProfile,
@@ -20,6 +24,14 @@ from app.models import Channel, Cook, Equipment, EquipmentEntity
 
 router = APIRouter(prefix="/api/grills", tags=["grills"])
 SessionDep = Annotated[Session, Depends(get_session)]
+_DISCOVERED_IDENTITY_CACHE_SECONDS = 60.0
+
+
+@dataclass
+class _DiscoveredIdentityCache:
+    identities: dict[int, GrillIdentity] | None = None
+    expires_at: float = 0.0
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class GrillResponse(BaseModel):
@@ -41,6 +53,36 @@ async def list_grills(request: Request, session: SessionDep) -> list[GrillRespon
     equipment = _equipment(session)
     profiles: tuple[GrillProfile, ...] = request.app.state.grill_profiles
     return _visible_grills(snapshot, profiles, equipment)
+
+
+async def discovered_equipment_identities(
+    request: Request, session: Session
+) -> dict[int, GrillIdentity]:
+    """Return the device identities Settings displays, keyed by equipment id."""
+    if not callable(getattr(request.app.state.ha_client, "registry_snapshot", None)):
+        return {}
+    cache = _discovered_identity_cache(request)
+    if cache.identities is not None and monotonic() < cache.expires_at:
+        return cache.identities
+
+    async with cache.lock:
+        if cache.identities is not None and monotonic() < cache.expires_at:
+            return cache.identities
+        try:
+            snapshot = await _registry_snapshot(request)
+        except HTTPException:
+            if cache.identities is not None:
+                cache.expires_at = monotonic() + _DISCOVERED_IDENTITY_CACHE_SECONDS
+                return cache.identities
+            return {}
+        profiles: tuple[GrillProfile, ...] = request.app.state.grill_profiles
+        cache.identities = {
+            grill.equipment_id: GrillIdentity(grill.maker, grill.model)
+            for grill in _visible_grills(snapshot, profiles, _equipment(session))
+            if grill.equipment_id is not None
+        }
+        cache.expires_at = monotonic() + _DISCOVERED_IDENTITY_CACHE_SECONDS
+        return cache.identities
 
 
 @router.post("/{grill_id}/connect", response_model=GrillResponse)
@@ -112,6 +154,7 @@ async def connect_grill(grill_id: str, request: Request, session: SessionDep) ->
     equipment.connected = True
     session.commit()
     _refresh_watch_list(request)
+    _clear_discovered_identity_cache(request)
     grill.equipment_id = equipment.id
     grill.connection_status = "connected"
     return grill
@@ -132,6 +175,7 @@ async def disconnect_grill(grill_id: str, request: Request, session: SessionDep)
             equipment.connected = False
             session.commit()
             _refresh_watch_list(request)
+    _clear_discovered_identity_cache(request)
     grill.connection_status = "disconnected"
     return grill
 
@@ -141,6 +185,20 @@ def _refresh_watch_list(request: Request) -> None:
     refresh = getattr(client, "refresh_watch_list", None)
     if refresh is not None:
         refresh()
+
+
+def _discovered_identity_cache(request: Request) -> _DiscoveredIdentityCache:
+    cache = getattr(request.app.state, "discovered_identity_cache", None)
+    if cache is None:
+        cache = _DiscoveredIdentityCache()
+        request.app.state.discovered_identity_cache = cache
+    return cache
+
+
+def _clear_discovered_identity_cache(request: Request) -> None:
+    cache = _discovered_identity_cache(request)
+    cache.identities = None
+    cache.expires_at = 0.0
 
 
 async def _registry_snapshot(request: Request) -> HARegistrySnapshot:
@@ -238,8 +296,13 @@ def _visible_grills(
         # HA's "unknown" still means the device is present but has not reported yet.
         main_states = [states[entity_id] for entity_id in main_entities if entity_id in states]
         available = any(state != "unavailable" for state in main_states)
-        maker = _text(device.get("manufacturer"))
-        model = _text(device.get("model"))
+        discovered_identity = GrillIdentity(
+            maker=_text(device.get("manufacturer")),
+            model=_text(device.get("model")),
+        )
+        identity = display_grill_identity(matched_equipment, discovered_identity)
+        maker = identity.maker
+        model = identity.model
         name = _text(device.get("name_by_user")) or _text(device.get("name")) or model or device_id
         results.append(
             GrillResponse(

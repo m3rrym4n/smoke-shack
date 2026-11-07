@@ -24,6 +24,7 @@ from app.backup import build_backup
 from app.config import Settings
 from app.database import make_engine, make_session_factory
 from app.deps import get_session
+from app.grill_identity import display_grill_identity
 from app.grill_profiles import load_grill_profiles
 from app.ha import HAClient, HAStatus, HomeAssistantClient, ingest
 from app.models import Cook, Equipment, Sample
@@ -33,6 +34,7 @@ from app.routes.equipment import router as equipment_router
 from app.routes.events import router as events_router
 from app.routes.export import router as export_router
 from app.routes.fuel import router as fuel_router
+from app.routes.grills import discovered_equipment_identities
 from app.routes.grills import router as grills_router
 from app.routes.meat import router as meat_router
 from app.routes.meat_groups import router as meat_groups_router
@@ -140,7 +142,7 @@ def create_app(
         return {"status": "ok"}
 
     @app.get("/status")
-    def status(session: Session = Depends(get_session)) -> dict[str, Any]:
+    async def status(request: Request, session: Session = Depends(get_session)) -> dict[str, Any]:
         active = session.scalar(
             select(Cook)
             .where(Cook.ended_at.is_(None), Cook.status != "planned")
@@ -153,9 +155,12 @@ def create_app(
             .where(Equipment.connected.is_(True))
         )
         if connected_grill is not None:
+            discovered = await discovered_equipment_identities(request, session)
+            fallback = discovered.get(connected_grill.id)
+            identity = display_grill_identity(connected_grill, fallback)
             grill_name = connected_grill.nickname
-            grill_title = connected_grill.model or connected_grill.nickname or ""
-            grill_maker = connected_grill.maker
+            grill_title = identity.model or connected_grill.nickname or ""
+            grill_maker = identity.maker
             grill_photo_url = (
                 f"/api/equipment/{connected_grill.id}/photo"
                 if connected_grill.photo_path is not None
