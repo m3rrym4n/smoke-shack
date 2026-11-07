@@ -175,9 +175,10 @@ def test_gauge_logo_geometry_and_placeholder() -> None:
     rendered = json.loads(result.stdout)
     assert rendered["standard"] == {"x": 140, "y": 272, "width": 120, "height": 56}
     assert rendered["wide"] == {"x": 350, "y": 272, "width": 300, "height": 56}
-    assert "GREEN MOUNTAIN GRILLS" in rendered["placeholder"]
+    assert ">logo</text>" in rendered["placeholder"]
+    assert "GREEN MOUNTAIN GRILLS" not in rendered["placeholder"]
     assert "<image" not in rendered["placeholder"]
-    assert "GREEN MOUNTAIN GRILLS" not in rendered["image"]
+    assert ">logo</text>" not in rendered["image"]
     assert 'preserveAspectRatio="xMidYMid meet"' in rendered["image"]
     assert "SMOKE-STACK" not in rendered["svg"]
 

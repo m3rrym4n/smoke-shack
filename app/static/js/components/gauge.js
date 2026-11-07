@@ -36,7 +36,7 @@ export function gaugeLogoGeometry(width, height) {
 export function gaugeLogoMarkup(logoUrl, width = 400, height = 400) {
   const box = gaugeLogoGeometry(width, height);
   if (!logoUrl) {
-    return `<text class="gauge-logo-slot gauge-logo-placeholder" x="${width / 2}" y="${box.y + box.height / 2}">GREEN MOUNTAIN GRILLS</text>`;
+    return `<text class="gauge-logo-slot gauge-logo-placeholder" x="${width / 2}" y="${box.y + box.height / 2}">logo</text>`;
   }
   return `<image class="gauge-logo-slot" href="${escapeAttribute(withBase(logoUrl))}" x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" preserveAspectRatio="xMidYMid meet"/>`;
 }
