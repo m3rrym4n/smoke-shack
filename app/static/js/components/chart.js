@@ -1,4 +1,4 @@
-import { finalTarget, hourTicks, localClockTime, reachedTarget } from "../chart-logic.js";
+import { finalTargets, hourTicks, localClockTime, reachedTarget } from "../chart-logic.js";
 import { phaseDurations } from "../live-logic.js";
 
 const WIDTH = 1100;
@@ -42,9 +42,22 @@ function channelValue(sample, key) {
   return channel ? channel.value : sample[key] ?? sample.extra_probes?.[key];
 }
 
-function finiteValues(samples, target, probes) {
+function finiteValues(samples, targets, probes) {
   const temperatures = samples.flatMap((sample) => [sample.pit_temp, ...probes.map((probe) => channelValue(sample, probe.key))]).map(numberOrNull).filter((value) => value !== null);
-  return target === null ? temperatures : [...temperatures, target.value];
+  return [...temperatures, ...targets.map((target) => target.value)];
+}
+
+function targetLabelPositions(targets, y) {
+  const minimumGap = 22;
+  const labels = targets
+    .map((target) => ({ target, lineY: y(target.value), labelY: y(target.value) - 8 }))
+    .sort((left, right) => left.labelY - right.labelY);
+  labels.forEach((label, index) => {
+    if (index > 0) label.labelY = Math.max(label.labelY, labels[index - 1].labelY + minimumGap);
+  });
+  const overflow = labels.at(-1)?.labelY - (HEIGHT - PLOT.bottom - 6);
+  if (overflow > 0) labels.forEach((label) => { label.labelY -= overflow; });
+  return new Map(labels.map((label) => [label.target.key, label]));
 }
 
 function linePath(samples, field, x, y) {
@@ -78,10 +91,11 @@ export function chartMarkup(samples, events, cook) {
   if (!samples.length) return `<section class="board chart-board"><h2 class="hd">Chalked up: this cook</h2><p class="mut">No temperature samples yet.</p></section>`;
   const points = downsample(samples);
   const probes = probeChannels(samples);
-  const target = finalTarget(samples);
-  const reached = reachedTarget(samples, target);
+  const targets = finalTargets(samples, probes).map((target) => ({
+    ...target, reached: reachedTarget(samples, target),
+  }));
   const lastElapsed = Math.max(1, ...samples.map((sample) => Number(sample.elapsed_seconds) || 0));
-  const values = finiteValues(samples, target, probes);
+  const values = finiteValues(samples, targets, probes);
   const minTemp = Math.max(0, Math.floor((Math.min(...values, 0) - 10) / 25) * 25);
   const maxTemp = Math.max(100, Math.ceil((Math.max(...values, 100) + 10) / 25) * 25);
   const plotWidth = WIDTH - PLOT.left - PLOT.right;
@@ -115,9 +129,11 @@ export function chartMarkup(samples, events, cook) {
   const plotBottom = HEIGHT - PLOT.bottom;
   const hourGrid = hours.map((tick) => `<line class="chart-hour-tick" x1="${tick.x}" x2="${tick.x}" y1="${plotBottom - HOUR_TICK_HALF_HEIGHT}" y2="${plotBottom + HOUR_TICK_HALF_HEIGHT}"/><text class="chart-hour-label" x="${tick.x}" y="${HEIGHT - 12}">${escapeHtml(tick.label)}</text>`).join("");
   const finalTickMarkup = finalTick === null ? "" : `<line class="chart-hour-tick chart-cooldown-tick" x1="${finalTick.x}" x2="${finalTick.x}" y1="${plotBottom - HOUR_TICK_HALF_HEIGHT}" y2="${plotBottom + HOUR_TICK_HALF_HEIGHT}"/><text class="chart-hour-label chart-cooldown-label${WIDTH - finalTick.x < 70 ? " chart-hour-label-end" : ""}" x="${finalTick.x}" y="${HEIGHT - 12}">${escapeHtml(finalTick.label)}</text>`;
-  const targetY = target === null ? null : y(target.value);
-  const doneLabelY = targetY === null ? null : targetY - 8;
-  const reachedMarker = reached === null ? "" : (() => {
+  const targetLabels = targetLabelPositions(targets, y);
+  const reachedMarkers = targets.map((target) => target.reached === null ? "" : (() => {
+    const reached = target.reached;
+    const targetY = y(target.value);
+    const doneLabelY = targetLabels.get(target.key).labelY;
     const markerX = x(reached.elapsed);
     const markerY = y(reached.temp);
     const inLastFifteenPercent = markerX >= PLOT.left + plotWidth * 0.85;
@@ -127,12 +143,17 @@ export function chartMarkup(samples, events, cook) {
     const labelY = doneLabelY - 22 < PLOT.top ? targetY + 26 : doneLabelY - 22;
     const label = `reached ${Math.round(target.value)}° at ${localClockTime(cook.started_at, reached.elapsed)}`;
     return `<g class="target-reached" aria-label="${escapeHtml(label)}"><circle class="target-marker target-marker-probe-${target.probe}" cx="${markerX}" cy="${markerY}" r="6"/><text class="target-marker-label" x="${labelX}" y="${labelY}" text-anchor="${inLastFifteenPercent || nearRight ? "end" : "start"}">${escapeHtml(label)}</text></g>`;
-  })();
-  const targetLabelX = reached !== null && x(reached.elapsed) >= PLOT.left + plotWidth * 0.85
-    ? Math.min(WIDTH - PLOT.right - 8, x(reached.elapsed) - 16)
-    : WIDTH - PLOT.right - 8;
+  })()).join("");
+  const targetMarkup = targets.map((target) => {
+    const { lineY, labelY } = targetLabels.get(target.key);
+    const reachedX = target.reached === null ? null : x(target.reached.elapsed);
+    const labelX = reachedX !== null && reachedX >= PLOT.left + plotWidth * 0.85
+      ? Math.min(WIDTH - PLOT.right - 8, reachedX - 16)
+      : WIDTH - PLOT.right - 8;
+    return `<line class="target-line probe-${target.probe}-target" x1="${PLOT.left}" x2="${WIDTH - PLOT.right}" y1="${lineY}" y2="${lineY}"/><text class="target-label probe-${target.probe}-target-label" x="${labelX}" y="${labelY}">P${target.probe} done at ${Math.round(target.value)}°${target.reached === null ? " (not reached)" : ""}</text>`;
+  }).join("");
   return `<section class="board chart-board">
-    <div class="chart-heading"><h2 class="hd">Chalked up: this cook</h2><div class="chart-legend"><span class="pit-key">Pit</span>${probes.map((probe, index) => `<span class="probe-key probe-${index + 1}-key">${escapeHtml(probe.label)}</span>`).join("")}${target === null ? "" : '<span class="target-key">Target</span>'}</div></div>
+    <div class="chart-heading"><h2 class="hd">Chalked up: this cook</h2><div class="chart-legend"><span class="pit-key">Pit</span>${probes.map((probe, index) => `<span class="probe-key probe-${index + 1}-key">${escapeHtml(probe.label)}</span>`).join("")}${targets.length === 0 ? "" : '<span class="target-key">Target</span>'}</div></div>
     <div class="chart-scroll" tabindex="0" aria-label="Temperature chart; scroll horizontally on small screens">
       <svg class="temperature-chart" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="Pit and probe temperatures over ${elapsedLabel(lastElapsed)}">
         <defs><filter id="chalk-displacement"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="7" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="2.5"/></filter></defs>
@@ -140,9 +161,9 @@ export function chartMarkup(samples, events, cook) {
         ${grid}
         ${hourGrid}
         ${finalTickMarkup}
-        ${target === null ? "" : `<line class="target-line" x1="${PLOT.left}" x2="${WIDTH - PLOT.right}" y1="${targetY}" y2="${targetY}"/><text class="target-label" x="${targetLabelX}" y="${doneLabelY}">done at ${Math.round(target.value)}°${reached === null ? " (not reached)" : ""}</text>`}
+        ${targetMarkup}
         <g class="chalk-lines" filter="url(#chalk-displacement)"><path class="pit-line" d="${linePath(points, "pit_temp", x, y)}"/>${probes.map((probe, index) => `<path class="probe-line probe-${index + 1}" d="${linePath(points, probe.key, x, y)}"/>`).join("")}</g>
-        ${reachedMarker}
+        ${reachedMarkers}
         ${pins}
         <text class="chart-axis chart-axis-start" x="${PLOT.left}" y="${HEIGHT - 12}">${escapeHtml(startLabel(cook.started_at))}</text>
       </svg>

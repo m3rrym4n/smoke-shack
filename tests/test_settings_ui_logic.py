@@ -66,6 +66,29 @@ def test_grill_picture_controls_show_existing_previews() -> None:
     assert markup.count(">Remove</button>") == 2
 
 
+def test_grill_picture_previews_use_the_ingress_base_path() -> None:
+    grills = json.dumps([{
+        "id": "one", "name": "Patio Grill", "maker": "Masterbuilt",
+        "model": "Gravity Series 800", "device_status": "available",
+        "connection_status": "connected", "equipment_id": 7,
+        "photo_url": "/api/equipment/7/photo", "logo_url": "/api/equipment/7/logo",
+    }])
+    expression = (
+        'globalThis.document = { baseURI: '
+        '"http://homeassistant.local/api/hassio_ingress/token/" }; '
+        f"console.log(JSON.stringify(logic.renderGrills({grills})))"
+    )
+    markup = run_logic(expression)
+    assert (
+        'src="http://homeassistant.local/api/hassio_ingress/token/'
+        'api/equipment/7/photo"' in markup
+    )
+    assert (
+        'src="http://homeassistant.local/api/hassio_ingress/token/'
+        'api/equipment/7/logo"' in markup
+    )
+
+
 def test_server_message_is_rendered_next_to_its_grill() -> None:
     grills = json.dumps([
         {

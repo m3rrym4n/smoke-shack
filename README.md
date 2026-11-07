@@ -12,9 +12,9 @@
 
 Smoke-Shack is a self-hosted cook journal for pellet grills. It records grill and probe data
 from Home Assistant, turning each cook into a searchable history of temperatures, phases,
-events, ingredients, notes, and results. It was built and tested with a Green Mountain Grills
-Daniel Boone Prime WiFi through the `gmg-ha` integration. Smoke-Shack only reads from Home
-Assistant and never controls the grill.
+events, ingredients, notes, and results. It supports Green Mountain Grills and Masterbuilt
+Gravity Series grills through their respective Home Assistant integrations. Smoke-Shack only
+reads from Home Assistant and never controls the grill.
 
 ## Safety
 
@@ -22,20 +22,29 @@ Smoke-Shack is a journal and monitor, not a safety system. Always check your gri
 
 ## Choose your setup
 
+**Supported grills:**
+
+- **Green Mountain Grills Daniel Boone Prime WiFi** via the
+  [`gmg-ha` integration](https://github.com/y3klab/gmg-ha). Tested on real hardware.
+- **Masterbuilt Gravity Series 800** via the
+  [`masterbuilt-gravity-ha` integration](https://github.com/lucvan/masterbuilt-gravity-ha).
+  Supported and tested against the grill-sim mock only; not yet tested on real hardware.
+
 Choose the setup path that matches where you want to run Smoke-Shack and how your cooks are
 recorded:
 
-- **[Self-hosted with Docker (gmg-ha)](#setup-1-self-hosted-with-docker-gmg-ha)** — for Docker
-  users whose grill data comes from the `gmg-ha` Home Assistant integration.
-- **[Home Assistant App (gmg-ha)](#setup-2-home-assistant-app-gmg-ha)** — for Home Assistant
-  OS or Supervised users who want Smoke-Shack to run inside Home Assistant.
+- **[Self-hosted with Docker](#setup-1-self-hosted-with-docker)** — for Docker users whose
+  grill data comes from a supported Home Assistant integration.
+- **[Home Assistant App](#setup-2-home-assistant-app)** — for Home Assistant OS or Supervised
+  users who want Smoke-Shack to run inside Home Assistant.
 - **[Self-hosted, manual mode](#setup-3-self-hosted-manual-mode-coming-soon)** — for users
-  without Home Assistant or `gmg-ha`; coming soon.
+  without Home Assistant or a grill integration; coming soon.
 
 ## Status
 
-Smoke-Shack is an early release. The author uses it daily with one grill, but expect rough
-edges.
+Smoke-Shack is an early release. The author uses it daily with a Green Mountain Grills Daniel
+Boone Prime WiFi. Masterbuilt Gravity Series 800 support has been tested against the grill-sim
+mock only, not yet on real hardware. Expect rough edges.
 
 ## Features
 
@@ -50,28 +59,36 @@ edges.
 
 ## How it works
 
-The grill connects over Wi-Fi to the `gmg-ha` integration inside Home Assistant. Home
-Assistant then provides the grill data to Smoke-Shack. Smoke-Shack does not talk to the grill:
-it only reads from Home Assistant through its REST API and WebSocket connection, then records
-each cook in its own SQLite database.
+The grill connects over Wi-Fi to its Home Assistant integration: `gmg-ha` for the Green
+Mountain Grills Daniel Boone Prime WiFi, or `masterbuilt-gravity-ha` for the Masterbuilt
+Gravity Series 800. Home Assistant then provides the grill data to Smoke-Shack. Smoke-Shack
+does not talk to the grill: it only reads from Home Assistant through its REST API and
+WebSocket connection, then records each cook in its own SQLite database.
 
-## Setup 1: Self-hosted with Docker (gmg-ha)
+## Setup 1: Self-hosted with Docker
 
 ### Requirements
 
 1. **Home Assistant**, running and reachable from the Smoke-Shack container, with a
    [long-lived access token](https://www.home-assistant.io/docs/authentication/#your-account-profile).
-2. **The [`gmg-ha` integration](https://github.com/y3klab/gmg-ha)**, installed in Home
-   Assistant through [HACS](https://www.hacs.xyz/). The grill must be in Wi-Fi mode and
-   reachable on the local network because `gmg-ha` communicates with it over local UDP, with
-   no cloud service. Smoke-Shack was built and tested with a Green Mountain Grills Daniel
-   Boone Prime WiFi; other grills are untested.
+2. **The Home Assistant integration for your grill**, installed through
+   [HACS](https://www.hacs.xyz/): [`gmg-ha`](https://github.com/y3klab/gmg-ha) for the Green
+   Mountain Grills Daniel Boone Prime WiFi, or
+   [`masterbuilt-gravity-ha`](https://github.com/lucvan/masterbuilt-gravity-ha) for the
+   Masterbuilt Gravity Series 800.
 
-   Credit goes to the `gmg-ha` project and its author for the Home Assistant integration.
+   - `gmg-ha`: the grill must be in Wi-Fi mode and reachable on the local network. The
+     integration talks to it over local UDP, with no cloud service.
+   - `masterbuilt-gravity-ha`: the grill must be on Wi-Fi and registered with its Masterbuilt
+     cloud account. The integration reads the grill through the Masterbuilt cloud, so it needs
+     internet access.
+
+   Credit goes to the `gmg-ha` project and its author, and to the `masterbuilt-gravity-ha`
+   project and its author, for their Home Assistant integrations.
 3. **Docker with Docker Compose**.
 
-Other Home Assistant grill integrations may work if you map their entities in
-`entities.yaml`, but only `gmg-ha` is tested.
+The `gmg-ha` integration is tested on real hardware. The `masterbuilt-gravity-ha` integration
+is supported and tested against the grill-sim mock only, not yet on real hardware.
 
 ### Quick start with Docker Compose
 
@@ -93,6 +110,10 @@ Open `http://docker-host:8011`. Keep the `.env` file out of version control; you
 platform's secret storage is also suitable for `HA_TOKEN`.
 
 ### Configure Home Assistant entities
+
+This `entities.yaml` walkthrough is for the Green Mountain Grills and `gmg-ha` path.
+Masterbuilt is detected through Smoke-Shack's built-in grill profile and requires no
+`entities.yaml` editing.
 
 `ENTITIES_CONFIG` tells Smoke-Shack where to find the YAML entity map. The included
 [`config/entities.yaml`](config/entities.yaml) uses the entity IDs that `gmg-ha` creates in a
@@ -135,14 +156,19 @@ All keys except `extra_probes` are required. Check your entity IDs in Home Assis
 **Developer tools → States**. If they differ from the example, replace the values rather than
 changing the keys.
 
-## Setup 2: Home Assistant App (gmg-ha)
+## Setup 2: Home Assistant App
 
 Requirements:
 
 - Home Assistant OS or Supervised.
-- The [`gmg-ha` integration](https://github.com/y3klab/gmg-ha), installed through
-  [HACS](https://www.hacs.xyz/).
-- Your grill in Wi-Fi mode on the same network as Home Assistant.
+- The integration for your grill, installed through [HACS](https://www.hacs.xyz/):
+  [`gmg-ha`](https://github.com/y3klab/gmg-ha) or
+  [`masterbuilt-gravity-ha`](https://github.com/lucvan/masterbuilt-gravity-ha).
+- `gmg-ha`: the grill must be in Wi-Fi mode and reachable on the local network. The integration
+  talks to it over local UDP, with no cloud service.
+- `masterbuilt-gravity-ha`: the grill must be on Wi-Fi and registered with its Masterbuilt cloud
+  account. The integration reads the grill through the Masterbuilt cloud, so it needs internet
+  access.
 
 [![Add Repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fm3rrym4n%2Fsmoke-shack)
 
@@ -153,6 +179,8 @@ https://github.com/m3rrym4n/smoke-shack
 ```
 
 The app uses the default `gmg-ha` entity names; details are in the app's Documentation tab.
+This setup is tested with `gmg-ha`. Masterbuilt support in the Home Assistant App is not yet
+tested.
 
 ## Setup 3: Self-hosted, manual mode (coming soon)
 
