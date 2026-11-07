@@ -75,8 +75,13 @@ WebSocket connection, then records each cook in its own SQLite database.
    [HACS](https://www.hacs.xyz/): [`gmg-ha`](https://github.com/y3klab/gmg-ha) for the Green
    Mountain Grills Daniel Boone Prime WiFi, or
    [`masterbuilt-gravity-ha`](https://github.com/lucvan/masterbuilt-gravity-ha) for the
-   Masterbuilt Gravity Series 800. The grill must be in Wi-Fi mode and reachable from Home
-   Assistant.
+   Masterbuilt Gravity Series 800.
+
+   - `gmg-ha`: the grill must be in Wi-Fi mode and reachable on the local network. The
+     integration talks to it over local UDP, with no cloud service.
+   - `masterbuilt-gravity-ha`: the grill must be on Wi-Fi and registered with its Masterbuilt
+     cloud account. The integration reads the grill through the Masterbuilt cloud, so it needs
+     internet access.
 
    Credit goes to the `gmg-ha` project and its author, and to the `masterbuilt-gravity-ha`
    project and its author, for their Home Assistant integrations.
@@ -156,9 +161,14 @@ changing the keys.
 Requirements:
 
 - Home Assistant OS or Supervised.
-- The [`gmg-ha` integration](https://github.com/y3klab/gmg-ha), installed through
-  [HACS](https://www.hacs.xyz/).
-- Your grill in Wi-Fi mode on the same network as Home Assistant.
+- The integration for your grill, installed through [HACS](https://www.hacs.xyz/):
+  [`gmg-ha`](https://github.com/y3klab/gmg-ha) or
+  [`masterbuilt-gravity-ha`](https://github.com/lucvan/masterbuilt-gravity-ha).
+- `gmg-ha`: the grill must be in Wi-Fi mode and reachable on the local network. The integration
+  talks to it over local UDP, with no cloud service.
+- `masterbuilt-gravity-ha`: the grill must be on Wi-Fi and registered with its Masterbuilt cloud
+  account. The integration reads the grill through the Masterbuilt cloud, so it needs internet
+  access.
 
 [![Add Repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fm3rrym4n%2Fsmoke-shack)
 
