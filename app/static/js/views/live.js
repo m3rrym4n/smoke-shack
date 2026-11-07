@@ -1,4 +1,4 @@
-import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getMeat, getNotes, getPellets, getPlannedCooks, getRecentCooks, getShowcase, getStatus, listSpices, updateCook, withBase } from "../api.js";
+import { deleteCook, getCook, getCookEvents, getCookLogCooks, getCookPhotos, getCookSamples, getFuel, getGrills, getMeat, getNotes, getPlannedCooks, getRecentCooks, getStatus, listSpices, updateCook, withBase } from "../api.js";
 import { chartMarkup } from "../components/chart.js";
 import { cookLogMarkup } from "../components/cook-log.js";
 import { cookNotesMarkup } from "../components/cook-notes.js";
@@ -32,11 +32,29 @@ function leader(label, value, active = false, total = false) {
   return `<div class="ld phase-row ${active ? "active" : ""} ${total ? "total" : ""}"><span>${label}</span><i></i><strong>${value}</strong></div>`;
 }
 
+function fuelLabel(item) {
+  if (!item) return "Not selected";
+  const type = item.type ? item.type[0].toUpperCase() + item.type.slice(1) : "Pellets";
+  return `${item.vendor} ${item.product_name} (${type})`;
+}
+
+function channelReading(sample, key) {
+  const channel = sample?.channels?.find((item) => item.key === key);
+  if (channel) return channel;
+  const number = /^probe(\d+)$/.exec(key)?.[1];
+  if (!number) return { value: null, target: null };
+  return {
+    value: sample?.[`probe${number}`] ?? sample?.extra_probes?.[key],
+    target: sample?.[`probe${number}_target`] ?? sample?.extra_probe_targets?.[key],
+  };
+}
+
 export function probeBoard(name, probe, samples, cook, active) {
   if (!active) return `<section class="board probe-board unplugged"><h2 class="hd">${name}</h2><div class="sold-out"><b>×</b><span>sold out<br>(unplugged)</span></div></section>`;
   const latest = samples.at(-1);
-  const reading = latest?.[`probe${probe}`];
-  const currentTarget = Number(latest?.[`probe${probe}_target`]);
+  const channel = channelReading(latest, typeof probe === "string" ? probe : `probe${probe}`);
+  const reading = channel.value;
+  const currentTarget = Number(channel.target);
   const target = Number.isFinite(currentTarget) && currentTarget > 0 ? currentTarget : null;
   const connected = reading !== null && reading !== undefined;
   if (!connected) return `<section class="board probe-board unplugged"><h2 class="hd">${name}</h2><div class="sold-out"><b>×</b><span>sold out<br>(unplugged)</span></div></section>`;
@@ -49,6 +67,13 @@ export function probeBoard(name, probe, samples, cook, active) {
     <div class="probe-target">${target == null ? "no target set" : `aiming for ${temp(target)}`}</div>
     ${progress}
   </section>`;
+}
+
+export function probeCards(channels, samples, cook, active) {
+  return channels
+    .filter((channel) => channel.role === "meat")
+    .map((channel) => probeBoard(escapeHtml(channel.label), channel.key, samples, cook, active))
+    .join("");
 }
 
 function rubDetailMarkup(cook) {
@@ -64,7 +89,9 @@ export function heroMarkup(cook, samples, active, historical, showcase, grillIde
   const setpoint = sample?.setpoint ?? cook.effective_setpoint ?? 0;
   const meat = cook.meat?.type || "Mystery smoke";
   const weight = cook.meat?.pounds ? `<span>${escapeHtml(cook.meat.pounds)} lb</span>` : "";
-  const details = [setpoint ? `${temp(setpoint)} setpoint` : null, cook.pellet ? `${cook.pellet.vendor} ${cook.pellet.product_name}` : null, cook.profile_name].filter(Boolean).map(escapeHtml).join(" · ");
+  const details = [setpoint ? `${temp(setpoint)} setpoint` : null, cook.pellet ? fuelLabel(cook.pellet) : null, cook.profile_name].filter(Boolean).map(escapeHtml).join(" · ");
+  const channels = historical ? cook.channels || [] : grillIdentity?.channels || [];
+  const probes = probeCards(channels, samples, cook, active);
   return `<div class="live-hero">
     <section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">${active ? escapeHtml(cook.status) : "fire's out"}</span></div>${gaugeSvg(active ? sample?.pit_temp : 0, setpoint, showcase?.logo_url)}${showcaseMarkup(showcase, grillIdentity, window.innerWidth, !historical)}</section>
     <div class="live-details">
@@ -73,9 +100,19 @@ export function heroMarkup(cook, samples, active, historical, showcase, grillIde
         <div class="phase-bar" aria-label="Cook phase progress"><span class="startup" style="width:${widths.startup}%"></span><span class="cooking" style="width:${widths.cook}%"></span><span class="cooldown" style="width:${widths.cooldown}%"></span></div>
         <div class="phase-list">${leader("Startup", duration(times.startup), active && cook.status === "startup")}${leader("Cook", duration(times.cook), active && cook.status === "cook")}${leader("Cool down", duration(times.cooldown), active && cook.status === "cooldown")}${leader("Total grill time", duration(times.total), false, true)}</div>
       </section>
-      <div class="probe-grid">${probeBoard("Probe 1", 1, samples, cook, active)}${probeBoard("Probe 2", 2, samples, cook, active)}</div>
+      ${probes ? `<div class="probe-grid">${probes}</div>` : ""}
     </div>
   </div>`;
+}
+
+export function grillPickerMarkup(grills) {
+  const choices = grills.filter((grill) => grill.equipment_id != null);
+  if (!choices.length) return "";
+  const options = choices.map((grill) => {
+    const label = [grill.maker, grill.model].filter(Boolean).join(" ") || grill.name;
+    return `<option value="${escapeHtml(grill.equipment_id)}">${escapeHtml(label)}</option>`;
+  }).join("");
+  return `<form class="cook-grill-picker"><label>Choose grill<select name="equipment_id" required><option value="">Choose grill</option>${options}</select></label><button class="pbtn" type="submit">Save</button><span role="status"></span></form>`;
 }
 
 async function load(container, onStatus, isCurrent, requestedCookId, editing, refresh, setBusy, setShowcaseCleanup, updateSmoke) {
@@ -105,14 +142,14 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
     const notes = await getNotes("this_cook", cook.id);
     if (!isCurrent()) return;
     updateSmoke(null, null);
-    container.innerHTML = `<div class="cook-detail"><div class="detail-actions"><a class="back-link cc" href="#cooks">← All cooks</a><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><section class="order-pad planned-summary"><span class="tape" aria-hidden="true"></span><div class="order-heading"><h2>PLANNED ORDER</h2><span>No. ${String(cook.id).padStart(4, "0")}</span></div><p><b>Meat:</b> ${escapeHtml(cook.meat?.type || "Not selected")}</p><p><b>Pellets:</b> ${escapeHtml(cook.pellet ? `${cook.pellet.vendor} ${cook.pellet.product_name}` : "Not selected")}</p>${rubDetailMarkup(cook)}<p><b>Sauces:</b> ${escapeHtml(cook.sauces || "—")}</p><p><b>Prep time:</b> ${cook.prep_time_minutes ?? "—"}${cook.prep_time_minutes != null ? " minutes" : ""}</p><p><b>Rotisserie:</b> ${cook.rotisserie ? "Yes" : "No"}</p><p><b>How it turned out:</b> ${escapeHtml(cook.results_text || "—")}</p><div class="planned-detail-actions"><button class="paper-button planned-cancel" type="button">Cancel order</button><span class="plan-confirm" hidden></span></div></section></div>`;
+    container.innerHTML = `<div class="cook-detail"><div class="detail-actions"><a class="back-link cc" href="#cooks">← All cooks</a><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><section class="order-pad planned-summary"><span class="tape" aria-hidden="true"></span><div class="order-heading"><h2>PLANNED ORDER</h2><span>No. ${String(cook.id).padStart(4, "0")}</span></div><p><b>Meat:</b> ${escapeHtml(cook.meat?.type || "Not selected")}</p><p><b>Fuel:</b> ${escapeHtml(fuelLabel(cook.pellet))}</p>${rubDetailMarkup(cook)}<p><b>Sauces:</b> ${escapeHtml(cook.sauces || "—")}</p><p><b>Prep time:</b> ${cook.prep_time_minutes ?? "—"}${cook.prep_time_minutes != null ? " minutes" : ""}</p><p><b>Rotisserie:</b> ${cook.rotisserie ? "Yes" : "No"}</p><p><b>How it turned out:</b> ${escapeHtml(cook.results_text || "—")}</p><div class="planned-detail-actions"><button class="paper-button planned-cancel" type="button">Delete</button><span class="plan-confirm" hidden></span></div></section></div>`;
     container.querySelector(".planned-summary").insertAdjacentHTML("beforebegin", cookNotesMarkup(notes));
-    container.querySelector(".planned-cancel").addEventListener("click", () => confirmDelete(container.querySelector(".plan-confirm"), async () => { await deleteCook(cook.id); window.location.hash = "cooks"; }));
+    container.querySelector(".planned-cancel").addEventListener("click", () => confirmDelete(container.querySelector(".plan-confirm"), async () => { await deleteCook(cook.id); window.location.hash = "cooks"; }, "Delete this cook permanently?"));
     return;
   }
   if (editing && requestedCook) {
     const [meat, availablePellets, cooks, photos, spices] = await Promise.all([
-      getMeat(), getPellets(), getCookLogCooks(10000), getCookPhotos(requestedCook.id), listSpices(),
+      getMeat(), getFuel(), getCookLogCooks(10000), getCookPhotos(requestedCook.id), listSpices(),
     ]);
     const pellets = requestedCook.pellet && !availablePellets.some((item) => item.id === requestedCook.pellet.id)
       ? [...availablePellets, requestedCook.pellet]
@@ -130,13 +167,13 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
     });
     return;
   }
-  const [cook, samples, events, meat, pellets, closedCooks, planned, detailPhotos, showcase, notes, spices] = await Promise.all([
+  const [cook, samples, events, meat, pellets, closedCooks, planned, detailPhotos, notes, spices, grills] = await Promise.all([
     requestedCook || (cookId ? getCook(cookId) : null), cookId ? getCookSamples(cookId) : [], cookId ? getCookEvents(cookId) : [],
-    liveForms ? getMeat() : [], liveForms ? getPellets() : [], liveForms ? getRecentCooks(10000) : [], liveForms ? getPlannedCooks() : [],
+    liveForms ? getMeat() : [], liveForms ? getFuel() : [], liveForms ? getRecentCooks(10000) : [], liveForms ? getPlannedCooks() : [],
     !liveForms && cookId ? getCookPhotos(cookId) : [],
-    getShowcase(),
     !liveForms && cookId ? getNotes("this_cook", cookId) : [],
     liveForms ? listSpices() : [],
+    !liveForms && requestedCook?.equipment_id == null ? getGrills() : [],
   ]);
   if (!isCurrent()) return;
   const log = liveForms ? `<div class="log-pin-grid">${cookLogMarkup(events, true)}${pinBoardMarkup()}</div>` : cookLogMarkup(events, false);
@@ -164,15 +201,46 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
   }
   const resultPhotos = !liveForms && cook ? `<section class="order-pad cook-results"><span class="tape" aria-hidden="true"></span>${rubDetailMarkup(cook)}<h2>How it turned out</h2><p>${escapeHtml(cook.results_text || "No write-up yet.")}</p>${photoGalleryMarkup(detailPhotos)}</section>` : "";
   const demo = requestedCookId == null && smokeDemoMode(window.location.hash);
-  const demoPit = `<section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">smoke demo</span></div>${gaugeSvg(null, 0, showcase?.logo_url)}${showcaseMarkup(showcase, status, window.innerWidth)}</section>`;
+  const historical = requestedCookId != null;
+  const grillIdentity = historical ? {
+    grill_title: cook?.grill_model || "",
+    grill_maker: cook?.grill_manufacturer || "",
+    logo_url: cook?.grill_logo_url || null,
+    photo_url: cook?.grill_photo_url || null,
+  } : status;
+  const grillPicker = historical && cook?.equipment_id == null ? grillPickerMarkup(grills) : "";
+  const demoPit = `<section class="board pit-board"><div class="board-title"><h1 class="hd">The Pit</h1><span class="cook-label">smoke demo</span></div>${gaugeSvg(null, 0, status?.logo_url)}${showcaseMarkup(status, status, window.innerWidth)}</section>`;
   const cookIsActive = cook?.ended_at == null;
-  const cookContent = cook ? `${heroMarkup(cook, samples, cookIsActive, requestedCookId != null, showcase, status)}${cookNotesMarkup(notes)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : demo ? demoPit : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
+  const cookContent = cook ? `${heroMarkup(cook, samples, cookIsActive, historical, grillIdentity, grillIdentity)}${grillPicker}${cookNotesMarkup(notes)}${resultPhotos}${chartMarkup(samples, events, cook)}${log}` : demo ? demoPit : '<section class="board live-empty"><h1 class="hd">The Pit</h1><p>The fire’s out. Build the next order below.</p></section>';
   const liveDetail = requestedCookId != null && cook && cook.ended_at == null;
   const backLink = liveDetail
     ? '<a class="back-link cc" href="#live">← Back to live cook</a>'
     : '<a class="back-link cc" href="#cooks">← All cooks</a>';
-  const detailActions = requestedCookId == null ? "" : `<div class="detail-actions">${backLink}<div class="detail-action-buttons"><label class="detail-stats-toggle"><input type="checkbox"${cook.exclude_from_stats ? " checked" : ""}> Exclude from stats (dry run / test)</label><span class="detail-stats-message" role="status"></span><button class="pbtn export-cook" type="button">Export PNG</button><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><span class="export-message" role="status" aria-live="polite"></span></div>`;
+  const deleteAction = liveDetail ? "" : '<button class="pbtn delete-detail-cook" type="button">Delete</button><span class="delete-confirm detail-delete-confirm" hidden></span>';
+  const detailActions = requestedCookId == null ? "" : `<div class="detail-actions">${backLink}<div class="detail-action-buttons"><label class="detail-stats-toggle"><input type="checkbox"${cook.exclude_from_stats ? " checked" : ""}> Exclude from stats (dry run / test)</label><span class="detail-stats-message" role="status"></span><button class="pbtn export-cook" type="button">Export PNG</button><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a>${deleteAction}</div><span class="export-message" role="status" aria-live="polite"></span></div>`;
   container.innerHTML = `<div class="cook-detail">${detailActions}${cookContent}${order}</div>`;
+  container.querySelector(".delete-detail-cook")?.addEventListener("click", () => {
+    confirmDelete(container.querySelector(".detail-delete-confirm"), async () => {
+      await deleteCook(cook.id);
+      window.location.hash = "cooks";
+    }, "Delete this cook permanently?");
+  });
+  const grillForm = container.querySelector(".cook-grill-picker");
+  grillForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = grillForm.querySelector("button");
+    const message = grillForm.querySelector('[role="status"]');
+    const equipmentId = Number(new FormData(grillForm).get("equipment_id"));
+    if (!equipmentId) return;
+    button.disabled = true;
+    try {
+      await updateCook(cook.id, { equipment_id: equipmentId });
+      await refresh();
+    } catch (error) {
+      message.textContent = error.message || "Could not save";
+      button.disabled = false;
+    }
+  });
   const statsToggle = container.querySelector(".detail-stats-toggle input");
   statsToggle?.addEventListener("change", async () => {
     const message = container.querySelector(".detail-stats-message");
@@ -188,7 +256,7 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
     }
   });
   setShowcaseCleanup(bindShowcase(container, {
-    grillIdentity: status,
+    grillIdentity,
     setBusy,
     onLogoChange: (url) => {
       const logo = container.querySelector(".gauge-logo-slot");
@@ -200,7 +268,7 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
   else if (cook) {
     bindPhotoGallery(container.querySelector(".cook-results"), { cookId: cook.id });
     bindCookExport(container.querySelector(".cook-detail"), cook, {
-      notes, resultsText: cook.results_text, samples, events, photos: detailPhotos, showcase, grillIdentity: status,
+      notes, resultsText: cook.results_text, samples, events, photos: detailPhotos, showcase: grillIdentity, grillIdentity,
     });
   }
 }

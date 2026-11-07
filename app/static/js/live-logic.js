@@ -22,17 +22,13 @@ export function validateShowcaseFile(file, kind = "photo") {
   return "";
 }
 
-export function showcasePlaceholder(imageUrl) {
-  return imageUrl ? "image" : "placeholder";
-}
-
 export function showcaseLayoutClass(width) {
   return Number(width) <= 600 ? "showcase-mobile" : "showcase-wide";
 }
 
 export function showcaseNameLines(status = {}) {
   return {
-    title: status.grill_title || status.grill_name || "My grill",
+    title: status.grill_title || status.grill_name || "",
     maker: status.grill_maker || "",
   };
 }
@@ -58,10 +54,6 @@ export function writeStackPosition(storage, key, position) {
   };
   storage.setItem(key, JSON.stringify(saved));
   return saved;
-}
-
-export function showcaseSaveEnabled(file) {
-  return Boolean(file);
 }
 
 function secondsBetween(start, end) {

@@ -1,0 +1,426 @@
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+
+from conftest import add_channels
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from app.api import create_app
+from app.config import Settings
+from app.ha import HARegistrySnapshot, HAStatus
+from app.models import ChannelReading, Cook, Equipment, EquipmentEntity, Sample
+from app.routes import grills as grill_routes
+from app.service import GrillSnapshot
+
+
+class RegistryHAClient:
+    def __init__(self, snapshot: HARegistrySnapshot | None = None) -> None:
+        self.status = HAStatus(configured=True)
+        self.snapshot = snapshot
+        self.registry_snapshot_calls = 0
+
+    async def snapshots(self) -> AsyncIterator[GrillSnapshot]:
+        if False:
+            yield GrillSnapshot()
+
+    async def registry_snapshot(self) -> HARegistrySnapshot:
+        self.registry_snapshot_calls += 1
+        if self.snapshot is None:
+            raise RuntimeError("connection refused")
+        return self.snapshot
+
+
+def registry_snapshot(
+    *, unavailable: bool = False, include_problem: bool = True
+) -> HARegistrySnapshot:
+    state = "unavailable" if unavailable else "unknown"
+    return HARegistrySnapshot(
+        devices=(
+            {
+                "id": "masterbuilt-device",
+                "name": "Masterbuilt Grill",
+                "name_by_user": "Patio Grill",
+                "manufacturer": "Masterbuilt",
+                "model": "Gravity Series 800",
+            },
+            {
+                "id": "unrelated-device",
+                "name": "Kitchen Light",
+                "manufacturer": "Acme",
+                "model": "Bulb",
+            },
+            {
+                "id": "gmg-device",
+                "name": "Daniel Boone",
+                "manufacturer": "Green Mountain Grills",
+                "model": "Daniel Boone Prime",
+            },
+        ),
+        entities=(
+            {
+                "entity_id": "sensor.mb_grill_temp",
+                "device_id": "masterbuilt-device",
+                "unique_id": "mock_masterbuilt_gravity_series_800_1_grill_temp",
+                "original_name": "Grill Temp",
+            },
+            {
+                "entity_id": "sensor.mb_probe1_temp",
+                "device_id": "masterbuilt-device",
+                "unique_id": "mock_masterbuilt_gravity_series_800_1_probe1_temp",
+                "original_name": "Probe1 Temp",
+            },
+            *tuple(
+                {
+                    "entity_id": f"sensor.mb_probe{number}_temp",
+                    "device_id": "masterbuilt-device",
+                    "unique_id": f"mock_masterbuilt_gravity_series_800_1_probe{number}_temp",
+                    "original_name": f"Probe{number} Temp",
+                }
+                for number in range(2, 5)
+            ),
+            {
+                "entity_id": "sensor.mb_target_temp",
+                "device_id": "masterbuilt-device",
+                "unique_id": "mock_masterbuilt_gravity_series_800_1_target_temp",
+                "original_name": "Target Temp",
+            },
+            *tuple(
+                {
+                    "entity_id": f"sensor.mb_probe{number}_target",
+                    "device_id": "masterbuilt-device",
+                    "unique_id": f"mock_masterbuilt_gravity_series_800_1_probe{number}_target",
+                    "original_name": f"Probe{number} Target",
+                }
+                for number in range(1, 5)
+            ),
+            *tuple(
+                {
+                    "entity_id": f"{domain}.mb_{role}",
+                    "device_id": "masterbuilt-device",
+                    "unique_id": f"mock_masterbuilt_gravity_series_800_1_{suffix}",
+                    "original_name": suffix.replace("_", " "),
+                }
+                for role, domain, suffix in (
+                    ("power", "binary_sensor", "power"),
+                    ("heating", "binary_sensor", "heating"),
+                    ("lid_open", "binary_sensor", "lid_open"),
+                    ("door_open", "binary_sensor", "door_open"),
+                    ("last_reported", "sensor", "last_reported"),
+                    ("cook_start", "sensor", "cook_start"),
+                )
+            ),
+            *(
+                (
+                    {
+                        "entity_id": "binary_sensor.mb_problem",
+                        "device_id": "masterbuilt-device",
+                        "unique_id": "mock_masterbuilt_gravity_series_800_1_problem",
+                        "original_name": "Problem",
+                    },
+                )
+                if include_problem
+                else ()
+            ),
+            {
+                "entity_id": "light.kitchen",
+                "device_id": "unrelated-device",
+                "unique_id": "kitchen",
+                "original_name": "Kitchen",
+            },
+            {
+                "entity_id": "sensor.pit",
+                "device_id": "gmg-device",
+                "unique_id": "gmg_pit",
+                "original_name": "Pit",
+            },
+            {
+                "entity_id": "sensor.probe1",
+                "device_id": "gmg-device",
+                "unique_id": "gmg_probe1",
+                "original_name": "Probe 1",
+            },
+            {
+                "entity_id": "sensor.probe2",
+                "device_id": "gmg-device",
+                "unique_id": "gmg_probe2",
+                "original_name": "Probe 2",
+            },
+        ),
+        states=(
+            {"entity_id": "sensor.mb_grill_temp", "state": state},
+            {"entity_id": "sensor.mb_probe1_temp", "state": state},
+            *tuple(
+                {"entity_id": f"sensor.mb_probe{number}_temp", "state": state}
+                for number in range(2, 5)
+            ),
+            {"entity_id": "sensor.mb_target_temp", "state": state},
+            {"entity_id": "light.kitchen", "state": "on"},
+            {"entity_id": "sensor.pit", "state": "225"},
+            {"entity_id": "sensor.probe1", "state": "145"},
+            {"entity_id": "sensor.probe2", "state": "unavailable"},
+        ),
+    )
+
+
+def test_lists_profile_match_and_existing_equipment(sessions) -> None:
+    add_channels(sessions)
+    app = create_app(Settings(), sessions, RegistryHAClient(registry_snapshot()))
+
+    with sessions() as session:
+        equipment = session.query(Equipment).one()
+        session.add(Cook(started_at=datetime(2026, 10, 16, tzinfo=UTC), equipment_id=equipment.id))
+        session.commit()
+
+    with TestClient(app) as client:
+        response = client.get("/api/grills")
+        cooks = client.get("/api/cooks").json()
+        status = client.get("/status").json()
+
+    assert response.status_code == 200
+    grills = response.json()
+    assert len(grills) == 2
+    assert grills[0] == {
+        "id": "masterbuilt-device",
+        "name": "Patio Grill",
+        "maker": "Masterbuilt",
+        "model": "Gravity Series 800",
+        "profile_id": "masterbuilt-gravity-800",
+        "device_status": "available",
+        "equipment_id": None,
+        "photo_url": None,
+        "logo_url": None,
+        "connection_status": "disconnected",
+    }
+    assert grills[1]["id"] == "gmg-device"
+    assert grills[1]["profile_id"] is None
+    assert grills[1]["equipment_id"] == 1
+    assert grills[1]["device_status"] == "available"
+    assert grills[1]["connection_status"] == "connected"
+    assert cooks[0]["grill_manufacturer"] == "Green Mountain Grills"
+    assert cooks[0]["grill_model"] == "Daniel Boone Prime"
+    assert status["grill_maker"] == "Green Mountain Grills"
+    assert status["grill_title"] == "Daniel Boone Prime"
+
+
+def test_discovered_identity_cache_expires_without_sleeping(sessions, monkeypatch) -> None:
+    add_channels(sessions)
+    ha_client = RegistryHAClient(registry_snapshot())
+    app = create_app(Settings(), sessions, ha_client)
+    now = 100.0
+    monkeypatch.setattr(grill_routes, "monotonic", lambda: now)
+
+    with TestClient(app) as client:
+        assert client.get("/status").status_code == 200
+        assert client.get("/status").status_code == 200
+        assert ha_client.registry_snapshot_calls == 1
+
+        now += 61
+        assert client.get("/status").status_code == 200
+
+    assert ha_client.registry_snapshot_calls == 2
+
+
+def test_discovered_identity_cache_keeps_last_good_value_on_failure(
+    sessions, monkeypatch
+) -> None:
+    add_channels(sessions)
+    ha_client = RegistryHAClient(registry_snapshot())
+    app = create_app(Settings(), sessions, ha_client)
+    now = 100.0
+    monkeypatch.setattr(grill_routes, "monotonic", lambda: now)
+
+    with TestClient(app) as client:
+        first = client.get("/status").json()
+        now += 61
+        ha_client.snapshot = None
+        second = client.get("/status").json()
+        third = client.get("/status").json()
+
+    assert first["grill_title"] == "Daniel Boone Prime"
+    assert second["grill_title"] == third["grill_title"] == first["grill_title"]
+    assert ha_client.registry_snapshot_calls == 2
+
+
+def test_connect_and_disconnect_clear_discovered_identity_cache(sessions) -> None:
+    add_channels(sessions)
+    ha_client = RegistryHAClient(registry_snapshot())
+    app = create_app(Settings(), sessions, ha_client)
+
+    with TestClient(app) as client:
+        client.get("/status")
+        assert app.state.discovered_identity_cache.identities is not None
+
+        assert client.post("/api/grills/masterbuilt-device/connect").status_code == 200
+        assert app.state.discovered_identity_cache.identities is None
+
+        client.get("/status")
+        assert app.state.discovered_identity_cache.identities is not None
+
+        assert client.post("/api/grills/masterbuilt-device/disconnect").status_code == 200
+        assert app.state.discovered_identity_cache.identities is None
+
+
+def test_profile_device_is_not_available_when_all_main_entities_are_unavailable(
+    sessions,
+) -> None:
+    app = create_app(Settings(), sessions, RegistryHAClient(registry_snapshot(unavailable=True)))
+
+    with TestClient(app) as client:
+        response = client.get("/api/grills")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": "masterbuilt-device",
+            "name": "Patio Grill",
+            "maker": "Masterbuilt",
+            "model": "Gravity Series 800",
+            "profile_id": "masterbuilt-gravity-800",
+            "device_status": "not_available",
+                "equipment_id": None,
+                "photo_url": None,
+                "logo_url": None,
+            "connection_status": "disconnected",
+        }
+    ]
+
+
+def test_registry_only_main_entity_does_not_make_device_available(sessions) -> None:
+    snapshot = registry_snapshot(unavailable=True)
+    states = tuple(
+        state
+        for state in snapshot.states
+        if state["entity_id"] != "sensor.mb_probe4_temp"
+    )
+    snapshot = HARegistrySnapshot(
+        devices=snapshot.devices,
+        entities=snapshot.entities,
+        states=states,
+    )
+    app = create_app(Settings(), sessions, RegistryHAClient(snapshot))
+
+    with TestClient(app) as client:
+        response = client.get("/api/grills")
+
+    assert response.status_code == 200
+    assert response.json()[0]["device_status"] == "not_available"
+
+
+def test_returns_503_when_home_assistant_is_unreachable(sessions) -> None:
+    app = create_app(Settings(), sessions, RegistryHAClient())
+
+    with TestClient(app) as client:
+        response = client.get("/api/grills")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Home Assistant is unavailable: connection refused"}
+
+
+def test_connect_creates_profile_equipment_and_switches_atomically(sessions) -> None:
+    add_channels(sessions)
+    app = create_app(Settings(), sessions, RegistryHAClient(registry_snapshot(unavailable=True)))
+
+    with TestClient(app) as client:
+        response = client.post("/api/grills/masterbuilt-device/connect")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["connection_status"] == "connected"
+    with sessions() as session:
+        equipment = session.scalars(select(Equipment).order_by(Equipment.id)).all()
+        assert [item.connected for item in equipment] == [False, True]
+        assert equipment[1].nickname == "Patio Grill"
+        assert (equipment[1].maker, equipment[1].model, equipment[1].fuel_type) == (
+            "Masterbuilt",
+            "Gravity 800",
+            "charcoal",
+        )
+        assert [channel.key for channel in equipment[1].channels] == [
+            "pit",
+            "probe1",
+            "probe2",
+            "probe3",
+            "probe4",
+        ]
+        assert equipment[1].stale_after_seconds == 600
+        assert {entity.role: entity.entity_id for entity in equipment[1].entities} == {
+            "power": "binary_sensor.mb_power",
+            "heating": "binary_sensor.mb_heating",
+            "lid_open": "binary_sensor.mb_lid_open",
+            "door_open": "binary_sensor.mb_door_open",
+            "error": "binary_sensor.mb_problem",
+            "last_reported": "sensor.mb_last_reported",
+            "cook_start": "sensor.mb_cook_start",
+        }
+
+    cook = app.state.cook_service.process(
+        GrillSnapshot(
+            pit_temp=275,
+            setpoint=300,
+            probe1=155,
+            probe2=160,
+            extra_probes={"probe3": 165, "probe4": 170},
+            fire_state="Running",
+            power_state="On",
+            hvac_mode="heat",
+        )
+    )
+    assert cook is not None and cook.equipment_id == 2
+    with sessions() as session:
+        assert len(session.scalars(select(ChannelReading)).all()) == 5
+
+
+def test_reconnect_does_not_duplicate_status_entities_and_missing_problem_is_ok(
+    sessions,
+) -> None:
+    app = create_app(
+        Settings(), sessions, RegistryHAClient(registry_snapshot(include_problem=False))
+    )
+
+    with TestClient(app) as client:
+        first = client.post("/api/grills/masterbuilt-device/connect")
+        second = client.post("/api/grills/masterbuilt-device/connect")
+
+    assert first.status_code == second.status_code == 200
+    with sessions() as session:
+        equipment = session.scalars(select(Equipment).where(Equipment.model == "Gravity 800")).one()
+        entities = session.scalars(
+            select(EquipmentEntity).where(EquipmentEntity.equipment_id == equipment.id)
+        ).all()
+        assert len(entities) == 6
+        assert "error" not in {entity.role for entity in entities}
+        assert equipment.stale_after_seconds == 600
+
+
+def test_connect_and_disconnect_are_blocked_during_active_cook(sessions) -> None:
+    add_channels(sessions)
+    with sessions() as session:
+        session.add(Cook(status="cook", equipment_id=1))
+        session.commit()
+    app = create_app(Settings(), sessions, RegistryHAClient(registry_snapshot()))
+
+    with TestClient(app) as client:
+        connect = client.post("/api/grills/masterbuilt-device/connect")
+        disconnect = client.post("/api/grills/gmg-device/disconnect")
+
+    assert connect.status_code == disconnect.status_code == 409
+    with sessions() as session:
+        assert session.get(Equipment, 1).connected is True
+        assert session.scalar(select(Equipment.id).where(Equipment.id != 1)) is None
+
+
+def test_disconnected_equipment_does_not_start_or_record(sessions) -> None:
+    with sessions() as session:
+        session.get(Equipment, 1).connected = False
+        session.commit()
+    app = create_app(Settings(), sessions, RegistryHAClient(registry_snapshot()))
+
+    result = app.state.cook_service.process(
+        GrillSnapshot(hvac_mode="heat", fire_state="Running", power_state="On")
+    )
+
+    assert result is None
+    with sessions() as session:
+        assert session.scalar(select(Cook.id)) is None
+        assert session.scalar(select(Sample.id)) is None

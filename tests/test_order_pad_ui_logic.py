@@ -8,7 +8,8 @@ from pathlib import Path
 def run_logic(expression: str) -> object:
     module = Path("app/static/js/order-pad-logic.js").resolve().as_uri()
     script = (
-        f'import {{ availableMeat, meatOptionLabel, validatePelletsUsed }} from "{module}"; '
+        "import { availableMeat, meatOptionLabel, pelletOptionLabel, "
+        f'validatePelletsUsed }} from "{module}"; '
         f"{expression}"
     )
     result = subprocess.run(
@@ -41,4 +42,16 @@ def test_pellets_used_validation_allows_blank_and_non_negative_values() -> None:
         'console.log(JSON.stringify([validatePelletsUsed(""), '
         'validatePelletsUsed("1.5"), validatePelletsUsed("-1")]))'
     )
-    assert run_logic(expression) == ["", "", "Pellets used must be zero or greater."]
+    assert run_logic(expression) == ["", "", "Fuel used must be zero or greater."]
+
+
+def test_fuel_picker_label_includes_type() -> None:
+    expression = (
+        'console.log(JSON.stringify([pelletOptionLabel({vendor:"Royal Oak",'
+        'product_name:"Lump",type:"charcoal"}),pelletOptionLabel({vendor:"Bear Mountain",'
+        'product_name:"Hickory"})]))'
+    )
+    assert run_logic(expression) == [
+        "Royal Oak, Lump (Charcoal)",
+        "Bear Mountain, Hickory (Pellets)",
+    ]

@@ -30,9 +30,18 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
-        with context.begin_transaction():
-            context.run_migrations()
+        with connection.begin():
+            # Python's sqlite3 driver does not begin a transaction for DDL. Start
+            # the database transaction explicitly; the SQLAlchemy transaction
+            # surrounding it owns the commit or rollback.
+            connection.exec_driver_sql("BEGIN")
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                transactional_ddl=True,
+            )
+            with context.begin_transaction():
+                context.run_migrations()
 
 
 run_migrations_offline() if context.is_offline_mode() else run_migrations_online()

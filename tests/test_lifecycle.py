@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from conftest import FakeClock, FakeHAClient
+import pytest
+from conftest import FakeClock, FakeHAClient, add_channels
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -53,6 +54,7 @@ def test_normal_cook(sessions: sessionmaker[Session], clock: FakeClock) -> None:
     service = CookService(sessions, clock)
     cook = service.process(snap())
     assert cook is not None and cook.status == "startup"
+    assert cook.equipment_id is not None
     clock.advance(minutes=5)
     service.process(snap(setpoint=275, fire="Running"))
     clock.advance(hours=2)
@@ -75,6 +77,91 @@ def test_zero_second_startup(sessions: sessionmaker[Session], clock: FakeClock) 
     assert cook.status == "cook"
     assert cook.startup_ended_at == cook.started_at
     assert cook.startup_duration_seconds == 0
+
+
+def masterbuilt_snap(
+    *, pit_temp: float | None, setpoint: float | None = 225
+) -> GrillSnapshot:
+    return GrillSnapshot(
+        pit_temp=pit_temp,
+        setpoint=setpoint,
+        fire_state="Running",
+        power_state="On",
+        hvac_mode="heat",
+        startup_ends_at_setpoint=True,
+        max_setpoint=750,
+        max_pit_temperature=750,
+    )
+
+
+def test_masterbuilt_startup_ends_when_pit_reaches_setpoint(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(masterbuilt_snap(pit_temp=70))
+    assert cook is not None and cook.status == "startup"
+
+    clock.advance(minutes=7)
+    cook = service.process(masterbuilt_snap(pit_temp=216))
+
+    assert cook is not None and cook.status == "cook"
+    assert cook.startup_ended_at == clock.now()
+
+
+def test_masterbuilt_startup_uses_changed_setpoint(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    service.process(masterbuilt_snap(pit_temp=70))
+    clock.advance(minutes=5)
+    cook = service.process(masterbuilt_snap(pit_temp=216, setpoint=350))
+    assert cook is not None and cook.status == "startup"
+
+    clock.advance(minutes=5)
+    cook = service.process(masterbuilt_snap(pit_temp=340, setpoint=350))
+
+    assert cook is not None and cook.status == "cook"
+
+
+@pytest.mark.parametrize(
+    ("pit_temp", "setpoint"),
+    [(None, 225), (70, None)],
+)
+def test_masterbuilt_unknown_temperature_stays_in_startup(
+    sessions: sessionmaker[Session],
+    clock: FakeClock,
+    pit_temp: float | None,
+    setpoint: float | None,
+) -> None:
+    cook = CookService(sessions, clock).process(
+        masterbuilt_snap(pit_temp=pit_temp, setpoint=setpoint)
+    )
+
+    assert cook is not None and cook.status == "startup"
+
+
+def test_masterbuilt_startup_times_out_after_sixty_minutes(
+    sessions: sessionmaker[Session], clock: FakeClock
+) -> None:
+    service = CookService(sessions, clock)
+    cook = service.process(masterbuilt_snap(pit_temp=70))
+    assert cook is not None
+    clock.advance(minutes=60)
+
+    cook = service.process(masterbuilt_snap(pit_temp=70))
+
+    assert cook is not None and cook.status == "cook"
+    assert cook.startup_ended_at == clock.now()
+    with sessions() as session:
+        event = session.scalar(
+            select(Event)
+            .where(Event.cook_id == cook.id, Event.kind == "phase_changed")
+            .order_by(Event.id.desc())
+        )
+    assert event is not None and event.data == {
+        "to": "cook",
+        "reason": "startup_timeout",
+    }
 
 
 def test_return_to_150_stays_in_cook(sessions: sessionmaker[Session], clock: FakeClock) -> None:
@@ -247,6 +334,34 @@ def test_restart_resumes_active_phase(sessions: sessionmaker[Session], clock: Fa
     assert resumed is not None and resumed.id == cook.id and resumed.status == "cook"
     processed = second.process(snap(setpoint=275))
     assert processed is not None and processed.started_at == cook.started_at
+
+
+@pytest.mark.parametrize(
+    ("probe1", "probe1_connected"),
+    [(None, False), (175, True)],
+)
+def test_restart_does_not_record_unchanged_probe_connection(
+    sessions: sessionmaker[Session],
+    clock: FakeClock,
+    probe1: float | None,
+    probe1_connected: bool,
+) -> None:
+    add_channels(sessions)
+    snapshot = snap(
+        setpoint=275,
+        fire="Running",
+        probe1=probe1,
+        probe1_connected=probe1_connected,
+        probe1_target=203,
+    )
+    cook = CookService(sessions, clock).process(snapshot)
+    assert cook is not None
+
+    clock.advance(seconds=10)
+    CookService(sessions, clock).process(snapshot)
+
+    assert "probe_connected" not in kinds(sessions, cook.id)
+    assert "probe_disconnected" not in kinds(sessions, cook.id)
 
 
 def test_live_start_adopts_oldest_plan_once_and_preserves_fields(

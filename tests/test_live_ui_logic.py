@@ -149,9 +149,9 @@ def test_showcase_file_validation() -> None:
 
 
 def test_logo_picker_accepts_svg_but_photo_picker_does_not() -> None:
-    component = Path("app/static/js/components/showcase.js").read_text()
-    assert '"image/png,image/jpeg,image/webp,.svg,image/svg+xml"' in component
-    assert '"image/png,image/jpeg,image/webp"' in component
+    settings = Path("app/static/js/settings-logic.js").read_text()
+    assert '"image/png,image/jpeg,image/webp,.svg,image/svg+xml"' in settings
+    assert '"image/png,image/jpeg,image/webp"' in settings
 
 
 def test_gauge_logo_geometry_and_placeholder() -> None:
@@ -175,24 +175,23 @@ def test_gauge_logo_geometry_and_placeholder() -> None:
     rendered = json.loads(result.stdout)
     assert rendered["standard"] == {"x": 140, "y": 272, "width": 120, "height": 56}
     assert rendered["wide"] == {"x": 350, "y": 272, "width": 300, "height": 56}
-    assert "GREEN MOUNTAIN GRILLS" in rendered["placeholder"]
+    assert ">logo</text>" in rendered["placeholder"]
+    assert "GREEN MOUNTAIN GRILLS" not in rendered["placeholder"]
     assert "<image" not in rendered["placeholder"]
-    assert "GREEN MOUNTAIN GRILLS" not in rendered["image"]
+    assert ">logo</text>" not in rendered["image"]
     assert 'preserveAspectRatio="xMidYMid meet"' in rendered["image"]
     assert "SMOKE-STACK" not in rendered["svg"]
 
 
-def test_showcase_placeholders_layout_and_stack_clamping() -> None:
+def test_showcase_layout_and_stack_clamping() -> None:
     expression = """
       console.log(JSON.stringify({
-        placeholders: [logic.showcasePlaceholder(null), logic.showcasePlaceholder("/logo")],
         layouts: [logic.showcaseLayoutClass(320), logic.showcaseLayoutClass(601)],
         positions: [logic.clampStackPosition(-8, 50), logic.clampStackPosition(38, 50),
                     logic.clampStackPosition(108, 5), logic.clampStackPosition("bad", 5)],
       }));
     """
     assert run_logic(expression) == {
-        "placeholders": ["placeholder", "image"],
         "layouts": ["showcase-mobile", "showcase-wide"],
         "positions": [0, 38, 100, 5],
     }
@@ -212,12 +211,39 @@ def test_showcase_title_and_maker_rendering_rules() -> None:
         {"title": "Daniel Boone", "maker": "Green Mountain Grills"},
         {"title": "Daniel Boone", "maker": ""},
         {"title": "Friendly", "maker": ""},
-        {"title": "My grill", "maker": ""},
+        {"title": "", "maker": ""},
     ]
 
     component = Path("app/static/js/components/showcase.js").read_text()
     assert "title.textContent = name.title" in component
     assert "maker.textContent = name.maker" in component
+    assert "Change pictures" not in component
+    assert "showcase-editor" not in component
+
+
+def test_historical_grill_picker_lists_existing_grills() -> None:
+    module = Path("app/static/js/views/live.js").resolve().as_uri()
+    script = f'''import {{ grillPickerMarkup }} from {json.dumps(module)};
+      console.log(JSON.stringify({{
+        choices: grillPickerMarkup([
+          {{equipment_id: 1, maker: "Masterbuilt", model: "Gravity Series 800"}},
+          {{equipment_id: 2, maker: "Green Mountain Grills", model: "Daniel Boone"}},
+        ]),
+        none: grillPickerMarkup([]),
+        undiscovered: grillPickerMarkup([{{equipment_id: null, name: "Unknown"}}]),
+      }}));'''
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    rendered = json.loads(result.stdout)
+    assert "Choose grill" in rendered["choices"]
+    assert "Masterbuilt Gravity Series 800" in rendered["choices"]
+    assert "Green Mountain Grills Daniel Boone" in rendered["choices"]
+    assert rendered["none"] == ""
+    assert rendered["undiscovered"] == ""
 
 
 def test_showcase_anchor_persistence_clamps_and_defaults() -> None:
@@ -240,14 +266,3 @@ def test_showcase_anchor_persistence_clamps_and_defaults() -> None:
         "restored": {"x": 0, "y": 100},
         "malformed": {"x": 50, "y": 5},
     }
-
-
-def test_showcase_save_is_enabled_only_when_a_file_is_chosen() -> None:
-    expression = """
-      console.log(JSON.stringify([
-        logic.showcaseSaveEnabled(null),
-        logic.showcaseSaveEnabled(undefined),
-        logic.showcaseSaveEnabled({name: "grill.jpg"}),
-      ]));
-    """
-    assert run_logic(expression) == [False, False, True]

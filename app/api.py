@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 from starlette.background import BackgroundTask
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -24,12 +24,18 @@ from app.backup import build_backup
 from app.config import Settings
 from app.database import make_engine, make_session_factory
 from app.deps import get_session
+from app.grill_identity import display_grill_identity
+from app.grill_profiles import load_grill_profiles
 from app.ha import HAClient, HAStatus, HomeAssistantClient, ingest
-from app.models import Cook, Sample
+from app.models import Cook, Equipment, Sample
 from app.restore import restore_backup
 from app.routes.cooks import router as cooks_router
+from app.routes.equipment import router as equipment_router
 from app.routes.events import router as events_router
 from app.routes.export import router as export_router
+from app.routes.fuel import router as fuel_router
+from app.routes.grills import discovered_equipment_identities
+from app.routes.grills import router as grills_router
 from app.routes.meat import router as meat_router
 from app.routes.meat_groups import router as meat_groups_router
 from app.routes.notes import router as notes_router
@@ -82,6 +88,7 @@ def create_app(
     ha_client: HAClient | None = None,
 ) -> FastAPI:
     config = settings or Settings.from_env()
+    grill_profiles = load_grill_profiles(config.grill_profiles_path)
     factory = sessions or make_session_factory(make_engine(config.database_path))
     service = CookService(
         factory,
@@ -101,6 +108,8 @@ def create_app(
             config.ha_ws_max_size_bytes,
             template_url=connection.template_url,
             host=connection.host,
+            sessions=factory,
+            grill_profiles=grill_profiles,
         )
     if client is not None:
         ha_status = client.status
@@ -133,18 +142,53 @@ def create_app(
         return {"status": "ok"}
 
     @app.get("/status")
-    def status(session: Session = Depends(get_session)) -> dict[str, Any]:
+    async def status(request: Request, session: Session = Depends(get_session)) -> dict[str, Any]:
         active = session.scalar(
             select(Cook)
             .where(Cook.ended_at.is_(None), Cook.status != "planned")
             .order_by(Cook.started_at.desc())
         )
         last_sample = session.scalar(select(Sample.ts).order_by(Sample.ts.desc()).limit(1))
-        fallback_name = ha_status.grill_name or config.grill_name.strip() or "My grill"
+        connected_grill = session.scalar(
+            select(Equipment)
+            .options(selectinload(Equipment.channels))
+            .where(Equipment.connected.is_(True))
+        )
+        if connected_grill is not None:
+            discovered = await discovered_equipment_identities(request, session)
+            fallback = discovered.get(connected_grill.id)
+            identity = display_grill_identity(connected_grill, fallback)
+            grill_name = connected_grill.nickname
+            grill_title = identity.model or connected_grill.nickname or ""
+            grill_maker = identity.maker
+            grill_photo_url = (
+                f"/api/equipment/{connected_grill.id}/photo"
+                if connected_grill.photo_path is not None
+                else None
+            )
+            grill_logo_url = (
+                f"/api/equipment/{connected_grill.id}/logo"
+                if connected_grill.logo_path is not None
+                else None
+            )
+            grill_channels = [
+                {"key": channel.key, "label": channel.label, "role": channel.role}
+                for channel in connected_grill.channels
+            ]
+        else:
+            grill_name = ""
+            grill_title = ""
+            grill_maker = None
+            grill_photo_url = None
+            grill_logo_url = None
+            grill_channels = []
         return {
-            "grill_name": fallback_name,
-            "grill_title": ha_status.grill_title or fallback_name,
-            "grill_maker": ha_status.grill_maker,
+            "grill_name": grill_name,
+            "grill_title": grill_title,
+            "grill_maker": grill_maker,
+            "photo_url": grill_photo_url,
+            "logo_url": grill_logo_url,
+            "channels": grill_channels,
             "ha": {
                 "configured": ha_status.configured,
                 "connected": ha_status.connected,
@@ -202,18 +246,23 @@ def create_app(
     app.state.photo_dir = Path(config.photo_dir)
     app.state.showcase_dir = Path(config.photo_dir).parent / "showcase"
     app.state.cook_service = service
+    app.state.grill_profiles = grill_profiles
+    app.state.ha_client = client
     app.include_router(meat_router)
     app.include_router(meat_groups_router)
+    app.include_router(fuel_router)
     app.include_router(pellets_router)
     app.include_router(spices_router)
     app.include_router(notes_router)
     app.include_router(events_router)
+    app.include_router(equipment_router)
     app.include_router(profiles_router)
     app.include_router(cooks_router)
     app.include_router(photos_router)
     app.include_router(showcase_router)
     app.include_router(stats_router)
     app.include_router(export_router)
+    app.include_router(grills_router)
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> Response:

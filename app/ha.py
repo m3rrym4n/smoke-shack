@@ -11,12 +11,21 @@ from typing import Any, Protocol, cast
 from urllib.parse import urlsplit, urlunsplit
 
 import websockets
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from app.config import EntityConfig
+from app.equipment import ConnectedEquipment, WatchedChannel, connected_equipment
+from app.grill_profiles import DeviceEntity, GrillProfile, resolve_status_entities
+from app.models import Equipment, EquipmentEntity
 from app.service import CookService, GrillSnapshot
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+def _optional_text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 @dataclass
@@ -30,10 +39,19 @@ class HAStatus:
     grill_maker: str | None = None
 
 
+@dataclass(frozen=True)
+class HARegistrySnapshot:
+    devices: tuple[dict[str, Any], ...]
+    entities: tuple[dict[str, Any], ...]
+    states: tuple[dict[str, Any], ...]
+
+
 class HAClient(Protocol):
     status: HAStatus
 
     def snapshots(self) -> AsyncIterator[GrillSnapshot]: ...
+
+    async def registry_snapshot(self) -> HARegistrySnapshot: ...
 
 
 async def ingest(
@@ -54,7 +72,12 @@ async def ingest(
                 latest_snapshot is not None,
             )
             if client.status.connected and latest_snapshot is not None:
-                service.process(latest_snapshot)
+                snapshot_on_tick = getattr(client, "snapshot_on_tick", None)
+                service.process(
+                    snapshot_on_tick(latest_snapshot)
+                    if callable(snapshot_on_tick)
+                    else latest_snapshot
+                )
 
     tick_task = asyncio.create_task(sample_on_tick())
     try:
@@ -80,6 +103,9 @@ class HomeAssistantClient:
         *,
         template_url: str | None = None,
         host: str | None = None,
+        sessions: sessionmaker[Session] | None = None,
+        grill_profiles: tuple[GrillProfile, ...] = (),
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         if template_url is None:
             parsed = urlsplit(url)
@@ -95,11 +121,209 @@ class HomeAssistantClient:
             self.host = host or urlsplit(url).hostname or urlsplit(url).netloc
         self.token = token
         self.entities = entities
-        self.entity_ids = entities.all
+        self.sessions = sessions
+        self.grill_profiles = grill_profiles
+        self._equipment: ConnectedEquipment | None = self._legacy_equipment()
+        self._watch_list_dirty = False
+        self.entity_ids = self._watch_entity_ids(self._equipment, legacy=True)
         self.poll_interval_seconds = poll_interval_seconds
         self.max_size_bytes = max_size_bytes
         self.coalesce_window_seconds = coalesce_window_seconds
+        self.clock = clock or (lambda: datetime.now(UTC).replace(microsecond=0))
         self.status = HAStatus(configured=bool(url and token))
+        self._last_states: dict[str, dict[str, Any]] = {}
+        self._stale: bool | None = None
+        self._invalid_last_reported_warned = False
+
+    def _legacy_equipment(self) -> ConnectedEquipment:
+        channels = [
+            WatchedChannel("pit", self.entities.pit_temp, self.entities.pit_climate),
+            WatchedChannel("probe1", self.entities.probe1_temp, self.entities.probe1_climate),
+            WatchedChannel("probe2", self.entities.probe2_temp, self.entities.probe2_climate),
+        ]
+        channels.extend(
+            WatchedChannel(entity.rsplit(".", 1)[-1], entity, None)
+            for entity in self.entities.extra_probes
+        )
+        return ConnectedEquipment(0, tuple(channels))
+
+    def _is_legacy(self, equipment: ConnectedEquipment | None) -> bool:
+        return equipment is not None and any(
+            channel.key == "pit" and channel.source_entity == self.entities.pit_temp
+            for channel in equipment.channels
+        )
+
+    def _watch_entity_ids(
+        self, equipment: ConnectedEquipment | None, *, legacy: bool
+    ) -> set[str]:
+        if equipment is None:
+            return set()
+        ids = {
+            entity
+            for channel in equipment.channels
+            for entity in (channel.source_entity, channel.target_entity)
+            if entity
+        }
+        if legacy:
+            ids.update(self.entities.all)
+        ids.update(equipment.status_entities.values())
+        return ids
+
+    def refresh_watch_list(self) -> bool:
+        """Reload connected channels; return whether the watched equipment changed."""
+        if self.sessions is None:
+            return False
+        with self.sessions() as session:
+            equipment = connected_equipment(session)
+        changed = equipment != self._equipment
+        self._equipment = equipment
+        self.entity_ids = self._watch_entity_ids(equipment, legacy=self._is_legacy(equipment))
+        self._watch_list_dirty = self._watch_list_dirty or changed
+        return changed
+
+    async def _refresh_watch_list(self) -> bool:
+        """Fill missing grill status mappings, then reload watched entities."""
+        await self._backfill_status_entities()
+        return self.refresh_watch_list()
+
+    async def _backfill_status_entities(self) -> None:
+        if self.sessions is None or not self.grill_profiles:
+            return
+        with self.sessions() as session:
+            equipment = session.scalar(
+                select(Equipment)
+                .options(selectinload(Equipment.channels), selectinload(Equipment.entities))
+                .where(Equipment.connected.is_(True))
+            )
+            if equipment is None:
+                return
+            if any(
+                channel.key == "pit" and channel.source_entity == self.entities.pit_temp
+                for channel in equipment.channels
+            ):
+                return
+            expected_roles = {
+                "power",
+                "heating",
+                "lid_open",
+                "door_open",
+                "error",
+                "last_reported",
+                "cook_start",
+            }
+            saved_roles = {entity.role for entity in equipment.entities}
+            if expected_roles <= saved_roles and equipment.stale_after_seconds is not None:
+                return
+            equipment_id = equipment.id
+            channel_entities = {
+                entity
+                for channel in equipment.channels
+                for entity in (channel.source_entity, channel.target_entity)
+                if entity is not None
+            }
+
+        try:
+            snapshot = await self.registry_snapshot()
+        except (OSError, RuntimeError):
+            if self.status.connected:
+                self.status.last_error = None
+            return
+
+        for device in snapshot.devices:
+            device_id = device.get("id")
+            if not isinstance(device_id, str):
+                continue
+            profile = next(
+                (
+                    item
+                    for item in self.grill_profiles
+                    if device.get("manufacturer") == item.device_match.manufacturer
+                    and device.get("model") == item.device_match.model
+                ),
+                None,
+            )
+            if profile is None:
+                continue
+            raw_entities = [
+                entity
+                for entity in snapshot.entities
+                if entity.get("device_id") == device_id
+                and isinstance(entity.get("entity_id"), str)
+            ]
+            entity_ids = {str(entity["entity_id"]) for entity in raw_entities}
+            if not channel_entities.intersection(entity_ids):
+                continue
+            device_entities = tuple(
+                DeviceEntity(
+                    entity_id=str(entity["entity_id"]),
+                    domain=str(entity["entity_id"]).partition(".")[0],
+                    unique_id_suffix=_optional_text(entity.get("unique_id")),
+                    original_name=_optional_text(entity.get("original_name")),
+                )
+                for entity in raw_entities
+            )
+            with self.sessions() as session:
+                equipment = session.get(Equipment, equipment_id)
+                if equipment is None or not equipment.connected:
+                    return
+                saved_roles = {entity.role for entity in equipment.entities}
+                resolved = [
+                    entity
+                    for entity in resolve_status_entities(profile, device_entities)
+                    if entity.role not in saved_roles
+                ]
+                equipment.entities.extend(
+                    EquipmentEntity(role=entity.role, entity_id=entity.entity_id)
+                    for entity in resolved
+                )
+                if equipment.stale_after_seconds is None:
+                    equipment.stale_after_seconds = profile.stale_after_seconds
+                if resolved or session.is_modified(equipment, include_collections=True):
+                    session.commit()
+                if resolved:
+                    logger.info(
+                        "Filled status entities for connected equipment %s", equipment_id
+                    )
+            return
+
+    async def registry_snapshot(self) -> HARegistrySnapshot:
+        """Read the HA registries and current states without changing HA."""
+        try:
+            async with websockets.connect(
+                self.websocket_url, max_size=self.max_size_bytes
+            ) as socket:
+                await socket.recv()
+                await socket.send(json.dumps({"type": "auth", "access_token": self.token}))
+                auth = json.loads(await socket.recv())
+                if auth.get("type") != "auth_ok":
+                    raise RuntimeError("Home Assistant authentication failed")
+                devices = await self._registry_request(
+                    socket, 1, "config/device_registry/list"
+                )
+                entities = await self._registry_request(
+                    socket, 2, "config/entity_registry/list"
+                )
+                states = await self._registry_request(socket, 3, "get_states")
+                return HARegistrySnapshot(
+                    devices=tuple(item for item in devices if isinstance(item, dict)),
+                    entities=tuple(item for item in entities if isinstance(item, dict)),
+                    states=tuple(item for item in states if isinstance(item, dict)),
+                )
+        except (OSError, websockets.WebSocketException, RuntimeError) as exc:
+            self.status.last_error = self._short_reason(exc)
+            raise RuntimeError(self.status.last_error) from exc
+
+    @staticmethod
+    async def _registry_request(socket: Any, request_id: int, kind: str) -> list[Any]:
+        await socket.send(json.dumps({"id": request_id, "type": kind}))
+        response = json.loads(await socket.recv())
+        if response.get("type") != "result" or not response.get("success"):
+            message = response.get("error", {}).get("message", f"{kind} failed")
+            raise RuntimeError(str(message))
+        result = response.get("result")
+        if not isinstance(result, list):
+            raise RuntimeError(f"Unexpected {kind} response")
+        return result
 
     async def snapshots(self) -> AsyncIterator[GrillSnapshot]:
         delay = 1
@@ -125,12 +349,18 @@ class HomeAssistantClient:
                 raise RuntimeError("Home Assistant authentication failed")
             self.status.connected = True
             self.status.last_error = None
+            self._stale = None
+            self._invalid_last_reported_warned = False
             logger.info("HA websocket connected to %s", self.host)
-            await self._refresh_device_info()
+            await self._refresh_watch_list()
+            if self._is_legacy(self._equipment):
+                await self._refresh_device_info()
             await socket.send(json.dumps({"id": 1, "type": "get_states"}))
             initial = json.loads(await socket.recv())
             self.status.last_event_at = datetime.now(UTC).replace(microsecond=0)
             states = self._configured_states(initial.get("result", []))
+            self._last_states = states
+            self._watch_list_dirty = False
             del initial
             yield self._snapshot(states)
             await socket.send(
@@ -144,11 +374,19 @@ class HomeAssistantClient:
                     await socket.send(json.dumps({"id": request_id, "type": "get_states"}))
                     request_id += 1
                     raw = await socket.recv()
+                await self._refresh_watch_list()
+                watch_changed = self._watch_list_dirty
                 message = json.loads(raw)
                 del raw
                 self.status.last_event_at = datetime.now(UTC).replace(microsecond=0)
+                if watch_changed:
+                    await socket.send(json.dumps({"id": request_id, "type": "get_states"}))
+                    request_id += 1
+                    message = json.loads(await socket.recv())
+                    self._watch_list_dirty = False
                 if message.get("type") == "result" and isinstance(message.get("result"), list):
                     states = self._configured_states(message["result"])
+                    self._last_states = states
                     del message
                     yield self._snapshot(states)
                     continue
@@ -160,6 +398,12 @@ class HomeAssistantClient:
                     states[entity_id] = event["new_state"]
                     await self._coalesce_events(socket, states)
                     yield self._snapshot(states)
+
+    def snapshot_on_tick(self, latest_snapshot: GrillSnapshot) -> GrillSnapshot:
+        """Rebuild time-sensitive snapshots from the latest known HA states."""
+        if self._equipment is not None and self._equipment.stale_after_seconds is not None:
+            return self._snapshot(self._last_states)
+        return latest_snapshot
 
     async def _coalesce_events(self, socket: Any, states: dict[str, dict[str, Any]]) -> None:
         deadline = asyncio.get_running_loop().time() + self.coalesce_window_seconds
@@ -252,24 +496,148 @@ class HomeAssistantClient:
         def connected(entity_id: str) -> bool:
             return (state(entity_id) or "").casefold() == "on"
 
-        climate = states.get(self.entities.pit_climate, {})
-        mode = climate.get("state")
-        friendly_name = climate.get("attributes", {}).get("friendly_name")
-        return GrillSnapshot(
+        equipment = self._equipment
+        channels = {channel.key: channel for channel in equipment.channels} if equipment else {}
+        legacy = self._is_legacy(equipment)
+
+        def channel_value(key: str) -> float | None:
+            channel = channels.get(key)
+            return number(channel.source_entity) if channel else None
+
+        def channel_target(key: str) -> float | None:
+            channel = channels.get(key)
+            if legacy:
+                target_entity = {
+                    "pit": self.entities.pit_climate,
+                    "probe1": self.entities.probe1_climate,
+                    "probe2": self.entities.probe2_climate,
+                }.get(key)
+            else:
+                target_entity = channel.target_entity if channel is not None else None
+            if target_entity is None:
+                return None
+            attribute = attribute_number(target_entity, "temperature")
+            return attribute if attribute is not None else number(target_entity)
+
+        climate = states.get(self.entities.pit_climate, {}) if legacy else {}
+        mode = climate.get("state") if legacy else None
+        friendly_name = climate.get("attributes", {}).get("friendly_name") if legacy else None
+        status_entities = equipment.status_entities if equipment is not None else {}
+        power = state(status_entities["power"]) if "power" in status_entities else None
+        mapped_power = power.casefold() if power is not None else None
+        lifecycle = not legacy and "power" in status_entities
+        error = state(status_entities["error"]) if "error" in status_entities else None
+        mapped_error = error.casefold() if error is not None else None
+
+        stale = False
+        last_reported_entity = status_entities.get("last_reported")
+        stale_after = equipment.stale_after_seconds if equipment is not None else None
+        if last_reported_entity is not None and stale_after is not None:
+            last_reported = state(last_reported_entity)
+            if last_reported is not None and last_reported.casefold() in {
+                "unknown",
+                "unavailable",
+            }:
+                stale = True
+            elif last_reported is not None:
+                try:
+                    reported_at = datetime.fromisoformat(last_reported.replace("Z", "+00:00"))
+                    if reported_at.tzinfo is None:
+                        raise ValueError("timestamp has no timezone")
+                    age = self.clock() - reported_at.astimezone(UTC)
+                    stale = age.total_seconds() > stale_after
+                except ValueError:
+                    if not self._invalid_last_reported_warned:
+                        logger.warning(
+                            "HA last_reported for connected grill is not an ISO timestamp: %r",
+                            last_reported,
+                        )
+                        self._invalid_last_reported_warned = True
+
+            if (self._stale is None and stale) or (
+                self._stale is not None and stale != self._stale
+            ):
+                logger.info("HA connected grill telemetry is %s", "stale" if stale else "fresh")
+            self._stale = stale
+
+        def mapped_binary(value: str | None, on: str, off: str) -> str | None:
+            if value == "on":
+                return on
+            if value == "off":
+                return off
+            return None
+
+        snapshot = GrillSnapshot(
             grill_name=(friendly_name.strip() if isinstance(friendly_name, str) else None) or None,
-            pit_temp=number(self.entities.pit_temp),
-            setpoint=attribute_number(self.entities.pit_climate, "temperature"),
-            probe1=number(self.entities.probe1_temp),
-            probe2=number(self.entities.probe2_temp),
-            probe1_connected=connected(self.entities.probe1_connection),
-            probe2_connected=connected(self.entities.probe2_connection),
-            probe1_target=attribute_number(self.entities.probe1_climate, "temperature"),
-            probe2_target=attribute_number(self.entities.probe2_climate, "temperature"),
-            fire_state=state(self.entities.fire_state),
-            power_state=state(self.entities.power_state),
-            warning=state(self.entities.warning),
-            hvac_mode=cast(str | None, mode),
-            extra_probes={entity: number(entity) for entity in self.entities.extra_probes},
+            pit_temp=channel_value("pit"),
+            setpoint=channel_target("pit"),
+            probe1=channel_value("probe1"),
+            probe2=channel_value("probe2"),
+            probe1_connected=(
+                connected(self.entities.probe1_connection)
+                if legacy
+                else channel_value("probe1") is not None
+            ),
+            probe2_connected=(
+                connected(self.entities.probe2_connection)
+                if legacy
+                else channel_value("probe2") is not None
+            ),
+            probe1_target=channel_target("probe1"),
+            probe2_target=channel_target("probe2"),
+            fire_state=(
+                state(self.entities.fire_state)
+                if legacy
+                else mapped_binary(mapped_power, "Running", "Off")
+            ),
+            power_state=(
+                state(self.entities.power_state)
+                if legacy
+                else mapped_binary(mapped_power, "On", "Off")
+            ),
+            warning=(
+                state(self.entities.warning)
+                if legacy
+                else mapped_binary(mapped_error, "Problem", "None")
+            ),
+            hvac_mode=(
+                cast(str | None, mode) if legacy else mapped_binary(mapped_power, "heat", "off")
+            ),
+            extra_probes=(
+                {entity: number(entity) for entity in self.entities.extra_probes}
+                if legacy
+                else {
+                    key: channel_value(key)
+                    for key in channels
+                    if key not in {"pit", "probe1", "probe2"}
+                }
+            ),
+            extra_probe_targets=(
+                {}
+                if legacy
+                else {
+                    key: channel_target(key)
+                    for key in channels
+                    if key not in {"pit", "probe1", "probe2"}
+                }
+            ),
+            cook_lifecycle_enabled=legacy or lifecycle,
+            startup_ends_at_setpoint=lifecycle,
+            max_setpoint=750 if lifecycle else 550,
+            max_pit_temperature=750 if lifecycle else 600,
+        )
+        if not stale:
+            return snapshot
+        return GrillSnapshot(
+            probe1_connected=None,
+            probe2_connected=None,
+            extra_probes={key: None for key in snapshot.extra_probes},
+            extra_probe_targets={key: None for key in snapshot.extra_probe_targets},
+            cook_lifecycle_enabled=snapshot.cook_lifecycle_enabled,
+            startup_ends_at_setpoint=snapshot.startup_ends_at_setpoint,
+            max_setpoint=snapshot.max_setpoint,
+            max_pit_temperature=snapshot.max_pit_temperature,
+            stale=True,
         )
 
 

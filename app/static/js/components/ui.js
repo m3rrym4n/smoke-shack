@@ -30,8 +30,8 @@ export function renderApiError(form, error) {
   message.classList.add("error");
 }
 
-export function confirmDelete(container, onConfirm) {
-  container.innerHTML = `<span>Delete this?</span><button class="cc confirm-yes" type="button">Yes, delete</button><button class="cc confirm-no" type="button">Keep it</button>`;
+export function confirmDelete(container, onConfirm, prompt = "Delete this?") {
+  container.innerHTML = `<span>${prompt}</span><button class="cc confirm-yes" type="button">Yes, delete</button><button class="cc confirm-no" type="button">Keep it</button>`;
   const cancel = () => { container.hidden = true; };
   container.hidden = false;
   container.querySelector(".confirm-no").addEventListener("click", cancel, { once: true });

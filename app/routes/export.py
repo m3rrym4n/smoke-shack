@@ -12,8 +12,21 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.channel_samples import compatibility_values
 from app.deps import get_session
-from app.models import Cook, Event, Meat, Note, Pellet, Photo, Profile, ProfileStep, Sample
+from app.models import (
+    Channel,
+    ChannelReading,
+    Cook,
+    Event,
+    Fuel,
+    Meat,
+    Note,
+    Photo,
+    Profile,
+    ProfileStep,
+    Sample,
+)
 from app.routes.cooks import _cook_json, _iso
 from app.routes.events import event_json
 from app.service import as_utc
@@ -105,15 +118,15 @@ def cooks_csv(
     status_filter: str | None = Query(default=None, alias="status"),
 ) -> StreamingResponse:
     query = (
-        select(Cook, Meat, Pellet, Profile)
+        select(Cook, Meat, Fuel, Profile)
         .outerjoin(Meat, Cook.meat_id == Meat.id)
-        .outerjoin(Pellet, Cook.pellet_id == Pellet.id)
+        .outerjoin(Fuel, Cook.fuel_id == Fuel.id)
         .outerjoin(Profile, Cook.profile_id == Profile.id)
     )
     if meat_id is not None:
         query = query.where(Cook.meat_id == meat_id)
     if pellet_id is not None:
-        query = query.where(Cook.pellet_id == pellet_id)
+        query = query.where(Cook.fuel_id == pellet_id)
     if status_filter is not None:
         query = query.where(Cook.status == status_filter)
     else:
@@ -172,10 +185,23 @@ def samples_csv(cook_id: int, request: Request, session: SessionDep) -> Streamin
     cook = session.get(Cook, cook_id)
     if cook is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cook not found")
-    extra_names: set[str] = set()
-    for probes in session.scalars(select(Sample.extra_probes).where(Sample.cook_id == cook_id)):
-        extra_names.update(probes or {})
-    extras = sorted(extra_names)
+    extras = sorted(
+        session.scalars(
+            select(Channel.key)
+            .join(ChannelReading, ChannelReading.channel_id == Channel.id)
+            .join(Sample, Sample.id == ChannelReading.sample_id)
+            .where(
+                Sample.cook_id == cook_id,
+                Channel.key.not_in(("pit", "probe1", "probe2")),
+            )
+            .distinct()
+        )
+    )
+    if not extras:
+        legacy_names: set[str] = set()
+        for probes in session.scalars(select(Sample.extra_probes).where(Sample.cook_id == cook_id)):
+            legacy_names.update(probes or {})
+        extras = sorted(legacy_names)
     sample_query = (
         select(Sample)
         .where(Sample.cook_id == cook_id)
@@ -190,19 +216,20 @@ def samples_csv(cook_id: int, request: Request, session: SessionDep) -> Streamin
     def values() -> Iterator[list[object]]:
         with factory() as stream_session:
             for sample in stream_session.scalars(sample_query):
+                sample_values = compatibility_values(sample)
                 yield [
                     _iso(sample.ts),
                     int((as_utc(sample.ts) - as_utc(started_at)).total_seconds()),
-                    sample.pit_temp,
-                    sample.setpoint,
-                    sample.probe1,
-                    sample.probe2,
-                    sample.probe1_target,
-                    sample.probe2_target,
+                    sample_values["pit_temp"],
+                    sample_values["setpoint"],
+                    sample_values["probe1"],
+                    sample_values["probe2"],
+                    sample_values["probe1_target"],
+                    sample_values["probe2_target"],
                     sample.fire_state,
                     sample.power_state,
                     sample.hvac_mode,
-                    *((sample.extra_probes or {}).get(name) for name in extras),
+                    *(sample_values["extra_probes"].get(name) for name in extras),
                 ]
 
     return StreamingResponse(
@@ -217,12 +244,16 @@ def _all_json(session: Session) -> dict[str, Any]:
     for cook in session.scalars(select(Cook).order_by(Cook.id)):
         item = _cook_json(cook, session)
         item.update(created_at=_iso(cook.created_at), updated_at=_iso(cook.updated_at))
-        item["events"] = [
-            {"cook_id": event.cook_id, **event_json(event, cook.started_at)}
-            for event in session.scalars(
-                select(Event).where(Event.cook_id == cook.id).order_by(Event.ts, Event.id)
-            )
-        ] if cook.started_at is not None else []
+        item["events"] = (
+            [
+                {"cook_id": event.cook_id, **event_json(event, cook.started_at)}
+                for event in session.scalars(
+                    select(Event).where(Event.cook_id == cook.id).order_by(Event.ts, Event.id)
+                )
+            ]
+            if cook.started_at is not None
+            else []
+        )
         item["photos"] = [
             {
                 "id": photo.id,
@@ -270,7 +301,7 @@ def _all_json(session: Session) -> dict[str, Any]:
     return {
         "cooks": cooks,
         "meat": list(session.scalars(select(Meat).order_by(Meat.id))),
-        "pellets": list(session.scalars(select(Pellet).order_by(Pellet.id))),
+        "fuel": list(session.scalars(select(Fuel).order_by(Fuel.id))),
         "profiles": profiles,
         "notes": list(session.scalars(select(Note).order_by(Note.id))),
     }

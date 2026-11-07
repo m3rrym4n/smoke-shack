@@ -6,12 +6,15 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy import select, update
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
-from app.models import Cook, Event, Sample
+from app.channel_samples import compatibility_values
+from app.equipment import connected_equipment_id
+from app.models import Channel, ChannelReading, Cook, Event, Sample
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
+STARTUP_TIMEOUT = timedelta(minutes=60)
 
 
 def as_utc(value: datetime) -> datetime:
@@ -27,19 +30,25 @@ class GrillSnapshot:
     setpoint: float | None = None
     probe1: float | None = None
     probe2: float | None = None
-    probe1_connected: bool = False
-    probe2_connected: bool = False
+    probe1_connected: bool | None = False
+    probe2_connected: bool | None = False
     probe1_target: float | None = None
     probe2_target: float | None = None
     extra_probes: dict[str, float | None] = field(default_factory=dict)
+    extra_probe_targets: dict[str, float | None] = field(default_factory=dict)
     fire_state: str | None = None
     power_state: str | None = None
     hvac_mode: str | None = None
     warning: str | None = None
+    cook_lifecycle_enabled: bool = True
+    startup_ends_at_setpoint: bool = False
+    max_setpoint: float = 550
+    max_pit_temperature: float = 600
+    stale: bool = False
 
     def implausible_reason(self) -> str | None:
-        if self.setpoint is not None and not 100 <= self.setpoint <= 550:
-            return f"setpoint {self.setpoint} is outside 100-550"
+        if self.setpoint is not None and not 100 <= self.setpoint <= self.max_setpoint:
+            return f"setpoint {self.setpoint} is outside 100-{self.max_setpoint:g}"
         for name, value in (
             ("pit temperature", self.pit_temp),
             ("probe 1 temperature", self.probe1),
@@ -49,7 +58,8 @@ class GrillSnapshot:
                 for name, value in self.extra_probes.items()
             ),
         ):
-            if value is not None and (value > 600 or value == 65535):
+            maximum = self.max_pit_temperature if name == "pit temperature" else 600
+            if value is not None and (value > maximum or value == 65535):
                 return f"{name} {value} is invalid"
         if _normalized(self.warning) == "unknown":
             return "warning is unknown"
@@ -96,10 +106,24 @@ class CookService:
         self.data_gap_event_min_seconds = data_gap_event_min_seconds
         self._invalid_since: datetime | None = None
         self._previous_snapshots: dict[int, GrillSnapshot] = {}
+        self._unsupported_equipment_id: int | None = None
 
     def process(self, snapshot: GrillSnapshot, at: datetime | None = None) -> Cook | None:
         now = as_utc(at or self.clock.now()).replace(microsecond=0)
         with self.sessions() as session:
+            equipment_id = connected_equipment_id(session)
+            if equipment_id is None:
+                return None
+            if not snapshot.cook_lifecycle_enabled:
+                if self._unsupported_equipment_id != equipment_id:
+                    logger.info(
+                        "connected equipment %s has no cook start/stop mapping; "
+                        "cook recording is disabled",
+                        equipment_id,
+                    )
+                    self._unsupported_equipment_id = equipment_id
+                return None
+            self._unsupported_equipment_id = None
             cook = session.scalar(
                 select(Cook)
                 .where(Cook.ended_at.is_(None), Cook.status != "planned")
@@ -121,9 +145,15 @@ class CookService:
                     return None
                 cook = self._adopt_planned(session, now)
                 if cook is None:
-                    cook = Cook(started_at=now, status="startup")
+                    cook = Cook(
+                        started_at=now,
+                        status="startup",
+                        equipment_id=equipment_id,
+                    )
                     session.add(cook)
                     session.flush()
+                else:
+                    cook.equipment_id = equipment_id
                 logger.info("cook %s started", cook.id)
                 self._event(session, cook, now, "fire_lit", "Fire lit")
                 self._event(
@@ -134,15 +164,34 @@ class CookService:
                     "Startup started",
                     {"to": "startup"},
                 )
-                if snapshot.setpoint is not None and snapshot.setpoint != 150:
+                if (
+                    not snapshot.startup_ends_at_setpoint
+                    and snapshot.setpoint is not None
+                    and snapshot.setpoint != 150
+                ):
                     self._start_cook_phase(session, cook, now)
             previous = session.scalar(
-                select(Sample).where(Sample.cook_id == cook.id).order_by(Sample.ts.desc()).limit(1)
+                select(Sample)
+                .options(selectinload(Sample.channel_readings).selectinload(ChannelReading.channel))
+                .where(Sample.cook_id == cook.id)
+                .order_by(Sample.ts.desc())
+                .limit(1)
             )
             previous_snapshot = self._previous_snapshots.get(cook.id)
             if previous_snapshot is None and previous is not None:
                 previous_snapshot = self._snapshot_from_sample(previous)
-            self._record_changes(session, cook, previous_snapshot, snapshot, now)
+                if all(
+                    value is None
+                    for value in (
+                        previous_snapshot.pit_temp,
+                        previous_snapshot.setpoint,
+                        previous_snapshot.power_state,
+                        previous_snapshot.hvac_mode,
+                    )
+                ):
+                    previous_snapshot = None
+            if not snapshot.stale:
+                self._record_changes(session, cook, previous_snapshot, snapshot, now)
             gap_detected = previous is not None and (
                 resumed_after_invalid or now - as_utc(previous.ts) > self.sample_interval * 3
             )
@@ -167,10 +216,11 @@ class CookService:
             ):
                 if gap_detected:
                     logger.info("cook %s Home Assistant data gap ended", cook.id)
-                session.add(self._sample(cook.id, snapshot, now))
+                session.add(self._sample(session, cook, snapshot, now))
             self._advance_phase(session, cook, previous, snapshot, now)
             self._record_time_to_done(session, cook, snapshot, now)
-            self._previous_snapshots[cook.id] = snapshot
+            if not snapshot.stale:
+                self._previous_snapshots[cook.id] = snapshot
             cook.updated_at = now
             session.commit()
             return cook
@@ -219,8 +269,18 @@ class CookService:
         mode = _normalized(snapshot.hvac_mode)
         fire = _normalized(snapshot.fire_state)
         power = _normalized(snapshot.power_state)
-        if cook.status == "startup" and snapshot.setpoint is not None and snapshot.setpoint != 150:
-            self._start_cook_phase(session, cook, now)
+        if cook.status == "startup":
+            if snapshot.startup_ends_at_setpoint:
+                if cook.started_at is not None and now - as_utc(cook.started_at) >= STARTUP_TIMEOUT:
+                    self._start_cook_phase(session, cook, now, reason="startup_timeout")
+                elif (
+                    snapshot.setpoint is not None
+                    and snapshot.pit_temp is not None
+                    and snapshot.pit_temp >= snapshot.setpoint - 10
+                ):
+                    self._start_cook_phase(session, cook, now)
+            elif snapshot.setpoint is not None and snapshot.setpoint != 150:
+                self._start_cook_phase(session, cook, now)
         previous_fire = _normalized(previous.fire_state) if previous is not None else None
         cooldown_started = mode == "off" or (fire == "cool down" and previous_fire == "cool down")
         if cook.status in {"startup", "cook"} and cooldown_started:
@@ -239,13 +299,18 @@ class CookService:
             elif cook.cook_ended_at and now - as_utc(cook.cook_ended_at) >= self.incomplete_timeout:
                 self._close(session, cook, now, incomplete=True)
 
-    def _start_cook_phase(self, session: Session, cook: Cook, now: datetime) -> None:
+    def _start_cook_phase(
+        self, session: Session, cook: Cook, now: datetime, reason: str | None = None
+    ) -> None:
         if cook.status != "startup":
             return
         cook.startup_ended_at = now
         cook.status = "cook"
         logger.info("cook %s phase startup -> cook", cook.id)
-        self._event(session, cook, now, "phase_changed", "Cook started", {"to": "cook"})
+        data: dict[str, object] = {"to": "cook"}
+        if reason is not None:
+            data["reason"] = reason
+        self._event(session, cook, now, "phase_changed", "Cook started", data)
 
     def _close(self, session: Session, cook: Cook, now: datetime, incomplete: bool) -> None:
         cook.cooldown_ended_at = now
@@ -271,19 +336,21 @@ class CookService:
         samples = list(
             session.scalars(
                 select(Sample)
+                .options(selectinload(Sample.channel_readings).selectinload(ChannelReading.channel))
                 .where(Sample.cook_id == cook.id, Sample.ts >= cook.startup_ended_at)
                 .order_by(Sample.ts)
             )
         )
         totals: dict[float, float] = {}
         for index, sample in enumerate(samples):
-            if sample.setpoint is None:
+            setpoint = compatibility_values(sample)["setpoint"]
+            if setpoint is None:
                 continue
             next_ts = (
                 samples[index + 1].ts if index + 1 < len(samples) else (cook.cook_ended_at or end)
             )
             seconds = max(0.0, (as_utc(next_ts) - as_utc(sample.ts)).total_seconds())
-            totals[sample.setpoint] = totals.get(sample.setpoint, 0.0) + seconds
+            totals[setpoint] = totals.get(setpoint, 0.0) + seconds
         return max(totals, key=lambda setpoint: totals[setpoint]) if totals else None
 
     def _record_changes(
@@ -299,7 +366,7 @@ class CookService:
                 self._event(session, cook, now, "warning", "Grill fire state failed")
             self._record_warning_change(session, cook, current.warning, now)
             return
-        if previous.setpoint != current.setpoint:
+        if current.setpoint is not None and previous.setpoint != current.setpoint:
             new_setpoint = _temperature_text(current.setpoint)
             title = (
                 f"Setpoint changed to {new_setpoint}°F"
@@ -317,7 +384,7 @@ class CookService:
                 {"from": previous.setpoint, "to": current.setpoint},
                 description,
             )
-        if previous.hvac_mode != current.hvac_mode:
+        if current.hvac_mode is not None and previous.hvac_mode != current.hvac_mode:
             self._event(
                 session,
                 cook,
@@ -330,7 +397,7 @@ class CookService:
             ("probe1", previous.probe1_connected, current.probe1_connected),
             ("probe2", previous.probe2_connected, current.probe2_connected),
         ):
-            if old != new:
+            if new is not None and old != new:
                 state = "connected" if new else "disconnected"
                 self._event(
                     session,
@@ -342,7 +409,8 @@ class CookService:
                 )
         if _normalized(previous.fire_state) != "fail" and _normalized(current.fire_state) == "fail":
             self._event(session, cook, now, "warning", "Grill fire state failed")
-        self._record_warning_change(session, cook, current.warning, now)
+        if current.warning is not None:
+            self._record_warning_change(session, cook, current.warning, now)
 
     def _record_warning_change(
         self, session: Session, cook: Cook, warning: str | None, now: datetime
@@ -380,12 +448,23 @@ class CookService:
                 select(Event.data).where(Event.cook_id == cook.id, Event.kind == "probe_done")
             )
         )
-        for probe, reading, target, connected in (
+        probes: list[tuple[int | str, float | None, float | None, bool | None]] = [
             (1, snapshot.probe1, snapshot.probe1_target, snapshot.probe1_connected),
             (2, snapshot.probe2, snapshot.probe2_target, snapshot.probe2_connected),
-        ):
+        ]
+        probes.extend(
+            (
+                key.rsplit(".", 1)[-1],
+                snapshot.extra_probes.get(key),
+                snapshot.extra_probe_targets.get(key),
+                snapshot.extra_probes.get(key) is not None,
+            )
+            for key in snapshot.extra_probes.keys() | snapshot.extra_probe_targets.keys()
+        )
+        completed = {data.get("probe") for data in done_probes}
+        for probe, reading, target, connected in probes:
             if (
-                probe not in {data.get("probe") for data in done_probes}
+                probe not in completed
                 and connected
                 and reading is not None
                 and target is not None
@@ -409,9 +488,7 @@ class CookService:
         self, session: Session, cook: Cook, started_at: datetime, gap_seconds: int
     ) -> None:
         summary = session.scalar(
-            select(Event).where(
-                Event.cook_id == cook.id, Event.kind == "data_gap_summary"
-            )
+            select(Event).where(Event.cook_id == cook.id, Event.kind == "data_gap_summary")
         )
         if summary is None:
             summary = Event(
@@ -433,9 +510,9 @@ class CookService:
         )
 
     @staticmethod
-    def _sample(cook_id: int, snapshot: GrillSnapshot, now: datetime) -> Sample:
-        return Sample(
-            cook_id=cook_id,
+    def _sample(session: Session, cook: Cook, snapshot: GrillSnapshot, now: datetime) -> Sample:
+        sample = Sample(
+            cook_id=cook.id,
             ts=now,
             pit_temp=snapshot.pit_temp,
             setpoint=snapshot.setpoint,
@@ -448,19 +525,58 @@ class CookService:
             power_state=snapshot.power_state,
             hvac_mode=snapshot.hvac_mode,
         )
+        values = {
+            "pit": (snapshot.pit_temp, snapshot.setpoint),
+            "probe1": (snapshot.probe1, snapshot.probe1_target),
+            "probe2": (snapshot.probe2, snapshot.probe2_target),
+        }
+        extra_keys = snapshot.extra_probes.keys() | snapshot.extra_probe_targets.keys()
+        values.update(
+            {
+                raw_key.rsplit(".", 1)[-1]: (
+                    snapshot.extra_probes.get(raw_key),
+                    snapshot.extra_probe_targets.get(raw_key),
+                )
+                for raw_key in extra_keys
+            }
+        )
+        channels = {
+            channel.key: channel
+            for channel in session.scalars(
+                select(Channel).where(Channel.equipment_id == cook.equipment_id)
+            )
+        }
+        for key, (value, target) in values.items():
+            if value is None and target is None:
+                continue
+            channel = channels.get(key)
+            if channel is None:
+                logger.debug("ignoring snapshot channel %s with no matching equipment channel", key)
+                continue
+            sample.channel_readings.append(
+                ChannelReading(channel_id=channel.id, value=value, target=target)
+            )
+        return sample
 
     @staticmethod
     def _snapshot_from_sample(sample: Sample) -> GrillSnapshot:
+        values = compatibility_values(sample)
+        channels = {reading.channel.key: reading for reading in sample.channel_readings}
         return GrillSnapshot(
-            pit_temp=sample.pit_temp,
-            setpoint=sample.setpoint,
-            probe1=sample.probe1,
-            probe2=sample.probe2,
-            probe1_connected=sample.probe1 is not None,
-            probe2_connected=sample.probe2 is not None,
-            probe1_target=sample.probe1_target,
-            probe2_target=sample.probe2_target,
-            extra_probes=sample.extra_probes,
+            pit_temp=values["pit_temp"],
+            setpoint=values["setpoint"],
+            probe1=values["probe1"],
+            probe2=values["probe2"],
+            probe1_connected=values["probe1"] is not None,
+            probe2_connected=values["probe2"] is not None,
+            probe1_target=values["probe1_target"],
+            probe2_target=values["probe2_target"],
+            extra_probes=values["extra_probes"],
+            extra_probe_targets={
+                key: reading.target
+                for key, reading in channels.items()
+                if key not in {"pit", "probe1", "probe2"}
+            },
             fire_state=sample.fire_state,
             power_state=sample.power_state,
             hvac_mode=sample.hvac_mode,

@@ -19,7 +19,7 @@ def run_logic(expression: str, imports: str = "validatePellet") -> object:
 
 def test_pellet_validation_accepts_complete_purchase() -> None:
     values = (
-        '{vendor: "Bear Mountain", product_name: "Hickory", '
+        '{type: "pellets", vendor: "Bear Mountain", product_name: "Hickory", '
         'price_per_pound: "0.65", purchased_on: "2026-10-17"}'
     )
     assert run_logic(f"console.log(JSON.stringify(validatePellet({values})))") == {}
@@ -27,17 +27,26 @@ def test_pellet_validation_accepts_complete_purchase() -> None:
 
 def test_pellet_validation_accepts_free_pellets() -> None:
     values = (
-        '{vendor: "Neighbor", product_name: "Competition blend", '
+        '{type: "wood", vendor: "Neighbor", product_name: "Competition blend", '
         'price_per_pound: "0", purchased_on: "2026-10-17"}'
     )
     assert run_logic(f"console.log(JSON.stringify(validatePellet({values})))") == {}
 
 
+def test_pellet_validation_accepts_missing_price() -> None:
+    values = (
+        '{type: "charcoal", vendor: "Local", product_name: "Lump", '
+        'price_per_pound: "", purchased_on: "2026-10-17"}'
+    )
+    assert run_logic(f"console.log(JSON.stringify(validatePellet({values})))") == {}
+
+
 def test_pellet_validation_rejects_missing_and_invalid_values() -> None:
-    values = '{vendor: "", product_name: " ", price_per_pound: "-1", purchased_on: ""}'
+    values = '{type: "", vendor: "", product_name: " ", price_per_pound: "-1", purchased_on: ""}'
     errors = run_logic(f"console.log(JSON.stringify(validatePellet({values})))")
     assert errors == {
-        "vendor": "Enter a pellet vendor.",
+        "type": "Choose a fuel type.",
+        "vendor": "Enter a fuel vendor.",
         "product_name": "Enter a product name.",
         "price_per_pound": "Price per pound cannot be negative.",
         "purchased_on": "Choose a purchase date.",
@@ -91,11 +100,58 @@ def test_split_pellets_separates_stock_and_empty_bags() -> None:
     }
 
 
+def test_fuel_groups_are_ordered_and_omit_empty_types() -> None:
+    expression = (
+        "const result=groupPelletsByType(["
+        "{id:1,type:'wood'},{id:2,type:'pellets'},{id:3,type:'charcoal'},"
+        "{id:4,type:'pellets'}]);console.log(JSON.stringify(result))"
+    )
+    assert run_logic(expression, "groupPelletsByType") == [
+        {
+            "type": "pellets",
+            "label": "Pellets",
+            "items": [{"id": 2, "type": "pellets"}, {"id": 4, "type": "pellets"}],
+        },
+        {
+            "type": "charcoal",
+            "label": "Charcoal",
+            "items": [{"id": 3, "type": "charcoal"}],
+        },
+        {"type": "wood", "label": "Wood", "items": [{"id": 1, "type": "wood"}]},
+    ]
+
+    no_charcoal = (
+        "console.log(JSON.stringify(groupPelletsByType(["
+        "{id:1,type:'wood'},{id:2,type:'pellets'}])))"
+    )
+    assert [group["type"] for group in run_logic(no_charcoal, "groupPelletsByType")] == [
+        "pellets",
+        "wood",
+    ]
+
+
 def test_pantry_loads_empty_bags_and_order_pad_uses_default_filter() -> None:
     pantry = Path("app/static/js/views/pellets.js").read_text()
     live = Path("app/static/js/views/live.js").read_text()
-    assert "getPellets(upc, true)" in pantry
-    assert "getPellets()" in live
+    assert "getFuel(typeFilter.value, upc, true)" in pantry
+    assert "getFuel()" in live
+
+
+def test_fuel_page_has_required_type_forms_filter_and_all_types() -> None:
+    pantry = Path("app/static/js/views/pellets.js").read_text()
+    assert '<h1 class="hd">Fuel</h1>' in pantry
+    assert 'name="type" required' in pantry
+    assert "Price per pound <small>(optional)</small>" in pantry
+    price_input = (
+        'name="price_per_pound" type="number" min="0" step="0.01" '
+        'inputmode="decimal" value='
+    )
+    assert price_input in pantry
+    assert 'name="type_filter"' in pantry
+    assert '["pellets", "charcoal", "wood"]' in pantry
+    assert "groupPelletsByType(groups.inStock)" in pantry
+    assert '<section class="fuel-type"><h2>${group.label}</h2>' in pantry
+    assert "escapeHtml(item.type" not in pantry
     assert "Mark empty" in pantry
     assert "Undo" in pantry
     assert "Empty bags" in pantry

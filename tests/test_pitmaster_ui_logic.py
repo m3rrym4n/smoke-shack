@@ -194,10 +194,10 @@ def test_rotisserie_defaults_to_no_for_empty_and_old_hashes() -> None:
     assert run_logic(expression) == ["false", "false", "#pitmaster?rotisserie=false"]
 
 
-def test_pitmaster_form_uses_one_pellet_select_and_no_store() -> None:
+def test_pitmaster_form_uses_one_fuel_select_and_no_store() -> None:
     source = Path("app/static/js/views/pitmaster.js").read_text()
     assert 'name="pellet_id"' in source
-    assert "Any pellets" in source
+    assert "Any fuel" in source
     assert 'name="pellet_vendor"' not in source
     assert 'name="pellet_product"' not in source
     assert 'name="store"' not in source

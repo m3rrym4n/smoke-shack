@@ -8,17 +8,21 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
+    Float,
     ForeignKey,
     Index,
     Numeric,
     String,
     Table,
     Text,
+    UniqueConstraint,
     func,
+    text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 from sqlalchemy.types import TypeDecorator
 
 from app.database import Base
@@ -64,8 +68,10 @@ class Cook(Base):
     ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     status: Mapped[str] = mapped_column(String(20), default="startup")
     meat_id: Mapped[int | None] = mapped_column(ForeignKey("meat.id"))
-    pellet_id: Mapped[int | None] = mapped_column(ForeignKey("pellets.id"))
+    fuel_id: Mapped[int | None] = mapped_column(ForeignKey("fuel.id"))
+    pellet_id = synonym("fuel_id")
     profile_id: Mapped[int | None] = mapped_column(ForeignKey("profiles.id"))
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey("equipment.id"))
     rotisserie: Mapped[bool] = mapped_column(Boolean, default=False)
     seasonings: Mapped[str | None] = mapped_column(Text)
     sauces: Mapped[str | None] = mapped_column(Text)
@@ -88,6 +94,7 @@ class Cook(Base):
         secondary=cook_spices,
         order_by="Spice.name",
     )
+    equipment: Mapped[Equipment | None] = relationship(back_populates="cooks")
 
     @property
     def startup_duration_seconds(self) -> int | None:
@@ -112,6 +119,70 @@ class Cook(Base):
         return self.aggregate_setpoint
 
 
+class Equipment(Base):
+    __tablename__ = "equipment"
+    __table_args__ = (
+        Index(
+            "uq_equipment_one_connected",
+            "connected",
+            unique=True,
+            sqlite_where=text("connected = 1"),
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nickname: Mapped[str]
+    maker: Mapped[str | None]
+    model: Mapped[str | None]
+    type: Mapped[str]
+    fuel_type: Mapped[str | None]
+    units: Mapped[str] = mapped_column(String(1), default="F")
+    connected: Mapped[bool] = mapped_column(default=False)
+    stale_after_seconds: Mapped[int | None]
+    photo_path: Mapped[str | None]
+    logo_path: Mapped[str | None]
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)
+    channels: Mapped[list[Channel]] = relationship(
+        back_populates="equipment", cascade="all, delete-orphan", order_by="Channel.position"
+    )
+    entities: Mapped[list[EquipmentEntity]] = relationship(
+        back_populates="equipment", cascade="all, delete-orphan"
+    )
+    cooks: Mapped[list[Cook]] = relationship(back_populates="equipment")
+
+
+class Channel(Base):
+    __tablename__ = "channels"
+    __table_args__ = (
+        UniqueConstraint("equipment_id", "key", name="uq_channels_equipment_key"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    equipment_id: Mapped[int] = mapped_column(
+        ForeignKey("equipment.id", ondelete="CASCADE")
+    )
+    key: Mapped[str]
+    role: Mapped[str]
+    label: Mapped[str]
+    source_entity: Mapped[str]
+    target_entity: Mapped[str | None]
+    calibration_offset: Mapped[float] = mapped_column(Float, default=0)
+    position: Mapped[int]
+    equipment: Mapped[Equipment] = relationship(back_populates="channels")
+    readings: Mapped[list[ChannelReading]] = relationship(back_populates="channel")
+
+
+class EquipmentEntity(Base):
+    __tablename__ = "equipment_entities"
+    __table_args__ = (
+        UniqueConstraint("equipment_id", "role", name="uq_equipment_entities_equipment_role"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    equipment_id: Mapped[int] = mapped_column(ForeignKey("equipment.id", ondelete="CASCADE"))
+    role: Mapped[str]
+    entity_id: Mapped[str]
+    equipment: Mapped[Equipment] = relationship(back_populates="entities")
+
+
 def _duration(start: datetime | None, end: datetime | None) -> int | None:
     return int((end - start).total_seconds()) if start is not None and end is not None else None
 
@@ -133,6 +204,24 @@ class Sample(Base):
     power_state: Mapped[str | None]
     hvac_mode: Mapped[str | None]
     cook: Mapped[Cook] = relationship(back_populates="samples")
+    channel_readings: Mapped[list[ChannelReading]] = relationship(
+        back_populates="sample", cascade="all, delete-orphan"
+    )
+
+
+class ChannelReading(Base):
+    __tablename__ = "channel_readings"
+    __table_args__ = (
+        UniqueConstraint("sample_id", "channel_id", name="uq_channel_readings_sample_channel"),
+        Index("ix_channel_readings_channel_sample", "channel_id", "sample_id"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sample_id: Mapped[int] = mapped_column(ForeignKey("samples.id", ondelete="CASCADE"))
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"))
+    value: Mapped[float | None]
+    target: Mapped[float | None]
+    sample: Mapped[Sample] = relationship(back_populates="channel_readings")
+    channel: Mapped[Channel] = relationship(back_populates="readings")
 
 
 class Event(Base):
@@ -198,12 +287,16 @@ class MeatGroupType(Base):
 Index("uq_meat_groups_name_ci", func.lower(MeatGroup.name), unique=True)
 
 
-class Pellet(Base):
-    __tablename__ = "pellets"
+class Fuel(Base):
+    __tablename__ = "fuel"
+    __table_args__ = (
+        CheckConstraint("type IN ('pellets', 'charcoal', 'wood')", name="ck_fuel_type"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
+    type: Mapped[str] = mapped_column(String(10), nullable=False, default="pellets")
     vendor: Mapped[str]
     product_name: Mapped[str]
-    price_per_pound: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    price_per_pound: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
     purchased_on: Mapped[date] = mapped_column(Date)
     emptied_on: Mapped[date | None] = mapped_column(Date)
     upc: Mapped[str | None] = mapped_column(String(14))
@@ -227,7 +320,11 @@ class Pellet(Base):
 
     @property
     def photo_url(self) -> str | None:
-        return _pantry_photo_url("pellets", self.id, self.photo_path)
+        return _pantry_photo_url("fuel", self.id, self.photo_path)
+
+
+# Temporary import compatibility for code that still calls pellet-only APIs.
+Pellet = Fuel
 
 
 class Spice(Base):
