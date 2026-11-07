@@ -12,6 +12,7 @@ from app.pantry_photos import MAX_PHOTO_BYTES
 JPEG = b"\xff\xd8\xff\xe0jpeg"
 PNG = b"\x89PNG\r\n\x1a\npng"
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>'
+PNG_WITH_SVG_METADATA = PNG + b'<metadata value="<svg" />'
 
 
 @pytest.mark.parametrize(
@@ -71,3 +72,41 @@ def test_equipment_image_validation_and_missing_equipment(
         assert client.post(missing, files={"file": ("x.jpg", JPEG)}).status_code == 404
         assert client.get(missing).status_code == 404
         assert client.delete(missing).status_code == 404
+
+
+def test_equipment_logo_uses_photo_signature_before_svg_metadata(
+    sessions: sessionmaker[Session], tmp_path: Path
+) -> None:
+    photo_dir = tmp_path / "photos"
+    app = create_app(Settings(photo_dir=str(photo_dir)), sessions, FakeHAClient())
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/equipment/1/logo",
+            files={"file": ("logo.png", PNG_WITH_SVG_METADATA, "image/png")},
+        )
+        served = client.get("/api/equipment/1/logo")
+
+    assert response.status_code == 200
+    assert served.content == PNG_WITH_SVG_METADATA
+    assert served.headers["content-type"] == "image/png"
+    assert (photo_dir / "equipment" / "1" / "logo.png").read_bytes() == PNG_WITH_SVG_METADATA
+
+
+def test_equipment_logo_rejects_invalid_utf8_svg_and_unsupported_file(
+    sessions: sessionmaker[Session], tmp_path: Path
+) -> None:
+    app = create_app(Settings(photo_dir=str(tmp_path / "photos")), sessions, FakeHAClient())
+    with TestClient(app) as client:
+        invalid_svg = client.post(
+            "/api/equipment/1/logo",
+            files={"file": ("logo.svg", b"<svg>\xff</svg>", "image/svg+xml")},
+        )
+        unsupported = client.post(
+            "/api/equipment/1/logo",
+            files={"file": ("logo.bin", b"not an image", "application/octet-stream")},
+        )
+
+    assert invalid_svg.status_code == 422
+    assert invalid_svg.json()["detail"] == "SVG must be valid UTF-8 text"
+    assert unsupported.status_code == 415
+    assert unsupported.json()["detail"] == "Unsupported image type"

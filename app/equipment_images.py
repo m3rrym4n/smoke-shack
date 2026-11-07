@@ -39,13 +39,13 @@ async def save_equipment_image(
         await file.close()
 
     content = bytes(data)
-    if kind == "logo" and re.search(rb"<svg\b", content, re.IGNORECASE):
-        _validate_svg(content)
-        extension = ".svg"
-    else:
-        try:
-            _, extension = sniff_photo_type(content)
-        except HTTPException as exc:
+    try:
+        _, extension = sniff_photo_type(content)
+    except HTTPException as exc:
+        if kind == "logo" and re.search(rb"<svg\b", content, re.IGNORECASE):
+            _validate_svg(content)
+            extension = ".svg"
+        else:
             raise HTTPException(
                 status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 "Unsupported image type",
@@ -81,9 +81,13 @@ def equipment_image_response(image_path: str | None) -> FileResponse:
     path = Path(image_path)
     if not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Equipment image file not found")
-    media_type = SVG_TYPE if path.suffix == ".svg" else next(
-        (content_type for content_type, suffix in PHOTO_TYPES.items() if path.suffix == suffix),
-        None,
+    media_type = (
+        SVG_TYPE
+        if path.suffix == ".svg"
+        else next(
+            (content_type for content_type, suffix in PHOTO_TYPES.items() if path.suffix == suffix),
+            None,
+        )
     )
     if media_type is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Equipment image file not found")
