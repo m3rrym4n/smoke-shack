@@ -1,3 +1,11 @@
+## [1.4.1](https://github.com/m3rrym4n/smoke-shack/compare/v1.4.0...v1.4.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* draw target line for each probe ([dfe52cc](https://github.com/m3rrym4n/smoke-shack/commit/dfe52ccb87533d4f5fc479453cc02e06f63b64a5))
+* preserve ingress path for grill images ([51757a1](https://github.com/m3rrym4n/smoke-shack/commit/51757a1954ca9598ae128f7047c1517befa40023))
+
 # [1.4.0](https://github.com/m3rrym4n/smoke-shack/compare/v1.3.5...v1.4.0) (2026-11-07)
 
 
