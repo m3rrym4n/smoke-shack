@@ -102,7 +102,7 @@ def target_label_positions(reached_elapsed: int, total_elapsed: int) -> tuple[fl
         capture_output=True,
         text=True,
     )
-    done = re.search(r'<text class="target-label"[^>]* y="([\d.]+)"', result.stdout)
+    done = re.search(r'<text class="target-label[^"]*"[^>]* y="([\d.]+)"', result.stdout)
     reached = re.search(r'<text class="target-marker-label"[^>]* y="([\d.]+)"', result.stdout)
     assert done is not None
     assert reached is not None
@@ -401,6 +401,44 @@ def test_chart_keeps_positive_target_after_trailing_zeroes() -> None:
     )
     assert "done at 203°" in result.stdout
     assert "target-marker" in result.stdout
+
+
+def test_masterbuilt_chart_draws_four_colored_targets_with_stacked_labels() -> None:
+    module = Path("app/static/js/components/chart.js").resolve().as_uri()
+    targets = [220, 220, 221, 222]
+    channels = [
+        {
+            "key": f"probe{number}",
+            "label": f"Probe {number}",
+            "role": "meat",
+            "value": 180 + number,
+            "target": target,
+        }
+        for number, target in enumerate(targets, start=1)
+    ]
+    samples = [{"elapsed_seconds": 0, "pit_temp": 250, "channels": channels}]
+    arguments = json.dumps([samples, [], {"started_at": "2026-10-25T22:00:00Z"}])
+    script = f'import {{ chartMarkup }} from "{module}"; console.log(chartMarkup(...{arguments}))'
+    markup = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    assert markup.count('class="target-line probe-') == 4
+    assert markup.count('class="target-key"') == 1
+    for number, target in enumerate(targets, start=1):
+        assert f'class="target-line probe-{number}-target"' in markup
+        assert f"P{number} done at {target}° (not reached)" in markup
+    label_ys = [
+        float(value)
+        for value in re.findall(r'class="target-label[^"]*"[^>]* y="([\d.]+)"', markup)
+    ]
+    assert len(label_ys) == 4
+    assert all(
+        abs(left - right) >= 22 for left, right in zip(label_ys, label_ys[1:], strict=False)
+    )
 
 
 def test_target_labels_are_spaced_when_target_is_reached_near_end() -> None:
