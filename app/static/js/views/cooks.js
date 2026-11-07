@@ -1,5 +1,6 @@
-import { getCookLogCooks } from "../api.js";
+import { deleteCook, getCookLogCooks } from "../api.js";
 import { cookTag, elapsedSeconds, formatDuration, isLiveCook, orderCookLogRows } from "../cooks-logic.js";
+import { confirmDelete } from "../components/ui.js";
 import { seasoningText } from "../spice-picker-logic.js";
 
 const PAGE_SIZE = 20;
@@ -22,7 +23,8 @@ export function cookRowMarkup(cook, now = new Date()) {
   const tagMarkup = tag ? `<span class="cook-tag ${tag === "Test" ? "test-tag" : planned ? "planned-tag" : tag === "Incomplete" ? "incomplete" : "progress-tag"}">${tag}</span>` : "";
   const seconds = isLiveCook(cook) ? elapsedSeconds(cook, now) : cook.grill_duration_seconds;
   const rubs = seasoningText(cook);
-  return `<a class="cook-row${planned ? " planned" : ""}" href="#cooks/${cook.id}"><span class="cook-grill">${escapeHtml(grill)}</span><div class="cook-summary"><span class="cook-date">${cookDate(cook.started_at)}</span><strong>${escapeHtml(meat)}</strong>${rubs ? `<small class="cook-row-rubs">${escapeHtml(rubs)}</small>` : ""}${tagMarkup}</div><span class="cook-setpoint">${planned ? "—" : setpoint}</span><span class="cook-total">${planned ? "—" : formatDuration(seconds)}</span><span class="cook-arrow" aria-hidden="true">›</span></a>`;
+  const deleteButton = isLiveCook(cook) ? "" : `<button class="cc delete-cook" type="button" data-cook-id="${cook.id}">Delete</button>`;
+  return `<div class="cook-row-wrap${planned ? " planned" : ""}"><a class="cook-row" href="#cooks/${cook.id}"><span class="cook-grill">${escapeHtml(grill)}</span><div class="cook-summary"><span class="cook-date">${cookDate(cook.started_at)}</span><strong>${escapeHtml(meat)}</strong>${rubs ? `<small class="cook-row-rubs">${escapeHtml(rubs)}</small>` : ""}${tagMarkup}</div><span class="cook-setpoint">${planned ? "—" : setpoint}</span><span class="cook-total">${planned ? "—" : formatDuration(seconds)}</span><span class="cook-arrow" aria-hidden="true">›</span></a>${deleteButton}<span class="delete-confirm cook-delete-confirm" hidden></span></div>`;
 }
 
 export function mountCookList(container) {
@@ -58,6 +60,19 @@ export function mountCookList(container) {
   const loadMore = () => load(true);
   const visibilityChanged = () => { if (!document.hidden) load(); };
   button.addEventListener("click", loadMore);
+  rows.addEventListener("click", (event) => {
+    const deleteButton = event.target.closest(".delete-cook");
+    if (!deleteButton) return;
+    const row = deleteButton.closest(".cook-row-wrap");
+    confirmDelete(row.querySelector(".cook-delete-confirm"), async () => {
+      try {
+        await deleteCook(deleteButton.dataset.cookId);
+        await load();
+      } catch (error) {
+        message.textContent = error.message || "Could not delete cook.";
+      }
+    }, "Delete this cook permanently?");
+  });
   document.addEventListener("visibilitychange", visibilityChanged);
   load();
   const timer = window.setInterval(load, 30000);

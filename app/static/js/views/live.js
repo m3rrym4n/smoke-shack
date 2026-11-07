@@ -142,9 +142,9 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
     const notes = await getNotes("this_cook", cook.id);
     if (!isCurrent()) return;
     updateSmoke(null, null);
-    container.innerHTML = `<div class="cook-detail"><div class="detail-actions"><a class="back-link cc" href="#cooks">← All cooks</a><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><section class="order-pad planned-summary"><span class="tape" aria-hidden="true"></span><div class="order-heading"><h2>PLANNED ORDER</h2><span>No. ${String(cook.id).padStart(4, "0")}</span></div><p><b>Meat:</b> ${escapeHtml(cook.meat?.type || "Not selected")}</p><p><b>Fuel:</b> ${escapeHtml(fuelLabel(cook.pellet))}</p>${rubDetailMarkup(cook)}<p><b>Sauces:</b> ${escapeHtml(cook.sauces || "—")}</p><p><b>Prep time:</b> ${cook.prep_time_minutes ?? "—"}${cook.prep_time_minutes != null ? " minutes" : ""}</p><p><b>Rotisserie:</b> ${cook.rotisserie ? "Yes" : "No"}</p><p><b>How it turned out:</b> ${escapeHtml(cook.results_text || "—")}</p><div class="planned-detail-actions"><button class="paper-button planned-cancel" type="button">Cancel order</button><span class="plan-confirm" hidden></span></div></section></div>`;
+    container.innerHTML = `<div class="cook-detail"><div class="detail-actions"><a class="back-link cc" href="#cooks">← All cooks</a><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><section class="order-pad planned-summary"><span class="tape" aria-hidden="true"></span><div class="order-heading"><h2>PLANNED ORDER</h2><span>No. ${String(cook.id).padStart(4, "0")}</span></div><p><b>Meat:</b> ${escapeHtml(cook.meat?.type || "Not selected")}</p><p><b>Fuel:</b> ${escapeHtml(fuelLabel(cook.pellet))}</p>${rubDetailMarkup(cook)}<p><b>Sauces:</b> ${escapeHtml(cook.sauces || "—")}</p><p><b>Prep time:</b> ${cook.prep_time_minutes ?? "—"}${cook.prep_time_minutes != null ? " minutes" : ""}</p><p><b>Rotisserie:</b> ${cook.rotisserie ? "Yes" : "No"}</p><p><b>How it turned out:</b> ${escapeHtml(cook.results_text || "—")}</p><div class="planned-detail-actions"><button class="paper-button planned-cancel" type="button">Delete</button><span class="plan-confirm" hidden></span></div></section></div>`;
     container.querySelector(".planned-summary").insertAdjacentHTML("beforebegin", cookNotesMarkup(notes));
-    container.querySelector(".planned-cancel").addEventListener("click", () => confirmDelete(container.querySelector(".plan-confirm"), async () => { await deleteCook(cook.id); window.location.hash = "cooks"; }));
+    container.querySelector(".planned-cancel").addEventListener("click", () => confirmDelete(container.querySelector(".plan-confirm"), async () => { await deleteCook(cook.id); window.location.hash = "cooks"; }, "Delete this cook permanently?"));
     return;
   }
   if (editing && requestedCook) {
@@ -216,8 +216,15 @@ async function load(container, onStatus, isCurrent, requestedCookId, editing, re
   const backLink = liveDetail
     ? '<a class="back-link cc" href="#live">← Back to live cook</a>'
     : '<a class="back-link cc" href="#cooks">← All cooks</a>';
-  const detailActions = requestedCookId == null ? "" : `<div class="detail-actions">${backLink}<div class="detail-action-buttons"><label class="detail-stats-toggle"><input type="checkbox"${cook.exclude_from_stats ? " checked" : ""}> Exclude from stats (dry run / test)</label><span class="detail-stats-message" role="status"></span><button class="pbtn export-cook" type="button">Export PNG</button><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a></div><span class="export-message" role="status" aria-live="polite"></span></div>`;
+  const deleteAction = liveDetail ? "" : '<button class="pbtn delete-detail-cook" type="button">Delete</button><span class="delete-confirm detail-delete-confirm" hidden></span>';
+  const detailActions = requestedCookId == null ? "" : `<div class="detail-actions">${backLink}<div class="detail-action-buttons"><label class="detail-stats-toggle"><input type="checkbox"${cook.exclude_from_stats ? " checked" : ""}> Exclude from stats (dry run / test)</label><span class="detail-stats-message" role="status"></span><button class="pbtn export-cook" type="button">Export PNG</button><a class="pbtn" href="#cooks/${cook.id}/edit">Edit</a>${deleteAction}</div><span class="export-message" role="status" aria-live="polite"></span></div>`;
   container.innerHTML = `<div class="cook-detail">${detailActions}${cookContent}${order}</div>`;
+  container.querySelector(".delete-detail-cook")?.addEventListener("click", () => {
+    confirmDelete(container.querySelector(".detail-delete-confirm"), async () => {
+      await deleteCook(cook.id);
+      window.location.hash = "cooks";
+    }, "Delete this cook permanently?");
+  });
   const grillForm = container.querySelector(".cook-grill-picker");
   grillForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
