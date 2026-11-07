@@ -1,3 +1,48 @@
+# [1.4.0](https://github.com/m3rrym4n/smoke-shack/compare/v1.3.5...v1.4.0) (2026-11-07)
+
+
+### Bug Fixes
+
+* align grill profile with Home Assistant entities ([653f665](https://github.com/m3rrym4n/smoke-shack/commit/653f665814f1f22a3fa1c5e0364ca5f5fbaad40a))
+* backfill connected grill status entities ([9624c67](https://github.com/m3rrym4n/smoke-shack/commit/9624c67afd7f4e3968e31bdce591f3f93f4f73ca))
+* cache discovered grill identities ([604b9e3](https://github.com/m3rrym4n/smoke-shack/commit/604b9e3b3427902063c513f3865c3df4daa8fc7c))
+* chain grill pictures migration after fuel ([fdd45ef](https://github.com/m3rrym4n/smoke-shack/commit/fdd45ef40a8d56b98552a97180575e35fdd668a0))
+* derive restarted probe state from values ([33cfe69](https://github.com/m3rrym4n/smoke-shack/commit/33cfe696787279db3c1db7a018cbb5fca4fcdac8))
+* detect logo image type before SVG content ([345c23a](https://github.com/m3rrym4n/smoke-shack/commit/345c23a8faf1371ac3b67c358df6c4e23ca2591f))
+* group fuel pantry items by type ([f94cfcb](https://github.com/m3rrym4n/smoke-shack/commit/f94cfcb065ae449e3a27e6b798aedc8a79b9538d))
+* make dropdown option lists readable ([5aac5de](https://github.com/m3rrym4n/smoke-shack/commit/5aac5ded1b4a32f39bfb0ac8484c037c1c74728c))
+* make fuel price per pound optional ([80dce53](https://github.com/m3rrym4n/smoke-shack/commit/80dce5362311f5b46a91e1bffa8599703ce756d3))
+* preserve fresh snapshot across telemetry outages ([afc5724](https://github.com/m3rrym4n/smoke-shack/commit/afc57245477a6b88cf11a682d77fcfbe89089546))
+* preserve fuel photo folders on restore ([976fc6c](https://github.com/m3rrym4n/smoke-shack/commit/976fc6c404bbcc14b9dff74e303a329e88c00475))
+* recognize migrated entities yaml grill ([5fb91b8](https://github.com/m3rrym4n/smoke-shack/commit/5fb91b8b936b764196636b03261516b5306452ed))
+* replace grill maker dial placeholder ([6d21e51](https://github.com/m3rrym4n/smoke-shack/commit/6d21e51c4195cb3ae3bc653d5a0bb13a7aeae1a4))
+* show discovered grill names everywhere ([02e32bc](https://github.com/m3rrym4n/smoke-shack/commit/02e32bca08dc08b29f091d559288050ccab5940a))
+
+
+### Features
+
+* add equipment and channels schema ([2b7e3fa](https://github.com/m3rrym4n/smoke-shack/commit/2b7e3faed99bfa3d526f907c11f85963c86b3fa3))
+* add grill settings page ([8b3a5f7](https://github.com/m3rrym4n/smoke-shack/commit/8b3a5f7f9da2ddfc2b4d9980b2054286494b3a0a))
+* add Masterbuilt Gravity 800 mapping profile ([68adb5a](https://github.com/m3rrym4n/smoke-shack/commit/68adb5a8b082b6c24233e7c99f68e3f9b1d5a9f3))
+* add typed fuel pantry and cook picker ([81f3c0d](https://github.com/m3rrym4n/smoke-shack/commit/81f3c0dae66591999bce4cc9f320e57c870d680a))
+* choose grill for historical cooks ([41ae17f](https://github.com/m3rrym4n/smoke-shack/commit/41ae17f3507203e5eb84ff6192736e82497bc634))
+* connect one grill at a time ([2db3366](https://github.com/m3rrym4n/smoke-shack/commit/2db33661a86df50592d01a189be29fe8964f7582))
+* convert legacy samples to channel readings ([b9c0113](https://github.com/m3rrym4n/smoke-shack/commit/b9c011392a8cb3f943a67701376dc31dfc30219d))
+* delete cooks from history ([7fc8197](https://github.com/m3rrym4n/smoke-shack/commit/7fc81975459446cd060758ebd98536857d66ea24))
+* end Masterbuilt startup at setpoint ([ed259ce](https://github.com/m3rrym4n/smoke-shack/commit/ed259ce95d950162c56ef0036188c6a94038ff34))
+* list visible Home Assistant grills ([d7f44fd](https://github.com/m3rrym4n/smoke-shack/commit/d7f44fd731efdbb9a42cc4f6096d44281b393919))
+* map Masterbuilt power to cook lifecycle ([1de2685](https://github.com/m3rrym4n/smoke-shack/commit/1de26858f35fc4c81bc4f3ddb520f5a7749eb87c))
+* read samples from channel readings ([c608663](https://github.com/m3rrym4n/smoke-shack/commit/c6086638026a6dae7aa2827106cf7d15297d4cdc))
+* read temperatures from connected grill channels ([b8fd8bf](https://github.com/m3rrym4n/smoke-shack/commit/b8fd8bfb6f2c9601cf0470b4af409a6d98013fd9))
+* record samples as channel readings ([be37621](https://github.com/m3rrym4n/smoke-shack/commit/be376219a92d8163b4a7000ecf5643bafc9fb06e))
+* replace pellets with typed fuel ([97c97f9](https://github.com/m3rrym4n/smoke-shack/commit/97c97f9ae472e52a1e77c58cae09d3985f4fb5d2))
+* show connected grill pictures and identity ([ca449ae](https://github.com/m3rrym4n/smoke-shack/commit/ca449ae40d4801180193d39d4f120193e25b0e7c))
+* show grill in cook log ([b66e05e](https://github.com/m3rrym4n/smoke-shack/commit/b66e05e22b546ec1f9235b2502374666885f4d39))
+* show probe cards for connected grill channels ([1cd0389](https://github.com/m3rrym4n/smoke-shack/commit/1cd0389e9785e7b3ba2a8b854430e9b06d7d948d))
+* store connected grill status entities ([416725f](https://github.com/m3rrym4n/smoke-shack/commit/416725f649b68363cd446a48e045f48dd2f7eff2))
+* store pictures on equipment records ([db34f04](https://github.com/m3rrym4n/smoke-shack/commit/db34f0495c01623d20b2934359adb279904d1996))
+* treat stale Masterbuilt telemetry as unknown ([44b7688](https://github.com/m3rrym4n/smoke-shack/commit/44b768863d71607a27229362aeb2d109bbbc6931))
+
 ## [1.3.5](https://github.com/m3rrym4n/smoke-shack/compare/v1.3.4...v1.3.5) (2026-11-04)
 
 
